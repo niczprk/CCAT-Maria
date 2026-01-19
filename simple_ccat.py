@@ -12,9 +12,12 @@ import os
 
 # --define outdirs for different laptops
 
-outdir_pers= "..."
+outdir_pers= "C:/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/maria_outputs"
 
 outdir_pro="/Users/zaparniukn/Documents/maria/maria_outputs"
+
+outdir = outdir_pers
+
 #hello
 
 f280= Band(
@@ -46,7 +49,7 @@ instrument = maria.get_instrument(array=array)
 
 print(instrument)
 instrument.plot()
-plt.savefig(os.path.join(outdir_pro, "simple_ccat_test_instrument_plot4.png"), dpi=200, bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "simple_ccat_test_instrument_plot4.png"), dpi=200, bbox_inches="tight")
 plt.close("all")
 
 site = maria.get_site("cerro_chajnantor", altitude=5600)
@@ -63,7 +66,7 @@ input_map.data *= 10e1
 
 input_map[..., 256: -256, 256: -256].to("K_RJ").plot(cmap="cmb")
 print(input_map)
-plt.savefig(os.path.join(outdir_pro, "input_map_cmb.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "input_map_cmb.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 
@@ -89,6 +92,8 @@ plans = planner.generate_plans(total_duration=900,
 
 plans[0].plot()
 print(plans)
+plt.savefig(os.path.join(outdir, "simple_ccat_plan_plot4.png"),dpi=200,bbox_inches="tight")
+plt.close("all")
 
 
 # planner = Planner(start_time="2024-08-06T03:00:00",
@@ -124,7 +129,7 @@ tods = sim.run()
 
 print(tods)
 tods[0].plot()
-plt.savefig(os.path.join(outdir_pro, "simple_ccat_tod_plot.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "simple_ccat_tod_plot.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 maria.undebug()
@@ -146,12 +151,12 @@ print(f"{ml_mapper.loss() = }")
 
 print(ml_mapper.map)
 ml_mapper.map.plot(cmap="cmb")
-plt.savefig(os.path.join(outdir_pro, "simple_ccat_ml_output_map4.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "simple_ccat_ml_output_map4.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 ml_mapper.fit(epochs=4, steps_per_epoch=32, lr=2e-1)
 ml_mapper.map.plot(cmap="cmb")
-plt.savefig(os.path.join(outdir_pro, "simple_ccat_ml_output_map_fitted4.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "simple_ccat_ml_output_map_fitted4.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 raise SystemExit("Stopping CCAT-prime Example Execution Before Binning.")
@@ -180,5 +185,5 @@ mapper.add_tods(tods)
 output_map = mapper.run()
 
 output_map.plot(nu_index= 0)
-plt.savefig("simple_ccat_output_map4.png",dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "simple_ccat_output_map4.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
