@@ -23,7 +23,7 @@ f280= Band(
 #Define the array configuration, specifying the 
 #detectors distribution on the focal plane
 
-array = { "n": 2500, #unknown number of detectors?
+array = { "n": 500, #unknown number of detectors?
         "shape": "hexagon",
         "field_of_view": 1.3, #degrees...
          "beam_spacing": 1.8, #not sure about this one
