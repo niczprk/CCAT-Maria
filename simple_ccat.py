@@ -14,8 +14,7 @@ import os
 
 outdir_pers= "..."
 
-outdir_pro="home/Documents/maria/maria_outputs"
-
+outdir_pro="/Users/zaparniukn/Documents/maria/maria_outputs"
 #hello
 
 f280= Band(
