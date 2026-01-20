@@ -8,11 +8,12 @@ from maria import fetch
 from maria import Planner
 from maria.mappers import BinMapper
 
-import os
+import os, sys
+
 
 # --define outdirs for different laptops
 
-outdir_pers= "C:/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/maria_outputs"
+outdir_pers= "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/maria_outputs"
 
 outdir_pro="/Users/zaparniukn/Documents/maria/maria_outputs"
 
