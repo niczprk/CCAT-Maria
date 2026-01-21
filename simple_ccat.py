@@ -10,6 +10,8 @@ from maria.mappers import BinMapper
 
 import os, sys
 
+from . import conversion
+
 
 # --define outdirs for different laptops
 
@@ -23,8 +25,8 @@ outdir = outdir_pers
 
 f280= Band(
     center=280e9, #Hz
-    width=40e9, #Hz
-    NET_RJ=30e-6, #K*sqrt(s) 
+    width=60e9, #Hz
+    NET_RJ=6.8e-6, #K*sqrt(s) 
     knee=1e0, #Hz
     gain_error=5e-2
 )
