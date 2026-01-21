@@ -10,8 +10,28 @@ from maria.mappers import BinMapper
 
 import os, sys
 
-# from . import conversion
+import numpy as np
+from astropy.io import fits
 
+IN = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK.fits"
+OUT = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr.fits"
+
+Arcsec2_to_Sr = (1/206265)**2
+Factor = 1e-3 / Arcsec2_to_Sr  # mJy/arcsec^2 to Jy/sr
+
+with fits.open(IN) as hdul:
+
+    hdu_idx = next(i for i,h in enumerate(hdul) if h.data is not None)
+    data=hdul[hdu_idx].data.astype(np.float64)
+
+    hdul[hdu_idx].data = data * Factor
+    hdul[hdu_idx].header['BUNIT'] = 'Jy/sr'
+    hdul[hdu_idx].header.add_history("Converted from mJy/arcsec^2 to Jy/sr")
+    hdul[hdu_idx].header.add_history(f"Factor used: {Factor:.6e} Jy/sr per (mJy/arcsec^2)")
+
+    hdul.writeto(OUT, overwrite=True)
+
+print("Wrote:", OUT)
 
 # --define outdirs for different laptops
 
@@ -19,7 +39,15 @@ outdir_pers= "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/maria_outp
 
 outdir_pro="/Users/zaparniukn/Documents/maria/maria_outputs"
 
-outdir = outdir_pro
+blank_ccat_test_outputs_pers= "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/blank_ccat_test_outputs"
+
+blank_ccat_test_outputs_pro="/Users/zaparniukn/Documents/maria/blank_ccat_test_outputs"
+
+orionA_ccat_test_outputs_pers= "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/OrionA_ccat_test_outputs"
+
+orionA_ccat_test_outputs_pro="/Users/zaparniukn/Documents/maria/OrionA_ccat_test_outputs"
+
+outdir = orionA_ccat_test_outputs_pro
 
 #hello
 
@@ -28,7 +56,7 @@ f280= Band(
     width=40e9, #Hz
     NET_RJ=30e-6, #K*sqrt(s) 
     knee=1e0, #Hz
-    gain_error=2e-2
+    gain_error=5e-2
 )
 
 
@@ -50,10 +78,10 @@ array = { #"n": 500, #unknown number of detectors?
 
 instrument = maria.get_instrument(array=array)
 
-print(instrument)
-instrument.plot()
-plt.savefig(os.path.join(outdir, "simple_ccat_test_instrument_plot5.png"), dpi=200, bbox_inches="tight")
-plt.close("all")
+# print(instrument)
+# instrument.plot()
+# plt.savefig(os.path.join(outdir, "simple_ccat_test_instrument_plot5.png"), dpi=200, bbox_inches="tight")
+# plt.close("all")
 
 
 site = maria.get_site("cerro_chajnantor", altitude=5600)
@@ -63,15 +91,19 @@ site = maria.get_site("cerro_chajnantor", altitude=5600)
 # plt.savefig("ccat_test_site_plot.png",dpi=200,bbox_inches="tight")
 # plt.close("all")
 
-input_map = maria.map.load(fetch("maps/cluster2.fits"),
-                          nu=280e9)
+# input_map = maria.map.load(fetch("maps/cluster2.fits"),
+#                           nu=280e9)
 
-input_map.data *= 15e1 
+input_map = maria.map.load("/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr.fits",
+                          nu=280e9,
+)
 
-input_map[..., 256: -256, 256: -256].to("K_RJ").plot(cmap="cmb")
-print(input_map)
-plt.savefig(os.path.join(outdir, "input_map_cmb.png"),dpi=200,bbox_inches="tight")
-plt.close("all")
+# input_map.data[:] = 0.0
+
+# input_map[..., 256: -256, 256: -256].to("K_RJ").plot(cmap="cmb")
+# print(input_map)
+# plt.savefig(os.path.join(outdir, "input_map_blank.png"),dpi=200,bbox_inches="tight")
+# plt.close("all")
 
 
 # map_filename= maria.io.fetch("maps/cluster1.fits") 
@@ -82,21 +114,22 @@ plt.close("all")
 #     center=(291.156, -31.23)) #wcs..?
 # input_map.data *= 50e1 #why
 
-# print(input_map)
-# input_map.to("K_RJ").plot()
-# plt.savefig("input_map.png",dpi=200,bbox_inches="tight")
-# plt.close("all")
+print(input_map)
+input_map.to("K_RJ").plot()
+plt.savefig("input_map.png",dpi=200,bbox_inches="tight")
+plt.close("all")
 
 
 planner = Planner(target=input_map, site=site, constraints={"el": (65, 85)})
-plans = planner.generate_plans(total_duration=900,
+plans = planner.generate_plans(total_duration=3600,
                                max_chunk_duration=900,
-                               sample_rate=50,
-                               scan_options={"radius": input_map.width.deg / 2})
+                               scan_pattern="daisy",
+                               sample_rate=10,
+                               scan_options={"radius": input_map.width.deg / 3})
 
 plans[0].plot()
 print(plans)
-plt.savefig(os.path.join(outdir, "simple_ccat_plan_plot5.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "OrionA_850_scan.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 # planner = Planner(start_time="2024-08-06T03:00:00",
@@ -123,7 +156,7 @@ sim = maria.Simulation(
     plans=plans,
     site=site,
     atmosphere = "2d",
-    atmosphere_kwargs = {"weather":{"pwv":0.5}},
+    # atmosphere_kwargs = {"weather":{"pwv":0.5}},
     map = input_map)
 
 print(sim)
@@ -132,7 +165,7 @@ tods = sim.run()
 
 print(tods)
 tods[0].plot()
-plt.savefig(os.path.join(outdir, "simple_ccat_tod_plot5.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "orionA_850_ccat_tod_plot_daisy.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 maria.undebug()
@@ -186,5 +219,5 @@ mapper.add_tods(tods)
 output_map = mapper.run()
 
 output_map.plot(nu_index= 0)
-plt.savefig(os.path.join(outdir, "simple_ccat_output_BinMapper_map.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "orionA_850_ccat_output_daisyBinMapper_map_2d_True_elgrad.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
