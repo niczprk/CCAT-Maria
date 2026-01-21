@@ -1,6 +1,3 @@
-import numpy as np 
-
-
 import numpy as np
 
 # Physical constants (SI)
@@ -8,15 +5,15 @@ C = 299792458.0                 # m/s
 K_B = 1.380649e-23              # J/K
 H = 6.62607015e-34              # J*s
 T_CMB = 2.7255                  # K
-JY = 1e-26                      # W m^-2 Hz^-1
+JY = 1e-26                       # W m^-2 Hz^-1
 
 
 def dBdT_planck(nu_hz: float, T: float = T_CMB) -> float:
     """
     Planck-law derivative dB_nu/dT evaluated at temperature T.
 
-    Returns:
-    ----------
+    Returns
+    -------
     dB/dT : float
         Units: W m^-2 Hz^-1 sr^-1 K^-1
     """
@@ -31,13 +28,13 @@ def beam_solid_angle_gaussian(fwhm_arcsec: float) -> float:
     """
     Gaussian beam solid angle Omega_beam ≈ 1.133 * theta_FWHM^2.
 
-    Params:
+    Parameters
     ----------
     fwhm_arcsec : float
         Beam FWHM in arcseconds.
 
-    Returns:
-    ----------
+    Returns
+    -------
     Omega_beam : float
         Beam solid angle in steradians.
     """
@@ -48,7 +45,6 @@ def beam_solid_angle_gaussian(fwhm_arcsec: float) -> float:
 def active_beams(Ndet: float, yield_frac: float = 0.8, pol_mode: str = "broadband") -> float:
     """
     Compute number of active beams on sky based on detector count and polarization scheme.
-    Yield fraction set to 0.8 by default for CCAT-prime-like instruments.
 
     pol_mode:
       - "broadband": 1 detector per polarization per beam => Nbeams = Ndet/2
@@ -88,7 +84,7 @@ def convert_noise_equivalent(
       - NET:  K sqrt(s)          (thermodynamic CMB temperature noise)
       - NEFD: Jy sqrt(s) beam^-1 (point-source flux density noise per beam)
 
-    Params:
+    Parameters
     ----------
     start, end : str
         'NEI', 'NET', 'NEFD' (case-insensitive)
@@ -138,7 +134,6 @@ def convert_noise_equivalent(
         Omega_beam = beam_solid_angle_gaussian(beam_arcsec)
         Omega_eff = (2.0 * Omega_beam) if matched_filter else Omega_beam
 
-
         if Ndet is None and (start == "NEI" or end == "NEI"):
             raise ValueError("Ndet is required for NEI <-> NEFD with array-combined NEI (top table).")
 
@@ -160,36 +155,38 @@ def convert_noise_equivalent(
         return value / (Omega_eff * sqrtN)
 
     if start == "NET" and end == "NEFD":
+        # NET -> NEI -> NEFD
         nei = net_to_nei(value)
         return nei * Omega_eff * sqrtN
 
     if start == "NEFD" and end == "NET":
+        # NEFD -> NEI -> NET
         nei = value / (Omega_eff * sqrtN)
         return nei_to_net(nei)
 
     raise ValueError("Invalid conversion types. Options: 'NEI', 'NET', 'NEFD'.")
 
+# Example usage:
+
 if __name__ == "__main__":
 
+
     nefd = convert_noise_equivalent(
-        start="NEI",
-        end="NEFD",
-        nu_GHz=220.0,
-        value=3300.0,  
-        beam_arcsec=56.0,
-        Ndet=7938,
-        yield_frac=0.8,
-        pol_mode="broadband",
-        T=T_CMB,
-        matched_filter=False,
-    )
-    print(f"NEFD: {nefd:.5f} Jy sqrt(s) per beam")
+    start="NEI", end="NEFD",
+    nu_GHz=850,
+    beam_arcsec=15,
+    Ndet=20808,
+    value=479000)
 
     net = convert_noise_equivalent(
-        start="NEI",
-        end="NET",
-        nu_GHz=220.0,
-        value=3300.0,
-        T=T_CMB,
-    )
-    print(f"NET: {net*1e6:.2f} uK sqrt(s)")
+        start="NEI", end="NET",
+        nu_GHz=850,
+        value=479000,  # Jy sqrt(s)
+)
+
+print(nefd)         # Jy sqrt(s)
+print(nefd * 1e3)   # mJy sqrt(s)
+
+print(net)  # K sqrt(s)
+print(net * 1e6)  # uK sqrt(s)
+
