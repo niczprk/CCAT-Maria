@@ -17,8 +17,13 @@ from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astropy.nddata import Cutout2D
 
-IN = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK.fits"
-OUT = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr.fits"
+# IN = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK.fits"
+# OUT = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr.fits"
+
+
+IN = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK.fits"
+OUT = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr.fits"
+
 
 Arcsec2_to_Sr = (1/206265)**2
 Factor = 1e-3 / Arcsec2_to_Sr  # mJy/arcsec^2 to Jy/sr
@@ -88,8 +93,12 @@ print("Wrote:", OUT)
 
 
 
-IN = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr.fits"
-OUT = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr_nan_filled.fits"
+# IN = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr.fits"
+# OUT = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr_nan_filled.fits"
+
+
+IN = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr.fits"
+OUT = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr_nan_filled.fits"
 
 # ra_min, ra_max = 83.25, 84.0
 # dec_min, dec_max = -6.0, -5.0
@@ -133,7 +142,11 @@ orionA_ccat_test_outputs_pers= "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCA
 
 orionA_ccat_test_outputs_pro="/Users/zaparniukn/Documents/maria/OrionA_ccat_test_outputs"
 
-outdir = orionA_ccat_test_outputs_pro
+serpens_ccat_test_outputs_pers= "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/Serpens_ccat_test_outputs"
+
+serpens_ccat_test_outputs_pro="/Users/zaparniukn/Documents/maria/Serpens_ccat_test_outputs"
+
+outdir = serpens_ccat_test_outputs_pro
 
 #hello
 
@@ -180,7 +193,7 @@ site = maria.get_site("cerro_chajnantor", altitude=5600)
 # input_map = maria.map.load(fetch("maps/cluster2.fits"),
 #                           nu=280e9)
 
-input_map = maria.map.load("/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr_nan_filled.fits",
+input_map = maria.map.load("/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr_nan_filled.fits",
                           nu=280e9,
 )
 
@@ -211,15 +224,15 @@ planner = Planner(target=input_map,
                   constraints={"el": (30, 85)})
 
 
-plans = planner.generate_plans(total_duration=1800,
+plans = planner.generate_plans(total_duration=3600,
                                max_chunk_duration=900,
                                scan_pattern="lissajous",
                                sample_rate=10,
-                               scan_options={"radius": input_map.width.deg / 2})
+                               scan_options={"radius": input_map.width.deg / 3})
 
 plans[0].plot()
 print(plans)
-plt.savefig(os.path.join(outdir, "OrionA_850_lissajous_full.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "SerpensE_850_lissajous_full.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 # planner = Planner(start_time="2024-08-06T03:00:00",
@@ -246,7 +259,7 @@ sim = maria.Simulation(
     plans=plans,
     site=site,
     atmosphere = "2d",
-    atmosphere_kwargs = {"weather":{"pwv":0.5}},
+    atmosphere_kwargs = {"weather":{"pwv":0.75}},
     map = input_map)
 
 print(sim)
@@ -255,7 +268,7 @@ tods = sim.run()
 
 print(tods)
 tods[0].plot()
-plt.savefig(os.path.join(outdir, "orionA_850_ccat_tod_plot_lissajous_full.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_tod_plot_lissajous_full.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 
@@ -312,7 +325,7 @@ plt.ylabel("Degrees")
 plt.title("Telescope Pointing vs Time")
 plt.legend()
 plt.grid()
-plt.savefig(os.path.join(outdir, "orionA_850_ccat_tod_pointing_lissajous_full.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_tod_pointing_lissajous_full.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 
@@ -335,7 +348,7 @@ plt.ylabel("Degrees")
 plt.title("Telescope RA/Dec vs Time")
 plt.legend()
 plt.grid()
-plt.savefig(os.path.join(outdir, "orionA_850_ccat_tod_radec_lissajous_full.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_tod_radec_lissajous_full.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 
@@ -346,7 +359,7 @@ mapper = BinMapper(
     frame="ra/dec",
     width=input_map.width,
     height=input_map.height,
-    resolution=input_map.width / 256,
+    resolution=input_map.width / 512,
     tod_preprocessing={
         "remove_spline": {"knot_spacing": 60, "remove_el_gradient": True},
         "remove_modes": {"modes_to_remove": 1},
@@ -363,5 +376,5 @@ mapper.add_tods(tods)
 output_map = mapper.run()
 
 output_map.plot(nu_index= 0)
-plt.savefig(os.path.join(outdir, "orionA_850_ccat_output_lissajousBinMapper_map_2d_full.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_output_lissajousBinMapper_map_2d_full.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
