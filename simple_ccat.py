@@ -153,7 +153,7 @@ f280= Band(
 array = { #"n": 500, #unknown number of detectors?
         "shape": "hexagon",
         "field_of_view": 1.3, #degrees...
-         "beam_spacing": 2.5, #not sure about this one
+         "beam_spacing": 2.3, #not sure about this one
          "primary_size": 6, #in meters...
          "bands": [f280], #, f220, f350, f410, f850],
         #  "packing": "triangular",
@@ -206,11 +206,15 @@ plt.savefig(os.path.join(outdir, "input_map_.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 
-planner = Planner(target=input_map, site=site, constraints={"el": (30, 85)})
-plans = planner.generate_plans(total_duration=900,
+planner = Planner(target=input_map,
+                  site=site,
+                  constraints={"el": (30, 85)})
+
+
+plans = planner.generate_plans(total_duration=1800,
                                max_chunk_duration=900,
                                scan_pattern="lissajous",
-                               sample_rate=50,
+                               sample_rate=10,
                                scan_options={"radius": input_map.width.deg / 2})
 
 plans[0].plot()
@@ -254,6 +258,7 @@ tods[0].plot()
 plt.savefig(os.path.join(outdir, "orionA_850_ccat_tod_plot_lissajous_full.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
+
 maria.undebug()
 
 input_map.center
@@ -281,14 +286,67 @@ input_map.center
 
 # raise SystemExit("Stopping CCAT-prime Example Execution Before Binning.")
 
+import matplotlib.pyplot as plt 
+
+tod = tods[0]
+
+t = tod.time
+tsec = t- t[0]
+
+az = tod.az
+el = tod.el
+
+if np.nanmax(np.abs(az)) < 10:
+    az = np.rad2deg(az)
+if np.nanmax(np.abs(el)) < 10:
+    el = np.rad2deg(el)
+az0 = np.nanmean(az, axis=0)
+
+el0 = np.nanmean(el, axis=0)
+
+plt.figure(figsize=(8,6))
+plt.plot(tsec, el0, label="el (deg)")
+plt.plot(tsec, az0, label="az (deg)")
+plt.xlabel("Time (s)")
+plt.ylabel("Degrees")
+plt.title("Telescope Pointing vs Time")
+plt.legend()
+plt.grid()
+plt.savefig(os.path.join(outdir, "orionA_850_ccat_tod_pointing_lissajous_full.png"),dpi=200,bbox_inches="tight")
+plt.close("all")
+
+
+ra = tod.ra
+dec = tod.dec
+
+if np.nanmax(np.abs(ra)) < 10:
+    ra = np.rad2deg(ra)
+if np.nanmax(np.abs(dec)) < 10:
+    dec = np.rad2deg(dec)
+
+ra0 = np.nanmean(ra, axis=0)
+dec0 = np.nanmean(dec, axis=0)
+
+plt.figure(figsize=(8,6))
+plt.plot(tsec, dec0, label="dec (deg)")
+plt.plot(tsec, ra0, label="ra (deg)")
+plt.xlabel("Time (s)")
+plt.ylabel("Degrees")   
+plt.title("Telescope RA/Dec vs Time")
+plt.legend()
+plt.grid()
+plt.savefig(os.path.join(outdir, "orionA_850_ccat_tod_radec_lissajous_full.png"),dpi=200,bbox_inches="tight")
+plt.close("all")
+
+
 from maria.mappers import BinMapper
 
 mapper = BinMapper(
-    # center=input_map.center,
-    # frame="ra/dec",
-    # width=input_map.width,
-    # height=input_map.height,
-    # resolution=input_map.width / 256,
+    center=input_map.center,
+    frame="ra/dec",
+    width=input_map.width,
+    height=input_map.height,
+    resolution=input_map.width / 256,
     tod_preprocessing={
         "remove_spline": {"knot_spacing": 60, "remove_el_gradient": True},
         "remove_modes": {"modes_to_remove": 1},
