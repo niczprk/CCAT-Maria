@@ -37,17 +37,68 @@ with fits.open(IN) as hdul:
 
 print("Wrote:", OUT)
 
+# IN = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr.fits"
+# OUT = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr_reduced_filled.fits"
+
+# ra_min, ra_max = 83.25, 84.0
+# dec_min, dec_max = -6.0, -5.0
+
+# ra_c = (ra_min + ra_max) / 2
+# dec_c = (dec_min + dec_max) / 2
+
+# width_deg = (ra_max - ra_min) * np.cos(np.deg2rad(dec_c))
+# height_deg = dec_max - dec_min
+
+# with fits.open(IN) as hdul:
+#     # pick first image HDU with data
+#     hdu_idx = next(i for i,h in enumerate(hdul) if h.data is not None)
+#     data = hdul[hdu_idx].data
+#     hdr  = hdul[hdu_idx].header
+#     wcs  = WCS(hdr)
+
+#     # If your map has an extra leading axis (e.g. (1,ny,nx)), drop it
+#     if data.ndim == 3 and data.shape[0] == 1:
+#         data2d = data[0]
+#     else:
+#         data2d = data
+
+#     center = SkyCoord(ra_c*u.deg, dec_c*u.deg, frame="icrs")
+#     size   = u.Quantity((height_deg, width_deg), u.deg)  # (ny, nx)
+
+#     cutout = Cutout2D(data2d, position=center, size=size, wcs=wcs, mode="partial", fill_value=np.nan)
+
+#     cut = cutout.data.astype(np.float32)
+
+#     # Fill NaNs (choose 0.0 for "black" unobserved regions)
+#     cut = np.nan_to_num(cut, nan=0.0, posinf=0.0, neginf=0.0)
+
+#     # Write new FITS
+#     new_hdr = cutout.wcs.to_header()
+#     # Preserve/ensure units
+#     if "BUNIT" in hdr:
+#         new_hdr["BUNIT"] = hdr["BUNIT"]
+#     else:
+#         new_hdr["BUNIT"] = "Jy/sr"
+
+#     fits.PrimaryHDU(data=cut, header=new_hdr).writeto(OUT, overwrite=True)
+
+# print("Wrote:", OUT)
+# print("Patch center (deg):", ra_c, dec_c)
+# print("Patch size (deg):", height_deg, width_deg)    
+
+
+
 IN = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr.fits"
-OUT = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr_reduced_filled.fits"
+OUT = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr_nan_filled.fits"
 
-ra_min, ra_max = 83.25, 84.0
-dec_min, dec_max = -6.0, -5.0
+# ra_min, ra_max = 83.25, 84.0
+# dec_min, dec_max = -6.0, -5.0
 
-ra_c = (ra_min + ra_max) / 2
-dec_c = (dec_min + dec_max) / 2
+# ra_c = (ra_min + ra_max) / 2
+# dec_c = (dec_min + dec_max) / 2
 
-width_deg = (ra_max - ra_min) * np.cos(np.deg2rad(dec_c))
-height_deg = dec_max - dec_min
+# width_deg = (ra_max - ra_min) * np.cos(np.deg2rad(dec_c))
+# height_deg = dec_max - dec_min
 
 with fits.open(IN) as hdul:
     # pick first image HDU with data
@@ -56,36 +107,17 @@ with fits.open(IN) as hdul:
     hdr  = hdul[hdu_idx].header
     wcs  = WCS(hdr)
 
-    # If your map has an extra leading axis (e.g. (1,ny,nx)), drop it
     if data.ndim == 3 and data.shape[0] == 1:
-        data2d = data[0]
+        data = data[0]
     else:
-        data2d = data
-
-    center = SkyCoord(ra_c*u.deg, dec_c*u.deg, frame="icrs")
-    size   = u.Quantity((height_deg, width_deg), u.deg)  # (ny, nx)
-
-    cutout = Cutout2D(data2d, position=center, size=size, wcs=wcs, mode="partial", fill_value=np.nan)
-
-    cut = cutout.data.astype(np.float32)
-
+        data = data
+    
     # Fill NaNs (choose 0.0 for "black" unobserved regions)
-    cut = np.nan_to_num(cut, nan=0.0, posinf=0.0, neginf=0.0)
+    data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
 
-    # Write new FITS
-    new_hdr = cutout.wcs.to_header()
-    # Preserve/ensure units
-    if "BUNIT" in hdr:
-        new_hdr["BUNIT"] = hdr["BUNIT"]
-    else:
-        new_hdr["BUNIT"] = "Jy/sr"
-
-    fits.PrimaryHDU(data=cut, header=new_hdr).writeto(OUT, overwrite=True)
+    fits.PrimaryHDU(data=data, header=hdr).writeto(OUT, overwrite=True)
 
 print("Wrote:", OUT)
-print("Patch center (deg):", ra_c, dec_c)
-print("Patch size (deg):", height_deg, width_deg)    
-
 
 # --define outdirs for different laptops
 
@@ -148,7 +180,7 @@ site = maria.get_site("cerro_chajnantor", altitude=5600)
 # input_map = maria.map.load(fetch("maps/cluster2.fits"),
 #                           nu=280e9)
 
-input_map = maria.map.load("/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr_reduced_filled.fits",
+input_map = maria.map.load("/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr_nan_filled.fits",
                           nu=280e9,
 )
 
@@ -169,13 +201,13 @@ input_map = maria.map.load("/Users/zaparniukn/Documents/data/OrionA_20170726_850
 # input_map.data *= 50e1 #why
 
 print(input_map)
-input_map.to("K_RJ").plot()
-plt.savefig("input_map.png",dpi=200,bbox_inches="tight")
+input_map.to("Jy/sr").plot()
+plt.savefig(os.path.join(outdir, "input_map_.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 
 planner = Planner(target=input_map, site=site, constraints={"el": (30, 85)})
-plans = planner.generate_plans(total_duration=3600,
+plans = planner.generate_plans(total_duration=900,
                                max_chunk_duration=900,
                                scan_pattern="lissajous",
                                sample_rate=50,
@@ -183,7 +215,7 @@ plans = planner.generate_plans(total_duration=3600,
 
 plans[0].plot()
 print(plans)
-plt.savefig(os.path.join(outdir, "OrionA_850_lissajous_reduced.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "OrionA_850_lissajous_full.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 # planner = Planner(start_time="2024-08-06T03:00:00",
@@ -219,7 +251,7 @@ tods = sim.run()
 
 print(tods)
 tods[0].plot()
-plt.savefig(os.path.join(outdir, "orionA_850_ccat_tod_plot_lissajous_reduced.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "orionA_850_ccat_tod_plot_lissajous_full.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 maria.undebug()
@@ -258,7 +290,7 @@ mapper = BinMapper(
     # height=input_map.height,
     # resolution=input_map.width / 256,
     tod_preprocessing={
-        "remove_spline": {"knot_spacing": 120, "remove_el_gradient": False},
+        "remove_spline": {"knot_spacing": 60, "remove_el_gradient": True},
         "remove_modes": {"modes_to_remove": 1},
     },
     map_postprocessing={
@@ -273,5 +305,5 @@ mapper.add_tods(tods)
 output_map = mapper.run()
 
 output_map.plot(nu_index= 0)
-plt.savefig(os.path.join(outdir, "orionA_850_ccat_output_lissajousBinMapper_map_2d_reduced.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "orionA_850_ccat_output_lissajousBinMapper_map_2d_full.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
