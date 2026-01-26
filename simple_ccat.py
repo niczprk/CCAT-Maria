@@ -163,25 +163,23 @@ f280= Band(
 #Define the array configuration, specifying the 
 #detectors distribution on the focal plane
 
-array = { #"n": 500, #unknown number of detectors?
+array = { #"n": 500, 
         "shape": "hexagon",
         "field_of_view": 1.3, #degrees...
-         "beam_spacing": 2.3, #not sure about this one
+         "beam_spacing": 2.3,
          "primary_size": 6, #in meters...
          "bands": [f280], #, f220, f350, f410, f850],
         #  "packing": "triangular",
          "polarized": False,
-        #  "array_name": "CCAT-prime",
         #  "offsets": None
         }
 
 instrument = maria.get_instrument(array=array)
 
-# print(instrument)
-# instrument.plot()
-# plt.savefig(os.path.join(outdir, "simple_ccat_test_instrument_plot5.png"), dpi=200, bbox_inches="tight")
-# plt.close("all")
-
+print(instrument)
+instrument.plot()
+plt.savefig(os.path.join(outdir, "simple_ccat_test_instrument_plot_280GHz.png"), dpi=200, bbox_inches="tight")
+plt.close("all")
 
 site = maria.get_site("cerro_chajnantor", altitude=5600)
 
@@ -221,18 +219,18 @@ plt.close("all")
 
 planner = Planner(target=input_map,
                   site=site,
-                  constraints={"el": (30, 85)})
+                  constraints={"el": (25, 85)})
 
 
 plans = planner.generate_plans(total_duration=3600,
                                max_chunk_duration=900,
-                               scan_pattern="lissajous",
+                               scan_pattern="daisy",
                                sample_rate=10,
-                               scan_options={"radius": input_map.width.deg / 3})
+                               scan_options={"radius": input_map.width.deg / 4})
 
 plans[0].plot()
 print(plans)
-plt.savefig(os.path.join(outdir, "SerpensE_850_lissajous_full.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "SerpensE_850_daisy_full.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 # planner = Planner(start_time="2024-08-06T03:00:00",
@@ -259,7 +257,7 @@ sim = maria.Simulation(
     plans=plans,
     site=site,
     atmosphere = "2d",
-    atmosphere_kwargs = {"weather":{"pwv":0.75}},
+    # atmosphere_kwargs = {"weather":{"pwv":0.75}},
     map = input_map)
 
 print(sim)
@@ -268,7 +266,7 @@ tods = sim.run()
 
 print(tods)
 tods[0].plot()
-plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_tod_plot_lissajous_full.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_tod_plot_daisy_full.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 
@@ -325,7 +323,7 @@ plt.ylabel("Degrees")
 plt.title("Telescope Pointing vs Time")
 plt.legend()
 plt.grid()
-plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_tod_pointing_lissajous_full.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_tod_pointing_daisy_full.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 
@@ -348,7 +346,7 @@ plt.ylabel("Degrees")
 plt.title("Telescope RA/Dec vs Time")
 plt.legend()
 plt.grid()
-plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_tod_radec_lissajous_full.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_tod_radec_daisy_full_scaled.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 
@@ -359,7 +357,7 @@ mapper = BinMapper(
     frame="ra/dec",
     width=input_map.width,
     height=input_map.height,
-    resolution=input_map.width / 512,
+    # resolution=input_map.width / 256,
     tod_preprocessing={
         "remove_spline": {"knot_spacing": 60, "remove_el_gradient": True},
         "remove_modes": {"modes_to_remove": 1},
@@ -376,5 +374,5 @@ mapper.add_tods(tods)
 output_map = mapper.run()
 
 output_map.plot(nu_index= 0)
-plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_output_lissajousBinMapper_map_2d_full.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_output_daisyBinMapper_map_2d_full_scaled.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
