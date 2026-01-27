@@ -10,7 +10,6 @@ from maria.mappers import BinMapper
 
 import os, sys
 
-import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy import units as u
@@ -27,7 +26,7 @@ T_CMB = 2.7255                  # K
 JY = 1e-26                      # W m^-2 Hz^-1
 
 
-def dB_dT(nu_Ghz: float, T: float = T_CMB) -> float:
+def dB_dT(nu_GHz: float, T: float = T_CMB) -> float:
     """
     Plank-law derivative dB/dT evaluated at inputted temperature
     T and frequency nu (in Ghz)
@@ -36,12 +35,10 @@ def dB_dT(nu_Ghz: float, T: float = T_CMB) -> float:
     dB/dT: float 
         Units: W m^-2 Hz^-1 sr^-1 K^-1
     """
-
-    x = H * nu_Ghz * 1e9 / (K_B * T)
+    nu = nu_GHz * 1e9
+    x = H * nu / (K_B * T)
     ex = np.exp(x)
-    pref = 2.0 * H * (nu_Ghz * 1e9)**3 / C**2
-
-    return pref * (x**2 *ex)/(ex - 1.0)**2
+    return (2.0 * K_B * nu**2 / C**2) * (x**2 * ex) / (ex - 1.0)**2
 
 def beam_solid_angle_gaussian(fwhm_arcsec: float) -> float:
     """
@@ -58,7 +55,7 @@ def beam_solid_angle_gaussian(fwhm_arcsec: float) -> float:
         Beam solid angle in steradians.
     """
     theta_rad = fwhm_arcsec * (np.pi / (180.0 * 3600.0))
-    return 1.133 * theta_rad**2
+    return (np.pi/(4*np.log(2))) * theta_rad**2
 
 def convert_noise_equivalent(
         initial: str,
@@ -115,7 +112,7 @@ def convert_noise_equivalent(
     dBdT_val = dB_dT(nu_GHz, T=T)  # W m^-2 Hz^-1 sr^-1 K^-1
 
     if initial == "NEI" and final == "NET":
-        NEI = value 
+        NEI = value * JY  # W m^-2 Hz^-1 sr^-1 sqrt(s)
         NET = NEI / dBdT_val
         return NET
     
@@ -131,7 +128,7 @@ def convert_noise_equivalent(
     
     elif initial == "NET" and final == "NEI":
         NET = value
-        NEI = NET * dBdT_val
+        NEI = NET * dBdT_val / JY  # Jy sr^-1 sqrt(s)
         return NEI
     
     elif initial == "NEFD" and final == "NEI":
@@ -152,7 +149,7 @@ def convert_noise_equivalent(
         NET = value
         NEI = NET * dBdT_val
         omega_beam = beam_solid_angle_gaussian(beam_fwhm_arcsec)  # sr
-        NEFD = NEI * omega_beam * np.sqrt(N_det)
+        NEFD = NEI * omega_beam * np.sqrt(N_det) 
         return NEFD
     
     elif initial == "NEFD" and final == "NET":
@@ -169,6 +166,96 @@ def convert_noise_equivalent(
     else:
         raise ValueError("Invalid conversion types. Options: 'NEI', 'NET', 'NEFD'.")
     
+
+def effective_atm_temp_850GHz(pwv: float, el_deg: float, T_0: float = 300.0) -> float:
+    """
+    Estimate effective atmospheric temperature given PWV and elevation.
+
+    Parameters
+    ----------
+    pwv : float
+        Precipitable water vapor in mm.
+    T_atm : float
+        Physical temperature of the atmosphere in K (default 300 K).
+    elevation_deg : float
+        Telescope elevation angle in degrees.
+
+    Returns
+    -------
+    T_eff : float
+        Effective atmospheric temperature in K.
+    """
+    # Zenith optical depth (JCMT/SCUBA-2 relation)
+    tau_0 = 0.179 * (pwv + 0.337)
+
+    z = 90.0 - el_deg  # zenith angle [deg]
+
+    tau_z = tau_0 / np.cos(np.deg2rad(z))
+
+    T_eff = T_0 * (1.0 - np.exp(-tau_z))
+
+    return T_eff
+
+temp1 = effective_atm_temp_850GHz(pwv=0.5, el_deg=57.5)
+
+temp2 = effective_atm_temp_850GHz(pwv=0.5, el_deg=62.5)
+
+difference1 = np.abs(temp2 - temp1)
+
+temp3 = effective_atm_temp_850GHz(pwv=0.238, el_deg=27.5)
+
+temp4 = effective_atm_temp_850GHz(pwv=0.238, el_deg=32.5)
+
+difference2 = np.abs(temp4 - temp3)
+
+print("Effective Atmospheric Temperature at 850 GHz:")
+print(f"At 57.5 degrees elevation: {temp1:.2f} K")
+print(f"At 62.5 degrees elevation: {temp2:.2f} K")
+print(f"Difference: {difference1:.2f} K")
+
+print(f"At 27.5 degrees elevation: {temp3:.2f} K")
+print(f"At 32.5 degrees elevation: {temp4:.2f} K")
+print(f"Difference: {difference2:.2f} K")
+
+
+NEFD220 = convert_noise_equivalent(
+    initial="NEI", final="NEFD",
+    nu_GHz=220,
+    value=3300.0,  # Jy sr^-1 sqrt(s)
+    beam_fwhm_arcsec= 59.0,
+    N_det=7938
+)
+
+NET220 = convert_noise_equivalent(
+    initial="NEI", final="NET",
+    nu_GHz=220,
+    value= 3300,  # Jy beam^-1 sqrt(s)
+    beam_fwhm_arcsec= 59.0,
+    N_det=7938
+)
+
+NEFD410 = convert_noise_equivalent(
+    initial="NEI", final="NEFD",
+    nu_GHz=410,
+    value=37300.0,  # Jy sr^-1 sqrt(s)
+    beam_fwhm_arcsec= 59.0,
+    N_det=20808
+)
+
+NET410 = convert_noise_equivalent(
+    initial="NEI", final="NET",
+    nu_GHz=410,
+    value= 37300,  # Jy beam^-1 sqrt(s)
+    beam_fwhm_arcsec= 32.0,
+    N_det=20808
+)
+
+print("NEFD at 220 GHz (mJy beam^-1 sqrt(s)):", NEFD220*1e3 )
+print("NET at 220 GHz (uK sqrt(s)):", NET220*1e6 )
+
+print("NEFD at 410 GHz (mJy beam^-1 sqrt(s)):", NEFD410*1e3 )
+print("NET at 410 GHz (uK sqrt(s)):", NET410*1e6 )
+raise SystemExit("Stopping CCAT-prime Example Execution Before FITS Conversion.")
 
 # IN = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK.fits"
 # OUT = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr.fits"
