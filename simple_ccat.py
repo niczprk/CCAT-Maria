@@ -17,6 +17,159 @@ from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astropy.nddata import Cutout2D
 
+import numpy as np
+
+# Physical constants (SI)
+C = 299792458.0                 # m/s
+K_B = 1.380649e-23              # J/K
+H = 6.62607015e-34              # J*s
+T_CMB = 2.7255                  # K
+JY = 1e-26                      # W m^-2 Hz^-1
+
+
+def dB_dT(nu_Ghz: float, T: float = T_CMB) -> float:
+    """
+    Plank-law derivative dB/dT evaluated at inputted temperature
+    T and frequency nu (in Ghz)
+
+    Returns:
+    dB/dT: float 
+        Units: W m^-2 Hz^-1 sr^-1 K^-1
+    """
+
+    x = H * nu_Ghz * 1e9 / (K_B * T)
+    ex = np.exp(x)
+    pref = 2.0 * H * (nu_Ghz * 1e9)**3 / C**2
+
+    return pref * (x**2 *ex)/(ex - 1.0)**2
+
+def beam_solid_angle_gaussian(fwhm_arcsec: float) -> float:
+    """
+    Gaussian beam solid angle Omega_beam ≈ 1.133 * theta_FWHM^2.
+
+    Parameters
+    ----------
+    fwhm_arcsec : float
+        Beam FWHM in arcseconds.
+
+    Returns
+    -------
+    Omega_beam : float
+        Beam solid angle in steradians.
+    """
+    theta_rad = fwhm_arcsec * (np.pi / (180.0 * 3600.0))
+    return 1.133 * theta_rad**2
+
+def convert_noise_equivalent(
+        initial: str,
+        final: str,
+        nu_GHz: float,
+        value: float,
+        beam_fwhm_arcsec: float = None,
+        N_det: int = None,
+        T: float = T_CMB,
+) -> float:
+    """
+    convert noise equivalent values between different units.
+    
+    Definitions Expected for initial and final:
+        -NEI: Noise Equivalent Intensity Jy sr^-1 rt(s) [W m^-2 Hz^-1 sr^-1 rt(s)]
+        -NEFD: Noise Equivalent Flux Density Jy beam^-1 rt(s) [W m^-2 Hz^-1 rt(s)]
+        -NET: Noise Equivalent Temperature K rt(s)
+    
+    Parameters:
+    start, end : str
+        'NEI', 'NET', 'NEFD' (case-insensitive)
+    nu_GHz : float
+        Frequency in GHz.
+    value : float
+        Value in the units of `start`.
+    beam_arcsec : float, optional
+        Beam FWHM in arcsec. Required for any conversion involving NEFD.
+    Ndet : float, optional
+        Total number of detectors. Required for NEI <-> NEFD if your NEI is *array-combined*
+        (as in the top table notes).
+    yield_frac : float
+        Active detector yield (default 0.8).
+    pol_mode : str
+        'broadband' (Nbeams=Ndet/2) or 'eor_spec' (Nbeams=Ndet).
+    T : float
+        Temperature for dB/dT (default T_CMB).
+    matched_filter : bool
+        If True, use Omega_eff = 2*Omega_beam (Gaussian matched-filter convention).
+        If False, use Omega_eff = Omega_beam ("Jy per beam" convention).
+
+    Returns
+    -------
+    float
+        Converted value in units of `end`.
+    """
+
+    initial = initial.upper()
+    final = final.upper()
+
+    if initial == final:
+        return value
+    
+    nu = nu_GHz * 1e9  # Hz
+    dBdT_val = dB_dT(nu_GHz, T=T)  # W m^-2 Hz^-1 sr^-1 K^-1
+
+    if initial == "NEI" and final == "NET":
+        NEI = value 
+        NET = NEI / dBdT_val
+        return NET
+    
+    elif initial == "NEI" and final == "NEFD":
+        if beam_fwhm_arcsec is None:
+            raise ValueError("beam_fwhm_arcsec must be provided for NEI <-> NEFD conversion.")
+        if N_det is None:
+            raise ValueError("N_det must be provided for array-combined NEI <-> NEFD conversion.")
+        NEI = value
+        omega_beam = beam_solid_angle_gaussian(beam_fwhm_arcsec)  # sr
+        NEFD = NEI * omega_beam * np.sqrt(N_det)
+        return NEFD
+    
+    elif initial == "NET" and final == "NEI":
+        NET = value
+        NEI = NET * dBdT_val
+        return NEI
+    
+    elif initial == "NEFD" and final == "NEI":
+        if beam_fwhm_arcsec is None:
+            raise ValueError("beam_fwhm_arcsec must be provided for NEI <-> NEFD conversion.")
+        if N_det is None:
+            raise ValueError("N_det must be provided for array-combined NEI <-> NEFD conversion.")
+        NEFD = value
+        omega_beam = beam_solid_angle_gaussian(beam_fwhm_arcsec)  # sr
+        NEI = NEFD / (omega_beam * np.sqrt(N_det))
+        return NEI
+    
+    elif initial == "NET" and final == "NEFD":
+        if beam_fwhm_arcsec is None:
+            raise ValueError("beam_fwhm_arcsec must be provided for NET <-> NEFD conversion.")
+        if N_det is None:
+            raise ValueError("N_det must be provided for array-combined NET <-> NEFD conversion.")
+        NET = value
+        NEI = NET * dBdT_val
+        omega_beam = beam_solid_angle_gaussian(beam_fwhm_arcsec)  # sr
+        NEFD = NEI * omega_beam * np.sqrt(N_det)
+        return NEFD
+    
+    elif initial == "NEFD" and final == "NET":
+        if beam_fwhm_arcsec is None:
+            raise ValueError("beam_fwhm_arcsec must be provided for NET <-> NEFD conversion.")
+        if N_det is None:
+            raise ValueError("N_det must be provided for array-combined NET <-> NEFD conversion.")
+        NEFD = value
+        omega_beam = beam_solid_angle_gaussian(beam_fwhm_arcsec)  # sr
+        NEI = NEFD / (omega_beam * np.sqrt(N_det))
+        NET = NEI / dBdT_val
+        return NET
+    
+    else:
+        raise ValueError("Invalid conversion types. Options: 'NEI', 'NET', 'NEFD'.")
+    
+
 # IN = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK.fits"
 # OUT = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr.fits"
 
@@ -42,54 +195,54 @@ with fits.open(IN) as hdul:
 
 print("Wrote:", OUT)
 
-# IN = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr.fits"
-# OUT = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr_reduced_filled.fits"
+IN = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr.fits"
+OUT = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr_reduced_filled.fits"
 
-# ra_min, ra_max = 83.25, 84.0
-# dec_min, dec_max = -6.0, -5.0
+ra_min, ra_max = 279.25, 279.75
+dec_min, dec_max = -2.0, -1.0
 
-# ra_c = (ra_min + ra_max) / 2
-# dec_c = (dec_min + dec_max) / 2
+ra_c = (ra_min + ra_max) / 2
+dec_c = (dec_min + dec_max) / 2
 
-# width_deg = (ra_max - ra_min) * np.cos(np.deg2rad(dec_c))
-# height_deg = dec_max - dec_min
+width_deg = (ra_max - ra_min) * np.cos(np.deg2rad(dec_c))
+height_deg = dec_max - dec_min
 
-# with fits.open(IN) as hdul:
-#     # pick first image HDU with data
-#     hdu_idx = next(i for i,h in enumerate(hdul) if h.data is not None)
-#     data = hdul[hdu_idx].data
-#     hdr  = hdul[hdu_idx].header
-#     wcs  = WCS(hdr)
+with fits.open(IN) as hdul:
+    # pick first image HDU with data
+    hdu_idx = next(i for i,h in enumerate(hdul) if h.data is not None)
+    data = hdul[hdu_idx].data
+    hdr  = hdul[hdu_idx].header
+    wcs  = WCS(hdr)
 
-#     # If your map has an extra leading axis (e.g. (1,ny,nx)), drop it
-#     if data.ndim == 3 and data.shape[0] == 1:
-#         data2d = data[0]
-#     else:
-#         data2d = data
+    # If your map has an extra leading axis (e.g. (1,ny,nx)), drop it
+    if data.ndim == 3 and data.shape[0] == 1:
+        data2d = data[0]
+    else:
+        data2d = data
 
-#     center = SkyCoord(ra_c*u.deg, dec_c*u.deg, frame="icrs")
-#     size   = u.Quantity((height_deg, width_deg), u.deg)  # (ny, nx)
+    center = SkyCoord(ra_c*u.deg, dec_c*u.deg, frame="icrs")
+    size   = u.Quantity((height_deg, width_deg), u.deg)  # (ny, nx)
 
-#     cutout = Cutout2D(data2d, position=center, size=size, wcs=wcs, mode="partial", fill_value=np.nan)
+    cutout = Cutout2D(data2d, position=center, size=size, wcs=wcs, mode="partial", fill_value=np.nan)
 
-#     cut = cutout.data.astype(np.float32)
+    cut = cutout.data.astype(np.float32)
 
-#     # Fill NaNs (choose 0.0 for "black" unobserved regions)
-#     cut = np.nan_to_num(cut, nan=0.0, posinf=0.0, neginf=0.0)
+    # Fill NaNs (choose 0.0 for "black" unobserved regions)
+    cut = np.nan_to_num(cut, nan=0.0, posinf=0.0, neginf=0.0)
 
-#     # Write new FITS
-#     new_hdr = cutout.wcs.to_header()
-#     # Preserve/ensure units
-#     if "BUNIT" in hdr:
-#         new_hdr["BUNIT"] = hdr["BUNIT"]
-#     else:
-#         new_hdr["BUNIT"] = "Jy/sr"
+    # Write new FITS
+    new_hdr = cutout.wcs.to_header()
+    # Preserve/ensure units
+    if "BUNIT" in hdr:
+        new_hdr["BUNIT"] = hdr["BUNIT"]
+    else:
+        new_hdr["BUNIT"] = "Jy/sr"
 
-#     fits.PrimaryHDU(data=cut, header=new_hdr).writeto(OUT, overwrite=True)
+    fits.PrimaryHDU(data=cut, header=new_hdr).writeto(OUT, overwrite=True)
 
-# print("Wrote:", OUT)
-# print("Patch center (deg):", ra_c, dec_c)
-# print("Patch size (deg):", height_deg, width_deg)    
+print("Wrote:", OUT)
+print("Patch center (deg):", ra_c, dec_c)
+print("Patch size (deg):", height_deg, width_deg)    
 
 
 
@@ -191,7 +344,7 @@ site = maria.get_site("cerro_chajnantor", altitude=5600)
 # input_map = maria.map.load(fetch("maps/cluster2.fits"),
 #                           nu=280e9)
 
-input_map = maria.map.load("/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr_nan_filled.fits",
+input_map = maria.map.load("/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr_reduced_filled.fits",
                           nu=280e9,
 )
 
@@ -222,15 +375,15 @@ planner = Planner(target=input_map,
                   constraints={"el": (25, 85)})
 
 
-plans = planner.generate_plans(total_duration=3600,
+plans = planner.generate_plans(total_duration=1800,
                                max_chunk_duration=900,
-                               scan_pattern="daisy",
-                               sample_rate=10,
-                               scan_options={"radius": input_map.width.deg / 4})
+                               scan_pattern="lissajous",
+                               sample_rate=5,
+                               scan_options={"radius": input_map.width.deg / 3})
 
 plans[0].plot()
 print(plans)
-plt.savefig(os.path.join(outdir, "SerpensE_850_daisy_full.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "SerpensE_850_lissajous__reduced_full.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 # planner = Planner(start_time="2024-08-06T03:00:00",
@@ -257,7 +410,7 @@ sim = maria.Simulation(
     plans=plans,
     site=site,
     atmosphere = "2d",
-    # atmosphere_kwargs = {"weather":{"pwv":0.75}},
+    atmosphere_kwargs = {"weather":{"pwv":0.05}},
     map = input_map)
 
 print(sim)
@@ -266,7 +419,7 @@ tods = sim.run()
 
 print(tods)
 tods[0].plot()
-plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_tod_plot_daisy_full.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_tod_plot_lissajous__reduced_full.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 
@@ -323,7 +476,7 @@ plt.ylabel("Degrees")
 plt.title("Telescope Pointing vs Time")
 plt.legend()
 plt.grid()
-plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_tod_pointing_daisy_full.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_tod_pointing_lissajous__reduced_full.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 
@@ -346,7 +499,7 @@ plt.ylabel("Degrees")
 plt.title("Telescope RA/Dec vs Time")
 plt.legend()
 plt.grid()
-plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_tod_radec_daisy_full_scaled.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_tod_radec_lissajous__reduced_full_scaled.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 
@@ -357,7 +510,7 @@ mapper = BinMapper(
     frame="ra/dec",
     width=input_map.width,
     height=input_map.height,
-    # resolution=input_map.width / 256,
+    resolution=input_map.width / 128,
     tod_preprocessing={
         "remove_spline": {"knot_spacing": 60, "remove_el_gradient": True},
         "remove_modes": {"modes_to_remove": 1},
@@ -374,5 +527,5 @@ mapper.add_tods(tods)
 output_map = mapper.run()
 
 output_map.plot(nu_index= 0)
-plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_output_daisyBinMapper_map_2d_full_scaled.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_output_lissajousBinMapper_map_2d__reduced_full_scaled.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
