@@ -255,10 +255,11 @@ print("NET at 220 GHz (uK sqrt(s)):", NET220*1e6 )
 
 print("NEFD at 410 GHz (mJy beam^-1 sqrt(s)):", NEFD410*1e3 )
 print("NET at 410 GHz (uK sqrt(s)):", NET410*1e6 )
-raise SystemExit("Stopping CCAT-prime Example Execution Before FITS Conversion.")
 
 # IN = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK.fits"
 # OUT = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr.fits"
+
+
 
 
 IN = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK.fits"
@@ -281,6 +282,53 @@ with fits.open(IN) as hdul:
     hdul.writeto(OUT, overwrite=True)
 
 print("Wrote:", OUT)
+
+def convert_fits_units(
+        IN: str,
+        OUT: str,
+        input_unit: str,
+        output_unit: str,
+):
+    """
+    Convert FITS file data units from input_unit to output_unit.
+
+    Parameters
+    ----------
+    IN : str
+        Input FITS filename.
+    OUT : str
+        Output FITS filename.
+    input_unit : str
+        Input data unit (e.g., 'mJy/arcsec^2').
+    output_unit : str
+        Output data unit (e.g., 'Jy/sr').
+    """
+
+    unit_conversions = {
+        ('mJy/arcsec^2', 'Jy/sr'): (1e-3 / (1/206265)**2),
+        # Add more conversions as needed
+    }
+
+    if (input_unit, output_unit) not in unit_conversions:
+        raise ValueError(f"Conversion from {input_unit} to {output_unit} not defined.")
+
+    factor = unit_conversions[(input_unit, output_unit)]
+
+    with fits.open(IN) as hdul:
+        hdu_idx = next(i for i,h in enumerate(hdul) if h.data is not None)
+        data = hdul[hdu_idx].data.astype(np.float64)
+
+        hdul[hdu_idx].data = data * factor
+        hdul[hdu_idx].header['BUNIT'] = output_unit
+        hdul[hdu_idx].header.add_history(f"Converted from {input_unit} to {output_unit}")
+        hdul[hdu_idx].header.add_history(f"Factor used: {factor:.6e} {output_unit} per ({input_unit})")
+
+        hdul.writeto(OUT, overwrite=True)
+
+    print("Wrote:", OUT)
+
+
+
 
 IN = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr.fits"
 OUT = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr_reduced_filled.fits"
@@ -331,7 +379,105 @@ print("Wrote:", OUT)
 print("Patch center (deg):", ra_c, dec_c)
 print("Patch size (deg):", height_deg, width_deg)    
 
+def clip_fits_area(
+        IN: str,
+        OUT: str,
+        ra_min: float,
+        ra_max: float,
+        dec_min: float,
+        dec_max: float,
+):
+    """
+    Clip a rectangular area from a FITS file and save to a new FITS file.
 
+    Parameters
+    ----------
+    IN : str
+        Input FITS filename.
+    OUT : str
+        Output FITS filename.
+    ra_min : float
+        Minimum right ascension in degrees.
+    ra_max : float
+        Maximum right ascension in degrees.
+    dec_min : float
+        Minimum declination in degrees.
+    dec_max : float
+        Maximum declination in degrees.
+    """
+
+    ra_c = (ra_min + ra_max) / 2
+    dec_c = (dec_min + dec_max) / 2
+
+    width_deg = (ra_max - ra_min) * np.cos(np.deg2rad(dec_c))
+    height_deg = dec_max - dec_min
+
+    with fits.open(IN) as hdul:
+        # pick first image HDU with data
+        hdu_idx = next(i for i,h in enumerate(hdul) if h.data is not None)
+        data = hdul[hdu_idx].data
+        hdr  = hdul[hdu_idx].header
+        wcs  = WCS(hdr)
+
+        if data.ndim == 3 and data.shape[0] == 1:
+            data2d = data[0]
+        else:
+            data2d = data
+
+        center = SkyCoord(ra_c*u.deg, dec_c*u.deg, frame="icrs")
+        size   = u.Quantity((height_deg, width_deg), u.deg)  # (ny, nx)
+
+        cutout = Cutout2D(data2d, position=center, size=size, wcs=wcs, mode="partial", fill_value=np.nan)
+
+        cut = cutout.data.astype(np.float32)
+
+        # Write new FITS
+        new_hdr = cutout.wcs.to_header()
+        # Preserve/ensure units
+        if "BUNIT" in hdr:
+            new_hdr["BUNIT"] = hdr["BUNIT"]
+        else:
+            new_hdr["BUNIT"] = "Jy/sr"
+
+        fits.PrimaryHDU(data=cut, header=new_hdr).writeto(OUT, overwrite=True)
+
+    print("Wrote:", OUT)
+    print("Patch center (deg):", ra_c, dec_c)
+    print("Patch size (deg):", height_deg, width_deg)
+
+def clip_fits_nans(
+        IN: str,
+        OUT: str,
+):
+    """
+    Fill NaN values in a FITS file and save to a new FITS file.
+
+    Parameters
+    ----------
+    IN : str
+        Input FITS filename.
+    OUT : str
+        Output FITS filename.
+    """
+
+    with fits.open(IN) as hdul:
+        # pick first image HDU with data
+        hdu_idx = next(i for i,h in enumerate(hdul) if h.data is not None)
+        data = hdul[hdu_idx].data
+        hdr  = hdul[hdu_idx].header
+        wcs  = WCS(hdr)
+
+        if data.ndim == 3 and data.shape[0] == 1:
+            data2d = data[0]
+        else:
+            data2d = data
+
+        # Fill NaNs (choose 0.0 for "black" unobserved regions)
+        data_filled = np.nan_to_num(data2d, nan=0.0, posinf=0.0, neginf=0.0)
+
+        fits.PrimaryHDU(data=data_filled, header=hdr).writeto(OUT, overwrite=True)
+
+    print("Wrote:", OUT)
 
 # IN = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr.fits"
 # OUT = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr_nan_filled.fits"
