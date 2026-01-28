@@ -643,7 +643,7 @@ sim = maria.Simulation(
     plans=plans,
     site=site,
     atmosphere = "2d",
-    atmosphere_kwargs = {"weather":{"pwv":0.05}},
+    atmosphere_kwargs = "weather":{"pwv":0.238}
     map = input_map)
 
 print(sim)
