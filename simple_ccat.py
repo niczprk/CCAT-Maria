@@ -18,6 +18,26 @@ from astropy.nddata import Cutout2D
 
 import numpy as np
 
+
+outdir_pers= "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/maria_outputs"
+
+outdir_pro="/Users/zaparniukn/Documents/maria/maria_outputs"
+
+blank_ccat_test_outputs_pers= "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/blank_ccat_test_outputs"
+
+blank_ccat_test_outputs_pro="/Users/zaparniukn/Documents/maria/blank_ccat_test_outputs"
+
+orionA_ccat_test_outputs_pers= "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/OrionA_ccat_test_outputs"
+
+orionA_ccat_test_outputs_pro="/Users/zaparniukn/Documents/maria/OrionA_ccat_test_outputs"
+
+serpens_ccat_test_outputs_pers= "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/Serpens_ccat_test_outputs"
+
+serpens_ccat_test_outputs_pro="/Users/zaparniukn/Documents/maria/Serpens_ccat_test_outputs"
+
+outdir = serpens_ccat_test_outputs_pro
+
+
 # Physical constants (SI)
 C = 299792458.0                 # m/s
 K_B = 1.380649e-23              # J/K
@@ -73,6 +93,8 @@ def convert_noise_equivalent(
         -NEI: Noise Equivalent Intensity Jy sr^-1 rt(s) [W m^-2 Hz^-1 sr^-1 rt(s)]
         -NEFD: Noise Equivalent Flux Density Jy beam^-1 rt(s) [W m^-2 Hz^-1 rt(s)]
         -NET: Noise Equivalent Temperature K rt(s)
+        - add NET_RJ conversion caculate RJ then multiply by the factor 
+        - 
     
     Parameters:
     start, end : str
@@ -168,6 +190,8 @@ def convert_noise_equivalent(
     
 
 def effective_atm_temp_850GHz(pwv: float, el_deg: float, T_0: float = 300.0) -> float:
+
+    # put a tau input value for calculations
     """
     Estimate effective atmospheric temperature given PWV and elevation.
 
@@ -196,70 +220,149 @@ def effective_atm_temp_850GHz(pwv: float, el_deg: float, T_0: float = 300.0) -> 
 
     return T_eff
 
-temp1 = effective_atm_temp_850GHz(pwv=0.5, el_deg=57.5)
 
-temp2 = effective_atm_temp_850GHz(pwv=0.5, el_deg=62.5)
+def inst_effective_atm_temp_850GHz(mode: str, tau_0: float = None, pwv: float = None, el_deg: float = None, delta_el: float = None, T_0: float = 300.0) -> float:
 
-difference1 = np.abs(temp2 - temp1)
+    # put a tau input value for calculations
+    """
+    Estimate effective atmospheric temperature given PWV and elevation.
 
-temp3 = effective_atm_temp_850GHz(pwv=0.238, el_deg=27.5)
+    Parameters
+    ----------
+    pwv : float
+        Precipitable water vapor in mm.
+    T_atm : float
+        Physical temperature of the atmosphere in K (default 300 K).
+    elevation_deg : float
+        Telescope elevation angle in degrees.
 
-temp4 = effective_atm_temp_850GHz(pwv=0.238, el_deg=32.5)
+    Returns
+    -------
+    T_eff : float
+        Effective atmospheric temperature in K.
+    """
+    # Zenith optical depth (JCMT/SCUBA-2 relation)
+    if tau_0 is None and pwv is not None:
 
-difference2 = np.abs(temp4 - temp3)
+        tau_0 = 0.179 * (pwv + 0.337)
 
-print("Effective Atmospheric Temperature at 850 GHz:")
-print(f"At 57.5 degrees elevation: {temp1:.2f} K")
-print(f"At 62.5 degrees elevation: {temp2:.2f} K")
-print(f"Difference: {difference1:.2f} K")
+    elif tau_0 is not None:
 
-print(f"At 27.5 degrees elevation: {temp3:.2f} K")
-print(f"At 32.5 degrees elevation: {temp4:.2f} K")
-print(f"Difference: {difference2:.2f} K")
+        tau_0 = tau_0
+
+    else:
+        
+        raise ValueError("Either tau_0 or pwv must be provided.")
+
+    z_rad = np.deg2rad(90.0 - el_deg)  # zenith angle [rad]
+
+    tau_z = tau_0 / np.cos(z_rad)
+
+    if mode == "inst":
+
+        dT_dz = T_0 * tau_0 * np.exp(-tau_z) * np.sin(z_rad) / (np.cos(z_rad)**2)
+        result = dT_dz * np.pi / 180.0 
+
+    elif mode == "fin_diff":
+        delta_el = 1.0  # degree
+        T_eff_plus = effective_atm_temp_850GHz(pwv, el_deg + delta_el/2, T_0)
+        T_eff_minus = effective_atm_temp_850GHz(pwv, el_deg - delta_el/2, T_0)
+        dT_dz = (T_eff_plus - T_eff_minus) / (delta_el)
+        result = dT_dz 
+    
+    else:
+        raise ValueError("Invalid mode. Choose 'inst' or 'fin_diff'.")
+    return result  # convert to per degree
+
+# x = np.linspace(59.5, 60.5, 150) #degrees
+# y = inst_effective_atm_temp_850GHz(mode="fin_diff", pwv=0.38, el_deg=x, delta_el=1.0)
+
+# plt.figure(figsize=(8,6))
+# plt.plot(x, y)
+# plt.xlabel("Elevation (degrees)")
+# plt.ylabel("Fin. Diff. dT/dz (K/deg)")
+# plt.title("Finite Difference dT/dz at 850 GHz vs Elevation")
+# plt.grid(True)
+# plt.show()
+# plt.savefig(os.path.join("/Users/zaparniukn/Documents/maria/", "fin_diff_dT_dz_850GHz_vs_elevation.png"), dpi=200, bbox_inches="tight")
+# plt.close()
 
 
-NEFD220 = convert_noise_equivalent(
-    initial="NEI", final="NEFD",
-    nu_GHz=220,
-    value=3300.0,  # Jy sr^-1 sqrt(s)
-    beam_fwhm_arcsec= 59.0,
-    N_det=7938
-)
+# temp1 = effective_atm_temp_850GHz(pwv=0.38, el_deg=57.5)
 
-NET220 = convert_noise_equivalent(
-    initial="NEI", final="NET",
-    nu_GHz=220,
-    value= 3300,  # Jy beam^-1 sqrt(s)
-    beam_fwhm_arcsec= 59.0,
-    N_det=7938
-)
+# temp2 = effective_atm_temp_850GHz(pwv=0.38, el_deg=62.5)
 
-NEFD410 = convert_noise_equivalent(
-    initial="NEI", final="NEFD",
-    nu_GHz=410,
-    value=37300.0,  # Jy sr^-1 sqrt(s)
-    beam_fwhm_arcsec= 59.0,
-    N_det=20808
-)
+# difference1 = np.abs(temp2 - temp1)
 
-NET410 = convert_noise_equivalent(
-    initial="NEI", final="NET",
-    nu_GHz=410,
-    value= 37300,  # Jy beam^-1 sqrt(s)
-    beam_fwhm_arcsec= 32.0,
-    N_det=20808
-)
+# temp3 = effective_atm_temp_850GHz(pwv=0.38, el_deg=27.5)
 
-print("NEFD at 220 GHz (mJy beam^-1 sqrt(s)):", NEFD220*1e3 )
-print("NET at 220 GHz (uK sqrt(s)):", NET220*1e6 )
+# temp4 = effective_atm_temp_850GHz(pwv=0.38, el_deg=32.5)
 
-print("NEFD at 410 GHz (mJy beam^-1 sqrt(s)):", NEFD410*1e3 )
-print("NET at 410 GHz (uK sqrt(s)):", NET410*1e6 )
+# difference2 = np.abs(temp4 - temp3)
 
+# temp5 = inst_effective_atm_temp_850GHz(mode = "inst", pwv=0.38, el_deg=59.5)
+# temp6 = inst_effective_atm_temp_850GHz(mode = "inst", pwv=0.38, el_deg=60.5)
+
+
+# difference3 = np.abs(temp6 - temp5)
+
+
+# print("Effective Atmospheric Temperature at 850 GHz:")
+# print(f"At 57.5 degrees elevation: {temp1:.2f} K")
+# print(f"At 62.5 degrees elevation: {temp2:.2f} K")
+# print(f"Difference: {difference1:.2f} K")
+
+# print(f"At 27.5 degrees elevation: {temp3:.2f} K")
+# print(f"At 32.5 degrees elevation: {temp4:.2f} K")
+# print(f"Difference: {difference2:.2f} K")
+
+# print(f"Inst. dT/dz at 59.5 degrees elevation: {temp5:.4f} K/deg")
+# print(f"Inst. dT/dz at 60.5 degrees elevation: {temp6:.4f} K/deg")
+# print(f"Difference: {difference3:.4f} K/deg")
+
+
+# NEFD220 = convert_noise_equivalent(
+#     initial="NEI", final="NEFD",
+#     nu_GHz=220,
+#     value=3300.0,  # Jy sr^-1 sqrt(s)
+#     beam_fwhm_arcsec= 59.0,
+#     N_det=7938
+# )
+
+# NET220 = convert_noise_equivalent(
+#     initial="NEI", final="NET",
+#     nu_GHz=220,
+#     value= 3300,  # Jy beam^-1 sqrt(s)
+#     beam_fwhm_arcsec= 59.0,
+#     N_det=7938
+# )
+
+# NEFD410 = convert_noise_equivalent(
+#     initial="NEI", final="NEFD",
+#     nu_GHz=410,
+#     value=37300.0,  # Jy sr^-1 sqrt(s)
+#     beam_fwhm_arcsec= 59.0,
+#     N_det=20808
+# )
+
+# NET410 = convert_noise_equivalent(
+#     initial="NEI", final="NET",
+#     nu_GHz=410,
+#     value= 37300,  # Jy beam^-1 sqrt(s)
+#     beam_fwhm_arcsec= 32.0,
+#     N_det=20808
+# )
+
+# print("NEFD at 220 GHz (mJy beam^-1 sqrt(s)):", NEFD220*1e3 )
+# print("NET at 220 GHz (uK sqrt(s)):", NET220*1e6 )
+
+# print("NEFD at 410 GHz (mJy beam^-1 sqrt(s)):", NEFD410*1e3 )
+# print("NET at 410 GHz (uK sqrt(s)):", NET410*1e6 )
+ 
 # IN = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK.fits"
 # OUT = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr.fits"
 
-
+# raise SystemExit("Stopping CCAT-prime Example Execution Before Unit Conversion.")
 
 
 IN = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK.fits"
@@ -516,23 +619,6 @@ print("Wrote:", OUT)
 
 # --define outdirs for different laptops
 
-outdir_pers= "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/maria_outputs"
-
-outdir_pro="/Users/zaparniukn/Documents/maria/maria_outputs"
-
-blank_ccat_test_outputs_pers= "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/blank_ccat_test_outputs"
-
-blank_ccat_test_outputs_pro="/Users/zaparniukn/Documents/maria/blank_ccat_test_outputs"
-
-orionA_ccat_test_outputs_pers= "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/OrionA_ccat_test_outputs"
-
-orionA_ccat_test_outputs_pro="/Users/zaparniukn/Documents/maria/OrionA_ccat_test_outputs"
-
-serpens_ccat_test_outputs_pers= "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/Serpens_ccat_test_outputs"
-
-serpens_ccat_test_outputs_pro="/Users/zaparniukn/Documents/maria/Serpens_ccat_test_outputs"
-
-outdir = serpens_ccat_test_outputs_pro
 
 #hello
 
@@ -543,8 +629,6 @@ f280= Band(
     knee=1e0, #Hz
     gain_error=5e-2
 )
-
-
 
 #Define the array configuration, specifying the 
 #detectors distribution on the focal plane
@@ -605,7 +689,7 @@ plt.close("all")
 
 planner = Planner(target=input_map,
                   site=site,
-                  constraints={"el": (25, 85)})
+                  constraints={"el": (30, 80)})
 
 
 plans = planner.generate_plans(total_duration=1800,
@@ -643,7 +727,7 @@ sim = maria.Simulation(
     plans=plans,
     site=site,
     atmosphere = "2d",
-    atmosphere_kwargs = "weather":{"pwv":0.238}
+    atmosphere_kwargs = {"weather":{"pwv":0.67}},
     map = input_map)
 
 print(sim)
