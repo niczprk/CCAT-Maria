@@ -251,7 +251,7 @@ def inst_effective_atm_temp_850GHz(mode: str, tau_0: float = None, pwv: float = 
         tau_0 = tau_0
 
     else:
-        
+
         raise ValueError("Either tau_0 or pwv must be provided.")
 
     z_rad = np.deg2rad(90.0 - el_deg)  # zenith angle [rad]
@@ -372,19 +372,19 @@ OUT = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr.fi
 Arcsec2_to_Sr = (1/206265)**2
 Factor = 1e-3 / Arcsec2_to_Sr  # mJy/arcsec^2 to Jy/sr
 
-with fits.open(IN) as hdul:
+# with fits.open(IN) as hdul:
 
-    hdu_idx = next(i for i,h in enumerate(hdul) if h.data is not None)
-    data=hdul[hdu_idx].data.astype(np.float64)
+#     hdu_idx = next(i for i,h in enumerate(hdul) if h.data is not None)
+#     data=hdul[hdu_idx].data.astype(np.float64)
 
-    hdul[hdu_idx].data = data * Factor
-    hdul[hdu_idx].header['BUNIT'] = 'Jy/sr'
-    hdul[hdu_idx].header.add_history("Converted from mJy/arcsec^2 to Jy/sr")
-    hdul[hdu_idx].header.add_history(f"Factor used: {Factor:.6e} Jy/sr per (mJy/arcsec^2)")
+#     hdul[hdu_idx].data = data * Factor
+#     hdul[hdu_idx].header['BUNIT'] = 'Jy/sr'
+#     hdul[hdu_idx].header.add_history("Converted from mJy/arcsec^2 to Jy/sr")
+#     hdul[hdu_idx].header.add_history(f"Factor used: {Factor:.6e} Jy/sr per (mJy/arcsec^2)")
 
-    hdul.writeto(OUT, overwrite=True)
+#     hdul.writeto(OUT, overwrite=True)
 
-print("Wrote:", OUT)
+# print("Wrote:", OUT)
 
 def convert_fits_units(
         IN: str,
@@ -436,51 +436,51 @@ def convert_fits_units(
 IN = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr.fits"
 OUT = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr_reduced_filled.fits"
 
-ra_min, ra_max = 279.25, 279.75
-dec_min, dec_max = -2.0, -1.0
+# ra_min, ra_max = 279.25, 279.75
+# dec_min, dec_max = -2.0, -1.0
 
-ra_c = (ra_min + ra_max) / 2
-dec_c = (dec_min + dec_max) / 2
+# ra_c = (ra_min + ra_max) / 2
+# dec_c = (dec_min + dec_max) / 2
 
-width_deg = (ra_max - ra_min) * np.cos(np.deg2rad(dec_c))
-height_deg = dec_max - dec_min
+# width_deg = (ra_max - ra_min) * np.cos(np.deg2rad(dec_c))
+# height_deg = dec_max - dec_min
 
-with fits.open(IN) as hdul:
-    # pick first image HDU with data
-    hdu_idx = next(i for i,h in enumerate(hdul) if h.data is not None)
-    data = hdul[hdu_idx].data
-    hdr  = hdul[hdu_idx].header
-    wcs  = WCS(hdr)
+# with fits.open(IN) as hdul:
+#     # pick first image HDU with data
+#     hdu_idx = next(i for i,h in enumerate(hdul) if h.data is not None)
+#     data = hdul[hdu_idx].data
+#     hdr  = hdul[hdu_idx].header
+#     wcs  = WCS(hdr)
 
-    # If your map has an extra leading axis (e.g. (1,ny,nx)), drop it
-    if data.ndim == 3 and data.shape[0] == 1:
-        data2d = data[0]
-    else:
-        data2d = data
+#     # If your map has an extra leading axis (e.g. (1,ny,nx)), drop it
+#     if data.ndim == 3 and data.shape[0] == 1:
+#         data2d = data[0]
+#     else:
+#         data2d = data
 
-    center = SkyCoord(ra_c*u.deg, dec_c*u.deg, frame="icrs")
-    size   = u.Quantity((height_deg, width_deg), u.deg)  # (ny, nx)
+#     center = SkyCoord(ra_c*u.deg, dec_c*u.deg, frame="icrs")
+#     size   = u.Quantity((height_deg, width_deg), u.deg)  # (ny, nx)
 
-    cutout = Cutout2D(data2d, position=center, size=size, wcs=wcs, mode="partial", fill_value=np.nan)
+#     cutout = Cutout2D(data2d, position=center, size=size, wcs=wcs, mode="partial", fill_value=np.nan)
 
-    cut = cutout.data.astype(np.float32)
+#     cut = cutout.data.astype(np.float32)
 
-    # Fill NaNs (choose 0.0 for "black" unobserved regions)
-    cut = np.nan_to_num(cut, nan=0.0, posinf=0.0, neginf=0.0)
+#     # Fill NaNs (choose 0.0 for "black" unobserved regions)
+#     cut = np.nan_to_num(cut, nan=0.0, posinf=0.0, neginf=0.0)
 
-    # Write new FITS
-    new_hdr = cutout.wcs.to_header()
-    # Preserve/ensure units
-    if "BUNIT" in hdr:
-        new_hdr["BUNIT"] = hdr["BUNIT"]
-    else:
-        new_hdr["BUNIT"] = "Jy/sr"
+#     # Write new FITS
+#     new_hdr = cutout.wcs.to_header()
+#     # Preserve/ensure units
+#     if "BUNIT" in hdr:
+#         new_hdr["BUNIT"] = hdr["BUNIT"]
+#     else:
+#         new_hdr["BUNIT"] = "Jy/sr"
 
-    fits.PrimaryHDU(data=cut, header=new_hdr).writeto(OUT, overwrite=True)
+#     fits.PrimaryHDU(data=cut, header=new_hdr).writeto(OUT, overwrite=True)
 
-print("Wrote:", OUT)
-print("Patch center (deg):", ra_c, dec_c)
-print("Patch size (deg):", height_deg, width_deg)    
+# print("Wrote:", OUT)
+# print("Patch center (deg):", ra_c, dec_c)
+# print("Patch size (deg):", height_deg, width_deg)    
 
 def clip_fits_area(
         IN: str,
@@ -598,24 +598,24 @@ OUT = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr_na
 # width_deg = (ra_max - ra_min) * np.cos(np.deg2rad(dec_c))
 # height_deg = dec_max - dec_min
 
-with fits.open(IN) as hdul:
-    # pick first image HDU with data
-    hdu_idx = next(i for i,h in enumerate(hdul) if h.data is not None)
-    data = hdul[hdu_idx].data
-    hdr  = hdul[hdu_idx].header
-    wcs  = WCS(hdr)
+# with fits.open(IN) as hdul:
+#     # pick first image HDU with data
+#     hdu_idx = next(i for i,h in enumerate(hdul) if h.data is not None)
+#     data = hdul[hdu_idx].data
+#     hdr  = hdul[hdu_idx].header
+#     wcs  = WCS(hdr)
 
-    if data.ndim == 3 and data.shape[0] == 1:
-        data = data[0]
-    else:
-        data = data
+#     if data.ndim == 3 and data.shape[0] == 1:
+#         data = data[0]
+#     else:
+#         data = data
     
-    # Fill NaNs (choose 0.0 for "black" unobserved regions)
-    data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
+#     # Fill NaNs (choose 0.0 for "black" unobserved regions)
+#     data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
 
-    fits.PrimaryHDU(data=data, header=hdr).writeto(OUT, overwrite=True)
+#     fits.PrimaryHDU(data=data, header=hdr).writeto(OUT, overwrite=True)
 
-print("Wrote:", OUT)
+# print("Wrote:", OUT)
 
 # --define outdirs for different laptops
 
@@ -624,8 +624,16 @@ print("Wrote:", OUT)
 
 f280= Band(
     center=280e9, #Hz
-    width=40e9, #Hz
-    NET_RJ=30e-6, #K*sqrt(s) 
+    width=56e9, #Hz
+    NET_RJ=13e-6, #K*sqrt(s) 
+    knee=1e0, #Hz
+    gain_error=5e-2
+)
+
+f350 = Band(
+    center=350e9, #Hz
+    width=50e9, #Hz
+    NET_RJ=48e-6, #K*sqrt(s) 
     knee=1e0, #Hz
     gain_error=5e-2
 )
@@ -636,20 +644,36 @@ f280= Band(
 array = { #"n": 500, 
         "shape": "hexagon",
         "field_of_view": 1.3, #degrees...
-         "beam_spacing": 2.3,
+         "beam_spacing": 3.0,
          "primary_size": 6, #in meters...
-         "bands": [f280], #, f220, f350, f410, f850],
+         "bands": [f280, f350], #, f220, f350, f410, f850],
         #  "packing": "triangular",
          "polarized": False,
         #  "offsets": None
         }
+# array350 = { #"n": 2000, ``
+#         "shape": "hexagon",
+#         "field_of_view": 1.3, #degrees...
+#          "beam_spacing": 3.3,
+#          "primary_size": 6, #in meters...
+#          "bands": [f350], #, f220, f350, f410, f850],
+#         #  "packing": "triangular",
+#          "polarized": False,
+#         #  "offsets": None
+#         }
 
-instrument = maria.get_instrument(array=array)
+# subarray_280 = {"name": "mod_280", "bands": [f280], "focal_plane_offset": (-1.0*1.8, 0.0), **array250}
+# subarray_350 = {"name": "mod_350", "bands": [f350], "focal_plane_offset": (-0.5*1.8, -0.866*1.6), **array350}
+
+
+instrument = maria.get_instrument(array= array)
 
 print(instrument)
 instrument.plot()
-plt.savefig(os.path.join(outdir, "simple_ccat_test_instrument_plot_280GHz.png"), dpi=200, bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "simple_ccat_test_instrument_plot_280_350GHz.png"), dpi=200, bbox_inches="tight")
 plt.close("all")
+
+# raise SystemExit("Stopping CCAT-prime Example Execution Before Site Definition.")
 
 site = maria.get_site("cerro_chajnantor", altitude=5600)
 
@@ -661,7 +685,7 @@ site = maria.get_site("cerro_chajnantor", altitude=5600)
 # input_map = maria.map.load(fetch("maps/cluster2.fits"),
 #                           nu=280e9)
 
-input_map = maria.map.load("/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr_reduced_filled.fits",
+input_map = maria.map.load("/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr_reduced_filled.fits",
                           nu=280e9,
 )
 
@@ -683,13 +707,13 @@ input_map = maria.map.load("/Users/zaparniukn/Documents/data/SerpensE_20170724_8
 
 print(input_map)
 input_map.to("Jy/sr").plot()
-plt.savefig(os.path.join(outdir, "input_map_.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "OrionA_850_reduced_input_map_280GHz.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 
 planner = Planner(target=input_map,
                   site=site,
-                  constraints={"el": (30, 80)})
+                  constraints={"el": (30, 85)})
 
 
 plans = planner.generate_plans(total_duration=1800,
@@ -700,7 +724,7 @@ plans = planner.generate_plans(total_duration=1800,
 
 plans[0].plot()
 print(plans)
-plt.savefig(os.path.join(outdir, "SerpensE_850_lissajous__reduced_full.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "OrionA_850_lissajous_reduced.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 # planner = Planner(start_time="2024-08-06T03:00:00",
@@ -727,7 +751,7 @@ sim = maria.Simulation(
     plans=plans,
     site=site,
     atmosphere = "2d",
-    atmosphere_kwargs = {"weather":{"pwv":0.67}},
+    atmosphere_kwargs = {"weather":{"pwv":0.38}}, #in mm
     map = input_map)
 
 print(sim)
@@ -736,7 +760,11 @@ tods = sim.run()
 
 print(tods)
 tods[0].plot()
-plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_tod_plot_lissajous__reduced_full.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "OrionA_850_ccat_tod_plot_lissajous_reduced.png"),dpi=200,bbox_inches="tight")
+plt.close("all")
+
+tods[1].plot()
+plt.savefig(os.path.join(outdir, "OrionA_850_ccat_tod_plot_2_lissajous_reduced.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 
@@ -793,7 +821,7 @@ plt.ylabel("Degrees")
 plt.title("Telescope Pointing vs Time")
 plt.legend()
 plt.grid()
-plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_tod_pointing_lissajous__reduced_full.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "OrionA_850_ccat_tod_pointing_lissajous_reduced.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 
@@ -816,18 +844,18 @@ plt.ylabel("Degrees")
 plt.title("Telescope RA/Dec vs Time")
 plt.legend()
 plt.grid()
-plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_tod_radec_lissajous__reduced_full_scaled.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "OrionA_850_ccat_tod_radec_lissajous_reduced_scaled.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 
 from maria.mappers import BinMapper
 
 mapper = BinMapper(
-    center=input_map.center,
-    frame="ra/dec",
-    width=input_map.width,
-    height=input_map.height,
-    resolution=input_map.width / 128,
+    # center=input_map.center,
+    # frame="ra/dec",
+    # width=input_map.width,
+    # height=input_map.height,
+    # resolution=input_map.width / 128,
     tod_preprocessing={
         "remove_spline": {"knot_spacing": 60, "remove_el_gradient": True},
         "remove_modes": {"modes_to_remove": 1},
@@ -843,6 +871,6 @@ mapper.add_tods(tods)
 
 output_map = mapper.run()
 
-output_map.plot(nu_index= 0)
-plt.savefig(os.path.join(outdir, "SerpensE_850_ccat_output_lissajousBinMapper_map_2d__reduced_full_scaled.png"),dpi=200,bbox_inches="tight")
+output_map.plot(nu_index= [0,1])
+plt.savefig(os.path.join(outdir, "OrionA_850_ccat_output_lissajousBinMapper_map_2d_reduced_scaled_280_350.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
