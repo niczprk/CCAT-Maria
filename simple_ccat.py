@@ -440,6 +440,7 @@ def inst_effective_atm_temp_850GHz(mode: str, tau_0: float = None, pwv: float = 
         raise ValueError("Invalid mode. Choose 'inst' or 'fin_diff'.")
     return result  # convert to per degree
 
+
 # x = np.linspace(59.5, 60.5, 150) #degrees
 # y = inst_effective_atm_temp_850GHz(mode="fin_diff", pwv=0.38, el_deg=x, delta_el=1.0)
 
@@ -549,7 +550,7 @@ f280= Band(
 array = { #"n": 500, 
         "shape": "hexagon",
         "field_of_view": 1.3, #degrees...
-         "beam_spacing": 3.0,
+         "beam_spacing": 2.0,
          "primary_size": 6, #in meters...
          "bands": [f280], #, f220, f350, f410, f850],
         #  "packing": "triangular",
@@ -611,25 +612,25 @@ input_map = maria.map.load("/Users/zaparniukn/Documents/data/OrionA_20170726_850
 # input_map.data *= 50e1 #why
 
 print(input_map)
-input_map.to("Jy/sr").plot()
+input_map.to("Jy/sr").plot(cmap = "coolwarm")
 plt.savefig(os.path.join(outdir, "OrionA_850_reduced_input_map_280GHz.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 
 planner = Planner(target=input_map,
                   site=site,
-                  constraints={"el": (30, 85)})
+                  constraints={"el": (30, 80)})
 
 
 plans = planner.generate_plans(total_duration=1800,
                                max_chunk_duration=900,
                                scan_pattern="lissajous",
                                sample_rate=5,
-                               scan_options={"radius": input_map.width.deg / 3})
+                               scan_options={"radius": input_map.width.deg / 4})
 
 plans[0].plot()
 print(plans)
-plt.savefig(os.path.join(outdir, "OrionA_850_lissajous_reduced.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "OrionA_850_lissajous_reduced_1.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 # planner = Planner(start_time="2024-08-06T03:00:00",
@@ -664,11 +665,55 @@ print(sim)
 
 tods = sim.run()
 
+def chunk_summary(tod, i):
+    el = tod.el
+
+    if np.nanmax(np.abs(el)) < 10:
+        el = np.rad2deg(el)
+    el0 = np.nanmean(el, axis= 0)
+    airmass = 1/np.sin(np.deg2rad(el0))
+    print(f"TOD {i}: el median={np.nanmedian(el0):.2f} deg, "
+          f"airmass median={np.nanmedian(airmass):.2f}, "
+          f"el range=({np.nanpercentile(el0,5):.1f},{np.nanpercentile(el0,95):.1f})")
+
+
+print(tods)
+
+tod = tods[0]   # define this explicitly
+
+for k in tod.data.keys():
+    arr = np.asarray(tod.data[k])   # force numpy
+    print(
+        f"TOD data key: {k}, "
+        f"shape: {arr.shape}, "
+        f"dtype: {arr.dtype}, "
+        f"min={arr.min(): .3e}, "
+        f"max={arr.max(): .3e}, "
+        f"std={arr.std(): .3e}"
+    )
+
+print(tod)
+
+chunk_summary(tods[0], 0)
+chunk_summary(tods[1], 1)
+
+
+raise SystemExit("Stopping CCAT-prime Example Execution After Simulation.")
+
+
+
 print(tods)
 tods[0].plot()
-plt.savefig(os.path.join(outdir, "OrionA_850_ccat_tod_plot_lissajous_reduced.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "OrionA_850_ccat_tod_plot_reduced_1.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
+tods[1].plot()
+plt.savefig(os.path.join(outdir, "OrionA_850_ccat_tod_plot_reduced2_1.png"),dpi=200,bbox_inches="tight")
+plt.close("all")
+
+tods[-1].plot()
+plt.savefig(os.path.join(outdir, "OrionA_850_ccat_tod_plot_reduced_last_1.png"),dpi=200,bbox_inches="tight")
+plt.close("all")
 
 
 maria.undebug()
@@ -724,7 +769,7 @@ plt.ylabel("Degrees")
 plt.title("Telescope Pointing vs Time")
 plt.legend()
 plt.grid()
-plt.savefig(os.path.join(outdir, "OrionA_850_ccat_tod_pointing_lissajous_reduced.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "OrionA_850_ccat_tod_pointing_reduced_1.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 
@@ -747,7 +792,7 @@ plt.ylabel("Degrees")
 plt.title("Telescope RA/Dec vs Time")
 plt.legend()
 plt.grid()
-plt.savefig(os.path.join(outdir, "OrionA_850_ccat_tod_radec_lissajous_reduced_scaled.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "OrionA_850_ccat_tod_radec_reduced_1.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 
@@ -758,15 +803,15 @@ mapper = BinMapper(
     frame="ra/dec",
     width=input_map.width,
     height=input_map.height,
-    resolution=input_map.width / 128,
+    resolution=input_map.width / 64,
     tod_preprocessing={
-        "window": {"name": "tukey", "kwargs": {"alpha": 0.1}},
+        # "window": {"name": "tukey", "kwargs": {"alpha": 0.1}},
         "remove_spline": {"knot_spacing": 60, "remove_el_gradient": True},
         "remove_modes": {"modes_to_remove": 1},
     },
     map_postprocessing={
         "gaussian_filter": {"sigma": 1},
-        "median_filter": {"size": 1},
+        # "median_filter": {"size": 1},
     },
     units="mK_RJ",
     tods=tods,
@@ -777,5 +822,5 @@ mapper.add_tods(tods)
 output_map = mapper.run()
 
 output_map.plot(nu_index= [0], cmap="coolwarm")
-plt.savefig(os.path.join(outdir, "OrionA_850_ccat_output_lissajousBinMapper_map_2d_reduced_scaled_280.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "OrionA_850_ccat_output_BinMapper_map_2d_reduced_280_1.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
