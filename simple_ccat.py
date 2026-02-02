@@ -35,8 +35,9 @@ serpens_ccat_test_outputs_pers= "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CC
 
 serpens_ccat_test_outputs_pro="/Users/zaparniukn/Documents/maria/Serpens_ccat_test_outputs"
 
-outdir = serpens_ccat_test_outputs_pro
+outdir = serpens_ccat_test_outputs_pers
 
+os.makedirs(outdir, exist_ok=True)
 
 # Physical constants (SI)
 C = 299792458.0                 # m/s
@@ -49,18 +50,19 @@ JY = 1e-26                      # W m^-2 Hz^-1
 Arcsec2_to_Sr = (1/206265)**2
 Factor = 1e-3 / Arcsec2_to_Sr  # mJy/arcsec^2 to Jy/sr
 
-IN = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK.fits"
-OUT = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr.fits"
+# IN = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK.fits"
+# OUT = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr.fits"
 
 
-IN = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr.fits"
-OUT = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr_nan_filled.fits"
+# IN = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr.fits"
+# OUT = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr_nan_filled.fits"
 
 
-IN = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr.fits"
-OUT = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr_reduced_filled.fits"
+# IN = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr.fits"
+# OUT = "/Users/zaparniukn/Documents/data/SerpensE_20170724_850_DR3_ext_HK_JySr_reduced_filled.fits"
 
-
+# IN = "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/data/SerpensE_20170726_850_DR3_ext_HK.fits"
+# OUT = "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/data/SerpensE_20170726_850_DR3_ext_HK_JySr_reduced_filled.fits"
 
 def convert_fits_units(
         IN: str,
@@ -211,6 +213,25 @@ def clip_fits_nans(
 # OUT = "/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr_nan_filled.fits"
 
 
+
+IN = "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/data/OrionA_20170726_850_DR3_ext_HK.fits"
+OUT = "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/data/OrionA_20170726_850_DR3_ext_HK_JySr.fits"
+
+convert_fits_units(IN, OUT, input_unit="mJy/arcsec^2", output_unit="Jy/sr")
+
+IN = "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/data/OrionA_20170726_850_DR3_ext_HK_JySr.fits"
+OUT = "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/data/OrionA_20170726_850_DR3_ext_HK_JySr_nan_filled.fits"
+
+clip_fits_nans(IN, OUT)
+
+IN = "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/data/OrionA_20170726_850_DR3_ext_HK_JySr_nan_filled.fits"
+OUT = "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/data/OrionA_20170726_850_DR3_ext_HK_JySr_reduced_filled.fits"
+
+clip_fits_area(IN, OUT,
+               ra_min=83.2, ra_max=84.0,
+               dec_min=-6.0, dec_max=-4.8)
+
+# raise SystemExit("Stopping CCAT-prime Example Execution After FITS Prep.")
 
 def dB_dT(nu_GHz: float, T: float = T_CMB) -> float:
     """
@@ -441,19 +462,31 @@ def inst_effective_atm_temp_850GHz(mode: str, tau_0: float = None, pwv: float = 
     return result  # convert to per degree
 
 
-# x = np.linspace(59.5, 60.5, 150) #degrees
-# y = inst_effective_atm_temp_850GHz(mode="fin_diff", pwv=0.38, el_deg=x, delta_el=1.0)
+x = np.linspace(30, 80, 150) #degrees
 
-# plt.figure(figsize=(8,6))
-# plt.plot(x, y)
-# plt.xlabel("Elevation (degrees)")
-# plt.ylabel("Fin. Diff. dT/dz (K/deg)")
-# plt.title("Finite Difference dT/dz at 850 GHz vs Elevation")
-# plt.grid(True)
-# plt.show()
-# plt.savefig(os.path.join("/Users/zaparniukn/Documents/maria/", "fin_diff_dT_dz_850GHz_vs_elevation.png"), dpi=200, bbox_inches="tight")
-# plt.close()
+taus = np.linspace(0.05, 0.90, 18) #from 5% to 25% zenith opacity in steps of 5%
 
+plt.figure(figsize=(8,6))
+
+for tau in taus:
+    y = inst_effective_atm_temp_850GHz(mode="inst", tau_0=tau, el_deg=x, pwv=None)#, delta_el=1.0)
+    plt.plot(x, y, label=f"$\\tau_0$={tau:.2f}")
+
+plt.xlabel("Elevation (degrees)")
+plt.ylabel(r"$dT/d\mathrm{el}$ (K/deg)")   # you're returning per deg of elevation
+plt.title(r"Instantaneous $dT/d\mathrm{el}$ vs Elevation for varying $\tau_0$")
+plt.grid(True)
+plt.legend(ncol=2, fontsize=9)
+
+outfile = os.path.join(outdir, "inst_dT_del_tau0_0p05_to_0p90.png")
+plt.savefig(outfile, dpi=200, bbox_inches="tight")
+plt.close()
+
+print("Saved:", outfile)
+
+# raise SystemExit("Stopping CCAT-prime Example Execution Before Instrument Definition.")
+
+# "/Users/zaparniukn/Documents/maria/"
 
 # temp1 = effective_atm_temp_850GHz(pwv=0.38, el_deg=57.5)
 
@@ -591,7 +624,7 @@ site = maria.get_site("cerro_chajnantor", altitude=5600)
 # input_map = maria.map.load(fetch("maps/cluster2.fits"),
 #                           nu=280e9)
 
-input_map = maria.map.load("/Users/zaparniukn/Documents/data/OrionA_20170726_850_DR3_ext_HK_JySr_reduced_filled.fits",
+input_map = maria.map.load("/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/data/OrionA_20170726_850_DR3_ext_HK_JySr_reduced_filled.fits",
                           nu=280e9,
 )
 
@@ -617,20 +650,21 @@ plt.savefig(os.path.join(outdir, "OrionA_850_reduced_input_map_280GHz.png"),dpi=
 plt.close("all")
 
 
+
 planner = Planner(target=input_map,
                   site=site,
                   constraints={"el": (30, 80)})
 
 
-plans = planner.generate_plans(total_duration=1800,
+plans = planner.generate_plans(total_duration=900,
                                max_chunk_duration=900,
-                               scan_pattern="lissajous",
-                               sample_rate=5,
-                               scan_options={"radius": input_map.width.deg / 4})
+                               scan_pattern="daisy",
+                               sample_rate=15,
+                               scan_options={"radius": input_map.width.deg / 3})
 
 plans[0].plot()
 print(plans)
-plt.savefig(os.path.join(outdir, "OrionA_850_lissajous_reduced_1.png"),dpi=200,bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "OrionA_850_daisy_reduced_1.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
 # planner = Planner(start_time="2024-08-06T03:00:00",
@@ -657,7 +691,7 @@ sim = maria.Simulation(
     plans=plans,
     site=site,
     atmosphere = "2d",
-    atmosphere_kwargs = {"weather":{"pwv":0.38}},
+    atmosphere_kwargs = {"weather":{"pwv":1.44}},
     cmb = "generate", #in mm
     map = input_map)
 
@@ -695,10 +729,10 @@ for k in tod.data.keys():
 print(tod)
 
 chunk_summary(tods[0], 0)
-chunk_summary(tods[1], 1)
+# chunk_summary(tods[1], 1)
 
 
-raise SystemExit("Stopping CCAT-prime Example Execution After Simulation.")
+# raise SystemExit("Stopping CCAT-prime Example Execution After Simulation.")
 
 
 
@@ -707,13 +741,13 @@ tods[0].plot()
 plt.savefig(os.path.join(outdir, "OrionA_850_ccat_tod_plot_reduced_1.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
 
-tods[1].plot()
-plt.savefig(os.path.join(outdir, "OrionA_850_ccat_tod_plot_reduced2_1.png"),dpi=200,bbox_inches="tight")
-plt.close("all")
+# tods[1].plot()
+# plt.savefig(os.path.join(outdir, "OrionA_850_ccat_tod_plot_reduced2_1.png"),dpi=200,bbox_inches="tight")
+# plt.close("all")
 
-tods[-1].plot()
-plt.savefig(os.path.join(outdir, "OrionA_850_ccat_tod_plot_reduced_last_1.png"),dpi=200,bbox_inches="tight")
-plt.close("all")
+# tods[-1].plot()
+# plt.savefig(os.path.join(outdir, "OrionA_850_ccat_tod_plot_reduced_last_1.png"),dpi=200,bbox_inches="tight")
+# plt.close("all")
 
 
 maria.undebug()
@@ -743,7 +777,6 @@ input_map.center
 
 # raise SystemExit("Stopping CCAT-prime Example Execution Before Binning.")
 
-import matplotlib.pyplot as plt 
 
 tod = tods[0]
 
@@ -824,3 +857,27 @@ output_map = mapper.run()
 output_map.plot(nu_index= [0], cmap="coolwarm")
 plt.savefig(os.path.join(outdir, "OrionA_850_ccat_output_BinMapper_map_2d_reduced_280_1.png"),dpi=200,bbox_inches="tight")
 plt.close("all")
+
+
+tod = tods[0]
+
+el = tod.el
+if np.nanmax(np.abs(el)) < 10:
+    el = np.rad2deg(el)
+el0 = np.nanmean(el, axis= 0) # (time)
+
+#atmosphere
+
+T_atm = np.asarray(tod.data["atmosphere"]) # (det, time)
+T_atm0 = np.nanmean(T_atm, axis=0)  # (time)
+
+step = 10
+plt.figure(figsize=(8,6))
+plt.scatter(el0[::step], T_atm0[::step], s=1, alpha=0.5)
+plt.xlabel("Elevation (deg)")
+plt.ylabel("Atmospheric Temperature (K)")
+plt.title("Atmospheric Temperature vs Elevation $PWV = 1.44$ mm (TOD, Detector-Averaged)")
+plt.grid(True)
+plt.savefig(os.path.join(outdir, "OrionA_850_ccat_tod_atmosphere_vs_el_pwv144_1.png"),dpi=200,bbox_inches="tight")
+plt.close("all")
+print("Saved:", os.path.join(outdir, "OrionA_850_ccat_tod_atmosphere_vs_el_pwv144_1.png"))
