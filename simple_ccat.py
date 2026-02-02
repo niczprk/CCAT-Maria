@@ -1,3 +1,25 @@
+"""
+CCAT-prime Pipeline Simple Execution Script
+
+Workflow:
+1)Convert JCMT FITS maps from mJy/arcsec^2 to Jy/sr
+2)Fille NaN values in FITS maps
+3)Clip FITS maps to smaller area (if necessary)
+4)Plot dT/d(el) vs Elevation for varying tau_0
+5)Build Instrument + site
+6)Load input map, plan scan, simulate TOD
+7)TOD diagnostics + plots
+8)BinMappper map + plot
+9)Plot atmosphere vs elevation (TOD averaged)
+
+"""
+
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
 import maria
 import matplotlib
 matplotlib.use("Agg")
@@ -16,7 +38,38 @@ from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astropy.nddata import Cutout2D
 
-import numpy as np
+OUTDIR = Path("outputs/OrionA_ccat_test_outputs")
+
+DATA_DIR = Path("data")
+
+RAW_FITS = DATA_DIR / "OrionA_20170726_850_DR3_ext_HK.fits"
+JYSR_FITS = DATA_DIR / "OrionA_20170726_850_DR3_ext_HK_JySr.fits"
+FILLED_FITS = DATA_DIR / "OrionA_20170726_850_DR3_ext_HK_JySr_nan_filled.fits"
+REDUCED_FITS = DATA_DIR / "OrionA_20170726_850_DR3_ext_HK_JySr_reduced_filled.fits"
+
+CUTOUT = dict(ra_min=83.2, ra_max=84.0, dec_min=-6.0, dec_max=-4.8)
+
+NU_HZ = 280e9  # 280 GHz
+NU_GHZ = NU_HZ / 1e9
+
+PWV_MM = 0.38  # mm
+
+EL_LIMITS = (30, 80)  # degrees
+
+SIM_DURATION_S = 900  # seconds
+SAMPLE_RATE_HZ = 15  # Hz
+SCAN_PATTERN = "daisy"
+CHUNK_NUMBER = 1
+
+# -------- Physical Constants --------
+
+C = 299792458.0                 # m/s
+K_B = 1.380649e-23              # J/K
+H = 6.62607015e-34              # J*s
+T_CMB = 2.7255                  # K
+JY = 1e-26                      # W m^-2 Hz^-1
+
+
 
 
 outdir_pers= "/mnt/c/Users/nickz/OneDrive/Documents/GitHub/CCAT-Maria/maria_outputs"
