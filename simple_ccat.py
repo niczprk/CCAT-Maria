@@ -69,6 +69,130 @@ H = 6.62607015e-34              # J*s
 T_CMB = 2.7255                  # K
 JY = 1e-26                      # W m^-2 Hz^-1
 
+# -------- Utility Functions --------
+
+def savefig(outdir: Path, name: str, dpi: int = 200) -> Path:
+    outdir.mkdir(parents=True, exist_ok=True)
+    path = outdir / name
+    plt.savefig(path, dpi=dpi, bbox_inches="tight")
+    plt.close()
+    print("Saved:", path)
+    return path
+
+
+def first_image_hdu(hdul: fits.HDUList) -> tuple[int, fits.ImageHDU]:
+    """Return (index, hdu) for the first HDU that contains image-like data."""
+    idx = next(i for i, h in enumerate(hdul) if getattr(h, "data", None) is not None)
+    return idx, hdul[idx]
+
+
+def squeeze_to_2d(data: np.ndarray) -> np.ndarray:
+    """If data is shape (1, ny, nx), return (ny, nx). Otherwise return as-is."""
+    data = np.asarray(data)
+    if data.ndim == 3 and data.shape[0] == 1:
+        return data[0]
+    return data
+
+
+def to_deg_if_rad(x: np.ndarray) -> np.ndarray:
+    """Convert to degrees if values look like radians (heuristic)."""
+    x = np.asarray(x)
+    if np.nanmax(np.abs(x)) < 10.0:
+        return np.rad2deg(x)
+    return x
+
+
+# -------------------------
+# FITS tools
+# -------------------------
+
+def convert_fits_units(IN: Path, OUT: Path, input_unit: str, output_unit: str) -> None:
+    """
+    Convert FITS image units by applying a multiplicative factor.
+
+    Currently supports:
+      mJy/arcsec^2 -> Jy/sr
+    """
+    unit_conversions = {
+        ("mJy/arcsec^2", "Jy/sr"): (1e-3 / (1 / 206265) ** 2),
+    }
+
+    key = (input_unit, output_unit)
+    if key not in unit_conversions:
+        raise ValueError(f"Conversion {input_unit} -> {output_unit} not defined.")
+
+    factor = unit_conversions[key]
+
+    with fits.open(IN) as hdul:
+        _, hdu = first_image_hdu(hdul)
+        data = np.asarray(hdu.data, dtype=np.float64)
+
+        hdu.data = data * factor
+        hdu.header["BUNIT"] = output_unit
+        hdu.header.add_history(f"Converted from {input_unit} to {output_unit}")
+        hdu.header.add_history(f"Factor used: {factor:.6e} {output_unit} per ({input_unit})")
+
+        hdul.writeto(OUT, overwrite=True)
+
+    print("Wrote:", OUT)
+
+
+def clip_fits_nans(IN: Path, OUT: Path, fill_value: float = 0.0) -> None:
+    """Fill NaNs (and infinities) with fill_value and write new FITS."""
+    with fits.open(IN) as hdul:
+        _, hdu = first_image_hdu(hdul)
+        data2d = squeeze_to_2d(hdu.data)
+
+        data_filled = np.nan_to_num(data2d, nan=fill_value, posinf=fill_value, neginf=fill_value)
+        fits.PrimaryHDU(data=data_filled.astype(np.float32), header=hdu.header).writeto(OUT, overwrite=True)
+
+    print("Wrote:", OUT)
+
+
+def clip_fits_area(
+    IN: Path,
+    OUT: Path,
+    ra_min: float,
+    ra_max: float,
+    dec_min: float,
+    dec_max: float,
+) -> None:
+    """Cut a rectangular sky region from a FITS image (using WCS) and write it."""
+    ra_c = 0.5 * (ra_min + ra_max)
+    dec_c = 0.5 * (dec_min + dec_max)
+
+    # small-angle correction for RA width at dec_c
+    width_deg = (ra_max - ra_min) * np.cos(np.deg2rad(dec_c))
+    height_deg = (dec_max - dec_min)
+
+    with fits.open(IN) as hdul:
+        _, hdu = first_image_hdu(hdul)
+        hdr = hdu.header
+        wcs = WCS(hdr)
+
+        data2d = squeeze_to_2d(hdu.data)
+
+        center = SkyCoord(ra_c * u.deg, dec_c * u.deg, frame="icrs")
+        size = u.Quantity((height_deg, width_deg), u.deg)  # (ny, nx)
+
+        cutout = Cutout2D(
+            data2d,
+            position=center,
+            size=size,
+            wcs=wcs,
+            mode="partial",
+            fill_value=np.nan,
+        )
+
+        new_hdr = cutout.wcs.to_header()
+        new_hdr["BUNIT"] = hdr.get("BUNIT", "Jy/sr")
+
+        fits.PrimaryHDU(data=cutout.data.astype(np.float32), header=new_hdr).writeto(OUT, overwrite=True)
+
+    print("Wrote:", OUT)
+    print("Patch center (deg):", ra_c, dec_c)
+    print("Patch size (deg):", height_deg, width_deg)
+
 
 
 
