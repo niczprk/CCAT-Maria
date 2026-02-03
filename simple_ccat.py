@@ -59,7 +59,7 @@ EL_LIMITS = (30, 80)  # degrees
 SIM_DURATION_S = 900  # seconds
 SAMPLE_RATE_HZ = 15  # Hz
 SCAN_PATTERN = "daisy"
-CHUNK_NUMBER = 1
+CHUNK_NUMBER = 0
 
 # -------- Physical Constants --------
 
@@ -406,7 +406,11 @@ def main(atm_plot: bool = True, map_type="BinMapper", tod_diagnostics=True) -> N
 
     print(sim)
     tods=sim.run()
+
     print(tods)
+    tods[0].plot()
+    plt.savefig(os.path.join(OUTDIR, f"OrionA_tod_plot_{CHUNK_NUMBER}.png"),dpi=200,bbox_inches="tight")
+    plt.close("all")
 
 
     # ---------- TOD Diagnostics -----------
@@ -426,7 +430,7 @@ def main(atm_plot: bool = True, map_type="BinMapper", tod_diagnostics=True) -> N
     if tod_diagnostics:
         for i, tod in enumerate(tods):
             chunk_summary(tod, i)
-            
+
         for k in tod0.data.keys():
             arr = np.asarray(tod0.data[k])
             print(
@@ -489,7 +493,7 @@ def main(atm_plot: bool = True, map_type="BinMapper", tod_diagnostics=True) -> N
     # Only BinMapper implemented here for simplicity
     # I will add MaximumLikelihoodMapper later
 
-    if map_type_u == "BINMAPPER":
+    if map_type == "BINMAPPER":
         mapper = BinMapper(
             center=input_map.center,
             frame="ra/dec",
@@ -509,15 +513,15 @@ def main(atm_plot: bool = True, map_type="BinMapper", tod_diagnostics=True) -> N
         output_map.plot(nu_index=[0], cmap="coolwarm")
         savefig(OUTDIR, "OrionA_output_BinMapper.png")
 
-    elif map_type_u in ("NONE", "SKIP", "NO"):
+    elif map_type in ("NONE", "SKIP", "NO"):
         print("[skip] mapmaking")
 
     else:
         raise ValueError(f"Unknown map_type={map_type!r}. Try 'BinMapper' or 'skip'.")
 
 if __name__ == "__main__":
-    main(atm_plot=False, map_type="skip", tod_diagnostics=False)
-    # main(atm_plot=True, map_type="BinMapper", tod_diagnostics=True)
+    # main(atm_plot=False, map_type="skip", tod_diagnostics=False)
+    main(atm_plot=True, map_type="BinMapper", tod_diagnostics=True)
 
 raise SystemExit("Stopping After Main Execution Pipeline.")
 
