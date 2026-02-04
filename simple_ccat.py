@@ -60,7 +60,7 @@ CUTOUT = CUTOUT_ORIONA
 NU_HZ = 280e9  # 280 GHz
 NU_GHZ = NU_HZ / 1e9
 
-PWV_MM = 1.52  #  mm, precip water vapour
+PWV_MM = 0.38  #  mm, precip water vapour
 
 EL_LIMITS = (30, 80)  # degrees
 
@@ -321,7 +321,7 @@ def inst_effective_atm_temp_850GHz(
 
     el = np.asarray(el_deg)
     z_rad = np.deg2rad(90.0 - el)
-    tau_z = -tau_0 / np.cos(z_rad)
+    tau_z = tau_0 / np.cos(z_rad)
 
     if mode == "inst":
         # dTeff/dz(rad) then convert to per-degree elevation:
@@ -329,7 +329,7 @@ def inst_effective_atm_temp_850GHz(
         dT_dz_rad = T_0 * np.exp(-tau_z) * (tau_0 * np.sin(z_rad) / (np.cos(z_rad) ** 2))
 
         dT_del_rad = dT_dz_rad
-        return dT_del_rad * (np.pi / 180.0)  # K per degree
+        return - dT_del_rad * (np.pi / 180.0)  # K per degree
 
     if mode == "fin_diff":
         # central difference in degrees
@@ -510,7 +510,7 @@ def main(
     # Scan Planning
     # -----------------------------
     planner = Planner(
-        start_time=START_TIME,
+        # start_time=START_TIME,
         target=input_map,
         site=site,
         constraints={"el": EL_LIMITS},
@@ -628,27 +628,43 @@ def main(
     elv = el0[m]
     Tv = T_atm0[m]
 
-    a, b = np.polyfit(elv, Tv, deg=1)
+    el_ref = np.nanmedian(elv)
+    T_ref = np.nanmedian(Tv)
+    
+    tau0_est = tau_0_from_atm_temp(
+        T_atm=T_ref,
+        el_deg=el_ref,
+        T_0=T_0
+    )
 
-    print(f"Atmosphere vs Elevation fit: T_atm = {a:.4f} * el + {b:.4f} [K]")
+    print(f"Inferred tau_0 from TOD-avg atmosphere: {tau0_est:.4f} (PWV={PWV_MM:.2f} mm)")
+
+    dTdel_ref = inst_effective_atm_temp_850GHz(
+        mode="inst",
+        tau_0=tau0_est,
+        el_deg=el_ref,
+        T_0=T_0
+    )
+
+    print(f"Expected dT/del at el={el_ref:.2f} deg: {dTdel_ref:.6f} K/deg")
+
+    # a, b = np.polyfit(elv, Tv, deg=1)
+
+    # print(f"Atmosphere vs Elevation fit: T_atm = {a:.4f} * el + {b:.4f} [K]")
 
     xfit = np.linspace(elv.min(), elv.max(), 100)
-    yfit = a * xfit + b
-
-    el0 = np.nanmean(to_deg_if_rad(tod0.el), axis=0)
-    T_atm0 = np.nanmean(np.asarray(tod0.data["atmosphere"]), axis=0)
+    yfit = T_ref + dTdel_ref * (xfit - el_ref)
 
     step = 10
     plt.figure(figsize=(8, 6))
-    plt.scatter(el0[::step], T_atm0[::step], s=1, alpha=0.5, label="TOD samples")
-    plt.plot(xfit, yfit, color="red", label="Linear fit")
+    plt.scatter(elv[::step], Tv[::step], s=1, alpha=0.5, label="TOD samples")
+    plt.plot(xfit, yfit, lw=2, alpha= 0.75, color="red", label=fr"Model tangent ($\tau_0={tau0_est:.4f}$) fit")
     plt.xlabel("Elevation (deg)")
     plt.ylabel("Atmospheric Temperature (K)")
     plt.title(f"Atmospheric Temperature vs Elevation (PWV={PWV_MM:.2f} mm, TOD-avg)")
     plt.grid(True)
     plt.legend()
-    savefig(OUTDIR, f"{PREFIX}_atmosphere_vs_el_PWV{PWV_MM:.2f}mm.png")
-
+    savefig(OUTDIR, f"{PREFIX}_atmosphere_vs_el_tau0_inferred_tangent_PWV{PWV_MM:.2f}.png")
     # -----------------------------
     # BinMapper Mapmaking
     # -----------------------------
