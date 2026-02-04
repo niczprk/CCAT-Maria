@@ -321,7 +321,7 @@ def inst_effective_atm_temp_850GHz(
 
     el = np.asarray(el_deg)
     z_rad = np.deg2rad(90.0 - el)
-    tau_z = tau_0 / np.cos(z_rad)
+    tau_z = -tau_0 / np.cos(z_rad)
 
     if mode == "inst":
         # dTeff/dz(rad) then convert to per-degree elevation:
@@ -619,16 +619,34 @@ def main(
     # -----------------------------
     # Atmosphere vs elevation (TOD averaged)
     # -----------------------------
+
+    el0 = np.nanmean(to_deg_if_rad(tod0.el), axis=0)
+    T_atm0 = np.nanmean(np.asarray(tod0.data["atmosphere"]), axis=0)
+
+    m = np.isfinite(el0) & np.isfinite(T_atm0) & (T_atm0 > 0.0) & (T_atm0 < 0.98 * T_0)
+
+    elv = el0[m]
+    Tv = T_atm0[m]
+
+    a, b = np.polyfit(elv, Tv, deg=1)
+
+    print(f"Atmosphere vs Elevation fit: T_atm = {a:.4f} * el + {b:.4f} [K]")
+
+    xfit = np.linspace(elv.min(), elv.max(), 100)
+    yfit = a * xfit + b
+
     el0 = np.nanmean(to_deg_if_rad(tod0.el), axis=0)
     T_atm0 = np.nanmean(np.asarray(tod0.data["atmosphere"]), axis=0)
 
     step = 10
     plt.figure(figsize=(8, 6))
-    plt.scatter(el0[::step], T_atm0[::step], s=1, alpha=0.5)
+    plt.scatter(el0[::step], T_atm0[::step], s=1, alpha=0.5, label="TOD samples")
+    plt.plot(xfit, yfit, color="red", label="Linear fit")
     plt.xlabel("Elevation (deg)")
     plt.ylabel("Atmospheric Temperature (K)")
     plt.title(f"Atmospheric Temperature vs Elevation (PWV={PWV_MM:.2f} mm, TOD-avg)")
     plt.grid(True)
+    plt.legend()
     savefig(OUTDIR, f"{PREFIX}_atmosphere_vs_el_PWV{PWV_MM:.2f}mm.png")
 
     # -----------------------------
@@ -659,7 +677,20 @@ def main(
 
 if __name__ == "__main__":
     # main(atm_plot=False, map_type="skip", tod_diagnostics=False)
-    main(atm_plot=True, run_mode= "only_atm" , temp_mode="inst", map_type="None", tod_diagnostics=False)
+    main(atm_plot=True, run_mode= "all" , temp_mode="inst", map_type="Binmapper", tod_diagnostics=True)
+
+    # compare_maria_atm_temp(T_atm=20.0, el_deg= 33.5, mode="inst", T_0=T_0)
+
+    # plt.figure(figsize=(8, 6))
+    # x = np.linspace(30, 33.5, 15)
+    # a = effective_atm_temp_850GHz(pwv=PWV_MM, tau_0 = 0.0409, el_deg=x)
+    # plt.plot(x, a, label=fr"$\tau_0$={0.0409:.4f}")
+    # plt.xlabel("Elevation (deg)")
+    # plt.ylabel(r"$T_\mathrm{eff}$ (K)")
+    # plt.title(r"Effective Atmospheric Temperature $T_\mathrm{eff}$ vs Elevation for varying $\tau_0$")
+    # plt.grid(True)
+    # plt.legend(ncol=2, fontsize=9)
+    # savefig(OUTDIR, "Teff_tau0_0p0409.png")
 
 raise SystemExit("Stopping After Main Execution Pipeline.")
 
