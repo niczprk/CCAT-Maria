@@ -38,24 +38,36 @@ from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astropy.nddata import Cutout2D
 
-OUTDIR = Path("outputs/OrionA_ccat_test_outputs")
+
+
+PREFIX = "OrionA"
+
+OUTDIR = Path(f"outputs/{PREFIX}_ccat_test_outputs")
 
 DATA_DIR = Path("data")
 
-RAW_FITS = DATA_DIR / "OrionA_20170726_850_DR3_ext_HK.fits"
-JYSR_FITS = DATA_DIR / "OrionA_20170726_850_DR3_ext_HK_JySr.fits"
-FILLED_FITS = DATA_DIR / "OrionA_20170726_850_DR3_ext_HK_JySr_nan_filled.fits"
-REDUCED_FITS = DATA_DIR / "OrionA_20170726_850_DR3_ext_HK_JySr_reduced_filled.fits"
+RAW_FITS = DATA_DIR / f"{PREFIX}_20170726_850_DR3_ext_HK.fits"
+JYSR_FITS = DATA_DIR / f"{PREFIX}_20170726_850_DR3_ext_HK_JySr.fits"
+FILLED_FITS = DATA_DIR / f"{PREFIX}_20170726_850_DR3_ext_HK_JySr_nan_filled.fits"
+REDUCED_FITS = DATA_DIR / f"{PREFIX}_20170726_850_DR3_ext_HK_JySr_reduced_filled.fits"
 
-CUTOUT = dict(ra_min=83.2, ra_max=84.0, dec_min=-6.0, dec_max=-4.8)
+CUTOUT_ORIONA = dict(ra_min=83.2, ra_max=84.0, dec_min=-6.0, dec_max=-4.8)
+
+CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0)
+
+CUTOUT = CUTOUT_ORIONA
 
 NU_HZ = 280e9  # 280 GHz
 NU_GHZ = NU_HZ / 1e9
 
-PWV_MM = 0.38  # mm
+PWV_MM = 1.52  # mm
 
 EL_LIMITS = (30, 80)  # degrees
 
+# -------- Simulation Parameters --------
+
+START_TIME = "2026-01-28T23:19:08.196"
+TOTAL_DURATION_S = 900  # seconds
 SIM_DURATION_S = 900  # seconds
 SAMPLE_RATE_HZ = 15  # Hz
 SCAN_PATTERN = "daisy"
@@ -294,25 +306,23 @@ def inst_effective_atm_temp_850GHz(
 
     if mode == "inst":
         # dTeff/dz(rad) then convert to per-degree elevation:
-        # Teff = T0(1-exp(-tau0/cos z))
-        # dTeff/dz = T0 * exp(-tauz) * (tau0 * sin z / cos^2 z)
+
         dT_dz_rad = T_0 * np.exp(-tau_z) * (tau_0 * np.sin(z_rad) / (np.cos(z_rad) ** 2))
-        # elevation increases -> z decreases, but we want dT/d(el). since z = 90 - el:
-        # dT/d(el) = - dT/dz. Here magnitude is what's usually plotted; keep sign consistent:
-        dT_del_rad = -dT_dz_rad
+
+        dT_del_rad = dT_dz_rad
         return dT_del_rad * (np.pi / 180.0)  # K per degree
 
     if mode == "fin_diff":
         # central difference in degrees
         teff_plus = effective_atm_temp_850GHz(pwv=pwv if pwv is not None else 0.0, el_deg=el + 0.5 * delta_el, T_0=T_0)
         teff_minus = effective_atm_temp_850GHz(pwv=pwv if pwv is not None else 0.0, el_deg=el - 0.5 * delta_el, T_0=T_0)
-        return (teff_plus - teff_minus) / delta_el
+        return np.abs((teff_plus - teff_minus) / delta_el)
 
     raise ValueError("Invalid mode. Choose 'inst' or 'fin_diff'.")
 
 # ---------- Main Execution Pipeline -----------
 
-def main(atm_plot: bool = True, map_type="BinMapper", tod_diagnostics=True) -> None:
+def main(atm_plot: bool = True, temp_mode: str ="inst", map_type: str = "BinMapper", tod_diagnostics: bool=True) -> None:
     OUTDIR.mkdir(parents=True, exist_ok=True)
 
     if not RAW_FITS.exists():
@@ -326,24 +336,24 @@ def main(atm_plot: bool = True, map_type="BinMapper", tod_diagnostics=True) -> N
 
     if atm_plot:
         x = np.linspace(EL_LIMITS[0], EL_LIMITS[1], 150)
-        taus = np.linspace(0.05, 0.90, 18)
+        taus = np.linspace(0.05, 0.25, 10)
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
-            y = inst_effective_atm_temp_850GHz(mode="inst", tau_0=float(tau), el_deg=x)
+            y = inst_effective_atm_temp_850GHz(mode= temp_mode, tau_0=float(tau), el_deg=x)
             plt.plot(x, y, label=fr"$\tau_0$={tau:.2f}")
         plt.xlabel("Elevation (deg)")
         plt.ylabel(r"$dT/d\mathrm{el}$ (K/deg)")
         plt.title(r"Instantaneous $dT/d\mathrm{el}$ vs Elevation for varying $\tau_0$")
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
-        savefig(OUTDIR, "inst_dT_del_tau0_0p05_to_0p90.png")
+        savefig(OUTDIR, "inst_dT_del_tau0_0p05_to_0p25.png")
     else:
         print("[skip] atmosphere derivative plot")
     
 # ---------- Instrument -----------
     f280 = Band(
-        center=290e9,
+        center=280e9,
         width=40e9,
         NET_CMB=13e-6,
         knee=1.0,
@@ -362,7 +372,7 @@ def main(atm_plot: bool = True, map_type="BinMapper", tod_diagnostics=True) -> N
     instrument = maria.get_instrument(array=array_cfg)
     print(instrument)
     instrument.plot()
-    savefig(OUTDIR, "instrument_overview.png")
+    savefig(OUTDIR, f"{PREFIX}_instrument_overview.png")
 
     # ---------- Site and Map -----------
 
@@ -371,17 +381,17 @@ def main(atm_plot: bool = True, map_type="BinMapper", tod_diagnostics=True) -> N
 
     print(input_map)
     input_map.to("Jy/sr").plot(cmap="coolwarm")
-    savefig(OUTDIR, "OrionA_input_map_JySr.png")
-
+    savefig(OUTDIR, f"{PREFIX}_input_map_JySr_PWV{PWV_MM:.2f}.png")
     # ---------- Scan Planning -----------
 
     planner = Planner(
+        start_time = START_TIME,
         target = input_map,
         site = site,
         constraints={"el": EL_LIMITS}
     )
     plans = planner.generate_plans(
-        total_duration=SIM_DURATION_S,
+        total_duration=TOTAL_DURATION_S,
         max_chunk_duration=SIM_DURATION_S,
         scan_pattern=SCAN_PATTERN,
         sample_rate=SAMPLE_RATE_HZ,
@@ -390,7 +400,7 @@ def main(atm_plot: bool = True, map_type="BinMapper", tod_diagnostics=True) -> N
 
     plans[0].plot()
     print(plans)
-    savefig(OUTDIR, "OrionA_daisy_plan.png")
+    savefig(OUTDIR, f"{PREFIX}_daisy_plan_PWV{PWV_MM:.2f}.png")
 
     # --------- TOD Simulation -----------
 
@@ -409,7 +419,7 @@ def main(atm_plot: bool = True, map_type="BinMapper", tod_diagnostics=True) -> N
 
     print(tods)
     tods[0].plot()
-    plt.savefig(os.path.join(OUTDIR, f"OrionA_tod_plot_{CHUNK_NUMBER}.png"),dpi=200,bbox_inches="tight")
+    plt.savefig(os.path.join(OUTDIR, f"{PREFIX}_tod_plot_{CHUNK_NUMBER}.png"),dpi=200,bbox_inches="tight")
     plt.close("all")
 
 
@@ -439,7 +449,7 @@ def main(atm_plot: bool = True, map_type="BinMapper", tod_diagnostics=True) -> N
             )
 
         tod0.plot()
-        savefig(OUTDIR, f"OrionA_tod_plot_chunk{CHUNK_NUMBER}.png")
+        savefig(OUTDIR, f"{PREFIX}_tod_plot_chunk{CHUNK_NUMBER}_PWV{PWV_MM:.2f}.png")
     else:
         print("[skip] tod diagnostics")
 
@@ -458,7 +468,7 @@ def main(atm_plot: bool = True, map_type="BinMapper", tod_diagnostics=True) -> N
     plt.title("Telescope Pointing vs Time")
     plt.legend()
     plt.grid(True)
-    savefig(OUTDIR, "OrionA_tod_pointing_azel.png")
+    savefig(OUTDIR, f"{PREFIX}_tod_pointing_azel_PWV{PWV_MM:.2f}.png")
 
     ra0 = np.nanmean(to_deg_if_rad(tod0.ra), axis=0)
     dec0 = np.nanmean(to_deg_if_rad(tod0.dec), axis=0)
@@ -471,7 +481,7 @@ def main(atm_plot: bool = True, map_type="BinMapper", tod_diagnostics=True) -> N
     plt.title("Telescope RA/Dec vs Time")
     plt.legend()
     plt.grid(True)
-    savefig(OUTDIR, "OrionA_tod_pointing_radec.png")
+    savefig(OUTDIR, f"{PREFIX}_tod_pointing_radec_PWV{PWV_MM:.2f}.png")
 
     # --- Atmosphere vs elevation (TOD averaged) ---
     el0 = np.nanmean(to_deg_if_rad(tod0.el), axis=0)
@@ -484,7 +494,7 @@ def main(atm_plot: bool = True, map_type="BinMapper", tod_diagnostics=True) -> N
     plt.ylabel("Atmospheric Temperature (K)")
     plt.title(f"Atmospheric Temperature vs Elevation (PWV={PWV_MM:.2f} mm, TOD-avg)")
     plt.grid(True)
-    savefig(OUTDIR, f"atmosphere_vs_el_pwv{PWV_MM:.2f}mm.png")
+    savefig(OUTDIR, f"{PREFIX}_atmosphere_vs_el_PWV{PWV_MM:.2f}mm.png")
 
     # --- BinMapper Mapmaking ---
 
@@ -495,13 +505,14 @@ def main(atm_plot: bool = True, map_type="BinMapper", tod_diagnostics=True) -> N
 
     if map_type == "BINMAPPER":
         mapper = BinMapper(
-            center=input_map.center,
-            frame="ra/dec",
-            width=input_map.width,
-            height=input_map.height,
-            resolution=input_map.width / 64,
+            # comment or uncomment depending on whether to use input map geometry and set resolution
+            # center=input_map.center,
+            # frame="ra/dec",
+            # width=input_map.width,
+            # height=input_map.height,
+            # resolution=input_map.width / 128,
             tod_preprocessing={
-                "remove_spline": {"knot_spacing": 60, "remove_el_gradient": True},
+                "remove_spline": {"knot_spacing": 60, "remove_el_gradient": True}, #does not work well for maps with incomplete coverage (i.e. NaN values)
                 "remove_modes": {"modes_to_remove": 1},
             },
             map_postprocessing={"gaussian_filter": {"sigma": 1}},
@@ -511,7 +522,7 @@ def main(atm_plot: bool = True, map_type="BinMapper", tod_diagnostics=True) -> N
 
         output_map = mapper.run()
         output_map.plot(nu_index=[0], cmap="coolwarm")
-        savefig(OUTDIR, "OrionA_output_BinMapper.png")
+        savefig(OUTDIR, f"{PREFIX}_output_BinMapper_PWV{PWV_MM:.2f}.png")
 
     elif map_type in ("NONE", "SKIP", "NO"):
         print("[skip] mapmaking")
@@ -521,7 +532,7 @@ def main(atm_plot: bool = True, map_type="BinMapper", tod_diagnostics=True) -> N
 
 if __name__ == "__main__":
     # main(atm_plot=False, map_type="skip", tod_diagnostics=False)
-    main(atm_plot=True, map_type="BinMapper", tod_diagnostics=True)
+    main(atm_plot=True, temp_mode="inst", map_type="BinMapper", tod_diagnostics=True)
 
 raise SystemExit("Stopping After Main Execution Pipeline.")
 
