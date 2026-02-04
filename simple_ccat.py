@@ -60,9 +60,11 @@ CUTOUT = CUTOUT_ORIONA
 NU_HZ = 280e9  # 280 GHz
 NU_GHZ = NU_HZ / 1e9
 
-PWV_MM = 1.52  # mm
+PWV_MM = 1.52  #  mm, precip water vapour
 
 EL_LIMITS = (30, 80)  # degrees
+
+T_0 = 280.0 #K, atmospheric ground temp
 
 # -------- Simulation Parameters --------
 
@@ -274,12 +276,29 @@ def convert_noise_equivalent(
     raise ValueError("Invalid conversion types. Options: NEI, NET, NEFD.")
 
 
-def effective_atm_temp_850GHz(*, pwv: float, el_deg: float | np.ndarray, T_0: float = 300.0) -> np.ndarray:
+def effective_atm_temp_850GHz(*, pwv: float, tau_0: float = None, el_deg: float | np.ndarray, T_0: float = T_0) -> np.ndarray:
     """Effective atmospheric temperature Teff = T0(1-exp(-tau(el))) using JCMT tau0(PWV)."""
-    tau_0 = 0.179 * (pwv + 0.337)
+    if tau_0 is not None:
+        tau_0 = float(tau_0)
+        
+    elif tau_0 is None:
+        tau_0 = 0.179 * (pwv + 0.337)
+
+    elif pwv is None:
+        raise ValueError("Provide either tau_0 or pwv.")
+    else:
+        raise ValueError("Provide either tau_0 or pwv.")
+    
     z_rad = np.deg2rad(90.0 - np.asarray(el_deg))
     tau_z = tau_0 / np.cos(z_rad)
     return T_0 * (1.0 - np.exp(-tau_z))
+
+def tau_0_from_atm_temp(T_atm: float, el_deg: float, T_0: float = T_0) -> float:
+    """Given measured atmospheric temperature T_atm at elevation el_deg, return tau_0."""
+    z_rad = np.deg2rad(90.0 - el_deg)
+    tau_el = -np.log(1.0 - T_atm / T_0)
+    tau_0 = tau_el * np.cos(z_rad)
+    return tau_0
 
 
 def inst_effective_atm_temp_850GHz(
@@ -289,7 +308,7 @@ def inst_effective_atm_temp_850GHz(
     pwv: float | None = None,
     el_deg: float | np.ndarray,
     delta_el: float = 1.0,
-    T_0: float = 300.0,
+    T_0: float = T_0,
 ) -> np.ndarray:
     """
     Return dTeff/d(el) in K/deg, either analytic ("inst") or finite-difference ("fin_diff").
@@ -320,27 +339,67 @@ def inst_effective_atm_temp_850GHz(
 
     raise ValueError("Invalid mode. Choose 'inst' or 'fin_diff'.")
 
+def compare_maria_atm_temp(
+        T_atm: float,
+        el_deg: float,
+        mode: str = "inst",
+        T_0: float = T_0
+):
+    """
+    Compare maria atmosphere temperature derivative dT/del at given T_atm and el_deg. 
+    Input a measured atmospheric temperature T_atm at elevation el_deg, and compute tau_0 from that.
+    Then compute dT/del using the inst_effective_atm_temp_850GHz function and print the result along with the corresponding tau_0.
+    This can be used to check if the maria atmosphere model is consistent with the expected atmospheric approximations
+    for temperature and its elevation dependence.
+    """
+
+    tau_0 = tau_0_from_atm_temp(
+        T_atm=T_atm,
+        el_deg=el_deg,
+        T_0=T_0
+    )
+    dT_del = inst_effective_atm_temp_850GHz(
+        mode=mode,
+        tau_0=tau_0,
+        el_deg=el_deg,
+        T_0=T_0
+    )
+    print(f"Atm dT/del: {dT_del:.6f} K/deg for /mathrm$tau_0$={tau_0:.4f} at el={el_deg:.4f} deg")
+
 # ---------- Main Execution Pipeline -----------
 
-def main(atm_plot: bool = True, temp_mode: str ="inst", map_type: str = "BinMapper", tod_diagnostics: bool=True) -> None:
+def main(
+    run_mode: str = "only_atm",
+    atm_plot: bool = True,
+    temp_mode: str = "inst",
+    map_type: str = "BinMapper",
+    tod_diagnostics: bool = True,
+) -> None:
+    """
+    run_mode options:
+      - "only_atm": run ONLY the atmospheric plots, then exit
+      - "only_sim": run simulation/mapmaking pipeline ONLY (skip atmospheric plots)
+      - "all": run atmospheric plots + simulation/mapmaking pipeline
+    """
     OUTDIR.mkdir(parents=True, exist_ok=True)
 
-    if not RAW_FITS.exists():
-        raise FileNotFoundError(f"Input FITS file not found: {RAW_FITS}")
+    run_mode = run_mode.lower().strip()
+    if run_mode not in ("only_atm", "only_sim", "all"):
+        raise ValueError("run_mode must be one of: 'only_atm', 'only_sim', 'all'")
 
-    convert_fits_units(RAW_FITS, JYSR_FITS, input_unit="mJy/arcsec^2", output_unit="Jy/sr")
-    clip_fits_nans(JYSR_FITS, FILLED_FITS, fill_value=0.0)
-    clip_fits_area(FILLED_FITS, REDUCED_FITS, **CUTOUT)
+    do_atm = (run_mode in ("only_atm", "all")) and atm_plot
+    do_sim = (run_mode in ("only_sim", "all"))
 
-    # atmosphere derivation plots
-
-    if atm_plot:
+    # -----------------------------
+    # Atmosphere plots helper
+    # -----------------------------
+    def run_atmosphere_plots() -> None:
         x = np.linspace(EL_LIMITS[0], EL_LIMITS[1], 150)
-        taus = np.linspace(0.05, 0.25, 10)
+        taus = np.linspace(0.05, 0.25, 5)
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
-            y = inst_effective_atm_temp_850GHz(mode= temp_mode, tau_0=float(tau), el_deg=x)
+            y = inst_effective_atm_temp_850GHz(mode=temp_mode, tau_0=float(tau), el_deg=x)
             plt.plot(x, y, label=fr"$\tau_0$={tau:.2f}")
         plt.xlabel("Elevation (deg)")
         plt.ylabel(r"$dT/d\mathrm{el}$ (K/deg)")
@@ -348,19 +407,82 @@ def main(atm_plot: bool = True, temp_mode: str ="inst", map_type: str = "BinMapp
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
         savefig(OUTDIR, "inst_dT_del_tau0_0p05_to_0p25.png")
+
+        plt.figure(figsize=(8, 6))
+        for tau in taus:
+            a = effective_atm_temp_850GHz(pwv=PWV_MM, tau_0=float(tau), el_deg=x)
+            plt.plot(x, a, label=fr"$\tau_0$={tau:.2f}")
+        plt.xlabel("Elevation (deg)")
+        plt.ylabel(r"$T_\mathrm{eff}$ (K)")
+        plt.title(r"Effective Atmospheric Temperature $T_\mathrm{eff}$ vs Elevation for varying $\tau_0$")
+        plt.grid(True)
+        plt.legend(ncol=2, fontsize=9)
+        savefig(OUTDIR, "Teff_tau0_0p05_to_0p25.png")
+
+        plt.figure(figsize=(8, 6))
+        for tau in taus:
+            y = inst_effective_atm_temp_850GHz(mode=temp_mode, tau_0=float(tau), el_deg=x)
+            a = effective_atm_temp_850GHz(pwv=PWV_MM, tau_0=float(tau), el_deg=x)
+            plt.plot(x, y / a, label=fr"$\tau_0$={tau:.2f}")
+        plt.xlabel("Elevation (deg)")
+        plt.ylabel(r"$\frac{dT/d\mathrm{el}}{T_\mathrm{eff}}$")
+        plt.title(r"Fractional Atmospheric Temperature Derivative vs Elevation for varying $\tau_0$")
+        plt.grid(True)
+        plt.legend(ncol=2, fontsize=9)
+        savefig(OUTDIR, "frac_dT_del_Teff_tau0_0p05_to_0p25.png")
+
+        plt.figure(figsize=(8, 6))
+        for tau in taus:
+            y = inst_effective_atm_temp_850GHz(mode=temp_mode, tau_0=float(tau), el_deg=x)
+            a = effective_atm_temp_850GHz(pwv=PWV_MM, tau_0=float(tau), el_deg=x)
+            plt.plot(x, 1- (y / a), label=fr"$\tau_0$={tau:.2f}")
+        plt.xlabel("Elevation (deg)")
+        plt.ylabel(r"$1-\frac{dT/d\mathrm{el}}{T_\mathrm{eff}}$")
+        plt.title(r"Fractional Diff Atmospheric Temperature Derivative vs Elevation for varying $\tau_0$")
+        plt.grid(True)
+        plt.legend(ncol=2, fontsize=9)
+        savefig(OUTDIR, "frac_diff_dT_del_Teff_tau0_0p05_to_0p25.png")
+
+    # -----------------------------
+    # 1) Atmosphere-only mode
+    # -----------------------------
+    if run_mode == "only_atm":
+        if do_atm:
+            run_atmosphere_plots()
+        else:
+            print("[skip] atmosphere plots (atm_plot=False)")
+        return  # <-- stop here: do not run sim/mapmaking
+
+    # -----------------------------
+    # 2) FITS prep + Simulation modes
+    #    ("only_sim" or "all")
+    # -----------------------------
+    if not RAW_FITS.exists():
+        raise FileNotFoundError(f"Input FITS file not found: {RAW_FITS}")
+
+    # FITS prep
+    convert_fits_units(RAW_FITS, JYSR_FITS, input_unit="mJy/arcsec^2", output_unit="Jy/sr")
+    clip_fits_nans(JYSR_FITS, FILLED_FITS, fill_value=0.0)
+    clip_fits_area(FILLED_FITS, REDUCED_FITS, **CUTOUT)
+
+    # Atmosphere plots for "all"
+    if do_atm:
+        run_atmosphere_plots()
     else:
-        print("[skip] atmosphere derivative plot")
-    
-# ---------- Instrument -----------
+        print("[skip] atmosphere plots (run_mode='only_sim' or atm_plot=False)")
+
+    # -----------------------------
+    # Instrument
+    # -----------------------------
     f280 = Band(
         center=280e9,
         width=40e9,
         NET_CMB=13e-6,
         knee=1.0,
-        gain_error=5e-2
+        gain_error=5e-2,
     )
 
-    array_cfg= {
+    array_cfg = {
         "shape": "hexagon",
         "field_of_view": 1.3,
         "beam_spacing": 2.0,
@@ -374,36 +496,41 @@ def main(atm_plot: bool = True, temp_mode: str ="inst", map_type: str = "BinMapp
     instrument.plot()
     savefig(OUTDIR, f"{PREFIX}_instrument_overview.png")
 
-    # ---------- Site and Map -----------
-
+    # -----------------------------
+    # Site and Map
+    # -----------------------------
     site = maria.get_site("cerro_chajnantor", altitude=5600)
     input_map = maria.map.load(str(REDUCED_FITS), nu=NU_HZ)
 
     print(input_map)
     input_map.to("Jy/sr").plot(cmap="coolwarm")
     savefig(OUTDIR, f"{PREFIX}_input_map_JySr_PWV{PWV_MM:.2f}.png")
-    # ---------- Scan Planning -----------
 
+    # -----------------------------
+    # Scan Planning
+    # -----------------------------
     planner = Planner(
-        start_time = START_TIME,
-        target = input_map,
-        site = site,
-        constraints={"el": EL_LIMITS}
+        start_time=START_TIME,
+        target=input_map,
+        site=site,
+        constraints={"el": EL_LIMITS},
     )
+
     plans = planner.generate_plans(
         total_duration=TOTAL_DURATION_S,
         max_chunk_duration=SIM_DURATION_S,
         scan_pattern=SCAN_PATTERN,
         sample_rate=SAMPLE_RATE_HZ,
-        scan_options={"radius": input_map.width.deg / 3.0}  # degrees
+        scan_options={"radius": input_map.width.deg / 3.0},
     )
 
     plans[0].plot()
     print(plans)
     savefig(OUTDIR, f"{PREFIX}_daisy_plan_PWV{PWV_MM:.2f}.png")
 
-    # --------- TOD Simulation -----------
-
+    # -----------------------------
+    # TOD Simulation
+    # -----------------------------
     sim = maria.Simulation(
         instrument=instrument,
         plans=plans,
@@ -415,16 +542,20 @@ def main(atm_plot: bool = True, temp_mode: str ="inst", map_type: str = "BinMapp
     )
 
     print(sim)
-    tods=sim.run()
-
+    tods = sim.run()
     print(tods)
+
     tods[0].plot()
-    plt.savefig(os.path.join(OUTDIR, f"{PREFIX}_tod_plot_{CHUNK_NUMBER}.png"),dpi=200,bbox_inches="tight")
+    plt.savefig(
+        os.path.join(OUTDIR, f"{PREFIX}_tod_plot_{CHUNK_NUMBER}.png"),
+        dpi=200,
+        bbox_inches="tight",
+    )
     plt.close("all")
 
-
-    # ---------- TOD Diagnostics -----------
-
+    # -----------------------------
+    # TOD Diagnostics
+    # -----------------------------
     def chunk_summary(tod, i: int) -> None:
         el = to_deg_if_rad(tod.el)
         el0 = np.nanmean(el, axis=0)
@@ -453,7 +584,9 @@ def main(atm_plot: bool = True, temp_mode: str ="inst", map_type: str = "BinMapp
     else:
         print("[skip] tod diagnostics")
 
-    # --- Pointing plots (az/el and ra/dec) ---
+    # -----------------------------
+    # Pointing plots (az/el and ra/dec)
+    # -----------------------------
     t = np.asarray(tod0.time)
     tsec = t - t[0]
 
@@ -483,7 +616,9 @@ def main(atm_plot: bool = True, temp_mode: str ="inst", map_type: str = "BinMapp
     plt.grid(True)
     savefig(OUTDIR, f"{PREFIX}_tod_pointing_radec_PWV{PWV_MM:.2f}.png")
 
-    # --- Atmosphere vs elevation (TOD averaged) ---
+    # -----------------------------
+    # Atmosphere vs elevation (TOD averaged)
+    # -----------------------------
     el0 = np.nanmean(to_deg_if_rad(tod0.el), axis=0)
     T_atm0 = np.nanmean(np.asarray(tod0.data["atmosphere"]), axis=0)
 
@@ -496,23 +631,15 @@ def main(atm_plot: bool = True, temp_mode: str ="inst", map_type: str = "BinMapp
     plt.grid(True)
     savefig(OUTDIR, f"{PREFIX}_atmosphere_vs_el_PWV{PWV_MM:.2f}mm.png")
 
-    # --- BinMapper Mapmaking ---
+    # -----------------------------
+    # BinMapper Mapmaking
+    # -----------------------------
+    map_type_norm = map_type.lower().strip()
 
-    map_type = map_type.upper()
-
-    # Only BinMapper implemented here for simplicity
-    # I will add MaximumLikelihoodMapper later
-
-    if map_type == "BINMAPPER":
+    if map_type_norm == "binmapper":
         mapper = BinMapper(
-            # comment or uncomment depending on whether to use input map geometry and set resolution
-            # center=input_map.center,
-            # frame="ra/dec",
-            # width=input_map.width,
-            # height=input_map.height,
-            # resolution=input_map.width / 128,
             tod_preprocessing={
-                "remove_spline": {"knot_spacing": 60, "remove_el_gradient": True}, #does not work well for maps with incomplete coverage (i.e. NaN values)
+                "remove_spline": {"knot_spacing": 60, "remove_el_gradient": True},
                 "remove_modes": {"modes_to_remove": 1},
             },
             map_postprocessing={"gaussian_filter": {"sigma": 1}},
@@ -524,7 +651,7 @@ def main(atm_plot: bool = True, temp_mode: str ="inst", map_type: str = "BinMapp
         output_map.plot(nu_index=[0], cmap="coolwarm")
         savefig(OUTDIR, f"{PREFIX}_output_BinMapper_PWV{PWV_MM:.2f}.png")
 
-    elif map_type in ("NONE", "SKIP", "NO"):
+    elif map_type_norm in ("none", "skip", "no"):
         print("[skip] mapmaking")
 
     else:
@@ -532,7 +659,7 @@ def main(atm_plot: bool = True, temp_mode: str ="inst", map_type: str = "BinMapp
 
 if __name__ == "__main__":
     # main(atm_plot=False, map_type="skip", tod_diagnostics=False)
-    main(atm_plot=True, temp_mode="inst", map_type="BinMapper", tod_diagnostics=True)
+    main(atm_plot=True, run_mode= "only_atm" , temp_mode="inst", map_type="None", tod_diagnostics=False)
 
 raise SystemExit("Stopping After Main Execution Pipeline.")
 
