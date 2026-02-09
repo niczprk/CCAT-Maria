@@ -282,7 +282,7 @@ def effective_atm_temp_850GHz(*, pwv: float, tau_0: float = None, el_deg: float 
         tau_0 = float(tau_0)
         
     elif tau_0 is None:
-        tau_0 = 0.179 * (pwv + 0.337)
+        tau_0 = 0.179 * (pwv + 0.337) #SCUBA-2 JCMT 850 micron tau0(PWV) relation
 
     elif pwv is None:
         raise ValueError("Provide either tau_0 or pwv.")
@@ -625,6 +625,8 @@ def main(
     # Atmosphere vs elevation (TOD averaged)
     # -----------------------------
 
+
+
     el0 = np.nanmean(to_deg_if_rad(tod0.el), axis=0)
     T_atm0 = np.nanmean(np.asarray(tod0.data["atmosphere"]), axis=0)
 
@@ -633,20 +635,28 @@ def main(
     elv = el0[m]
     Tv = T_atm0[m]
 
-    el_ref = np.nanmedian(elv)
-    T_ref = np.nanmedian(Tv)
-    
-    tau0_est = tau_0_from_atm_temp(
-        T_atm=T_ref,
-        el_deg=el_ref,
-        T_0=T_0
+    tau0_samples = tau_0_from_atm_temp(
+        T_atm = Tv,
+        el_deg = elv,
+        T_0 = T_0
     )
 
-    print(f"Inferred tau_0 from TOD-avg atmosphere: {tau0_est:.4f} (PWV={PWV_MM:.2f} mm)")
+    tau0_ref = np.median(tau0_samples)
+
+    # el_ref = np.nanmedian(elv)
+    # T_ref = np.nanmedian(Tv)
+    
+    # tau0_est = tau_0_from_atm_temp(
+    #     T_atm=T_ref,
+    #     el_deg=el_ref,
+    #     T_0=T_0
+    # )
+
+    print(f"Inferred tau_0 from TOD-avg atmosphere: {tau0_ref:.4f} (PWV={PWV_MM:.2f} mm)")
 
     dTdel_ref = inst_effective_atm_temp_850GHz(
         mode="inst",
-        tau_0=tau0_est,
+        tau_0=tau0_ref,
         el_deg=el_ref,
         T_0=T_0
     )
@@ -663,7 +673,10 @@ def main(
     step = 10
     plt.figure(figsize=(8, 6))
     plt.scatter(elv[::step], Tv[::step], s=1, alpha=0.5, label="TOD samples")
-    plt.plot(xfit, yfit, lw=2, alpha= 0.75, color="red", label=fr"Model tangent ($\tau_0={tau0_est:.4f}$) fit")
+    plt.plot(xfit, yfit, lw=2, alpha= 0.75, color="red", label=
+        fr"Model tangent "
+        fr"($\tau_0={tau0_est:.4f}$, "
+        fr"$dT/d\mathrm{{el}}={dTdel_ref:.4f}\,\mathrm{{K/deg}}$)")
     plt.xlabel("Elevation (deg)")
     plt.ylabel("Atmospheric Temperature (K)")
     plt.title(f"Atmospheric Temperature vs Elevation (PWV={PWV_MM:.2f} mm, TOD-avg)")
