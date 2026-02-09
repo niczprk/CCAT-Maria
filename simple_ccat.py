@@ -643,8 +643,8 @@ def main(
 
     tau0_ref = np.median(tau0_samples)
 
-    # el_ref = np.nanmedian(elv)
-    # T_ref = np.nanmedian(Tv)
+    el_ref = np.nanmedian(elv)
+    T_ref = np.nanmedian(Tv)
     
     # tau0_est = tau_0_from_atm_temp(
     #     T_atm=T_ref,
@@ -675,7 +675,7 @@ def main(
     plt.scatter(elv[::step], Tv[::step], s=1, alpha=0.5, label="TOD samples")
     plt.plot(xfit, yfit, lw=2, alpha= 0.75, color="red", label=
         fr"Model tangent "
-        fr"($\tau_0={tau0_est:.4f}$, "
+        fr"($\tau_0={tau0_ref:.4f}$, "
         fr"$dT/d\mathrm{{el}}={dTdel_ref:.4f}\,\mathrm{{K/deg}}$)")
     plt.xlabel("Elevation (deg)")
     plt.ylabel("Atmospheric Temperature (K)")
