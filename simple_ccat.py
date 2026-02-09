@@ -60,7 +60,7 @@ CUTOUT = CUTOUT_ORIONA
 NU_HZ = 280e9  # 280 GHz
 NU_GHZ = NU_HZ / 1e9
 
-PWV_MM = 0.38  #  mm, precip water vapour
+PWV_MM = 4.56  #  mm, precip water vapour
 
 EL_LIMITS = (30, 80)  # degrees
 
@@ -500,6 +500,11 @@ def main(
     # Site and Map
     # -----------------------------
     site = maria.get_site("cerro_chajnantor", altitude=5600)
+
+    print(site)
+    site.plot()
+    savefig(OUTDIR, f"{PREFIX}_site_overview.png")
+
     input_map = maria.map.load(str(REDUCED_FITS), nu=NU_HZ)
 
     print(input_map)
