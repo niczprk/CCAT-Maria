@@ -62,15 +62,15 @@ NU_GHZ = NU_HZ / 1e9
 
 PWV_MM = 4.56  #  mm, precip water vapour
 
-EL_LIMITS = (30, 80)  # degrees
+EL_LIMITS = (30, 70)  # degrees
 
 T_0 = 278.868 #K, atmospheric ground temp
 
 # -------- Simulation Parameters --------
 
-START_TIME = "2022-02-10T06:00:00"
-TOTAL_DURATION_S = 900  # seconds
-SIM_DURATION_S = 900  # seconds
+START_TIME = "2022-02-10T18:00:00"
+TOTAL_DURATION_S = 1800  # seconds
+SIM_DURATION_S = 1800  # seconds
 SAMPLE_RATE_HZ = 15  # Hz
 SCAN_PATTERN = "daisy"
 CHUNK_NUMBER = 0
@@ -712,18 +712,5 @@ def main(
 if __name__ == "__main__":
     # main(atm_plot=False, map_type="skip", tod_diagnostics=False)
     main(atm_plot=True, run_mode= "all" , temp_mode="inst", map_type="Binmapper", tod_diagnostics=True)
-
-    # compare_maria_atm_temp(T_atm=20.0, el_deg= 33.5, mode="inst", T_0=T_0)
-
-    # plt.figure(figsize=(8, 6))
-    # x = np.linspace(30, 33.5, 15)
-    # a = effective_atm_temp_850GHz(pwv=PWV_MM, tau_0 = 0.0409, el_deg=x)
-    # plt.plot(x, a, label=fr"$\tau_0$={0.0409:.4f}")
-    # plt.xlabel("Elevation (deg)")
-    # plt.ylabel(r"$T_\mathrm{eff}$ (K)")
-    # plt.title(r"Effective Atmospheric Temperature $T_\mathrm{eff}$ vs Elevation for varying $\tau_0$")
-    # plt.grid(True)
-    # plt.legend(ncol=2, fontsize=9)
-    # savefig(OUTDIR, "Teff_tau0_0p0409.png")
 
 raise SystemExit("Stopping After Main Execution Pipeline.")
