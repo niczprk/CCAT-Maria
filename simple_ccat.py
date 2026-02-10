@@ -60,7 +60,9 @@ CUTOUT = CUTOUT_ORIONA
 NU_HZ = 280e9  # 280 GHz
 NU_GHZ = NU_HZ / 1e9
 
-PWV_MM = 4.56  #  mm, precip water vapour
+PWV_MM = 0.36  #  mm, precip water vapour
+
+# 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values
 
 EL_LIMITS = (30, 70)  # degrees
 
@@ -68,7 +70,14 @@ T_0 = 278.868 #K, atmospheric ground temp
 
 # -------- Simulation Parameters --------
 
-START_TIME = "2022-02-10T18:00:00"
+START_TIME = "2022-02-10T18:55:00"
+
+#"2022-02-10T20:30:00" for around 60 degrees 
+#"2022-02-10T18:55:00" for roughly 45 degrees
+#"2022-02-10T18:30:00" for roughly 40 degrees
+#"2022-02-10T17:00:00" for roughly 30 degrees
+ 
+
 TOTAL_DURATION_S = 1800  # seconds
 SIM_DURATION_S = 1800  # seconds
 SAMPLE_RATE_HZ = 15  # Hz
@@ -374,6 +383,7 @@ def main(
     temp_mode: str = "inst",
     map_type: str = "BinMapper",
     tod_diagnostics: bool = True,
+    pwv_mm: float = PWV_MM,
 ) -> None:
     """
     run_mode options:
@@ -410,7 +420,7 @@ def main(
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
-            a = effective_atm_temp_850GHz(pwv=PWV_MM, tau_0=float(tau), el_deg=x)
+            a = effective_atm_temp_850GHz(pwv=pwv_mm, tau_0=float(tau), el_deg=x)
             plt.plot(x, a, label=fr"$\tau_0$={tau:.2f}")
         plt.xlabel("Elevation (deg)")
         plt.ylabel(r"$T_\mathrm{eff}$ (K)")
@@ -422,7 +432,7 @@ def main(
         plt.figure(figsize=(8, 6))
         for tau in taus:
             y = inst_effective_atm_temp_850GHz(mode=temp_mode, tau_0=float(tau), el_deg=x)
-            a = effective_atm_temp_850GHz(pwv=PWV_MM, tau_0=float(tau), el_deg=x)
+            a = effective_atm_temp_850GHz(pwv=pwv_mm, tau_0=float(tau), el_deg=x)
             plt.plot(x, y / a, label=fr"$\tau_0$={tau:.2f}")
         plt.xlabel("Elevation (deg)")
         plt.ylabel(r"$\frac{dT/d\mathrm{el}}{T_\mathrm{eff}}$")
@@ -434,7 +444,7 @@ def main(
         plt.figure(figsize=(8, 6))
         for tau in taus:
             y = inst_effective_atm_temp_850GHz(mode=temp_mode, tau_0=float(tau), el_deg=x)
-            a = effective_atm_temp_850GHz(pwv=PWV_MM, tau_0=float(tau), el_deg=x)
+            a = effective_atm_temp_850GHz(pwv=pwv_mm, tau_0=float(tau), el_deg=x)
             plt.plot(x, 1- (y / a), label=fr"$\tau_0$={tau:.2f}")
         plt.xlabel("Elevation (deg)")
         plt.ylabel(r"$1-\frac{dT/d\mathrm{el}}{T_\mathrm{eff}}$")
@@ -509,7 +519,7 @@ def main(
 
     print(input_map)
     input_map.to("Jy/sr").plot(cmap="coolwarm")
-    savefig(OUTDIR, f"{PREFIX}_input_map_JySr_PWV{PWV_MM:.2f}.png")
+    savefig(OUTDIR, f"{PREFIX}_input_map_JySr_PWV{pwv_mm:.2f}.png")
 
     # -----------------------------
     # Scan Planning
@@ -531,7 +541,7 @@ def main(
 
     plans[0].plot()
     print(plans)
-    savefig(OUTDIR, f"{PREFIX}_daisy_plan_PWV{PWV_MM:.2f}.png")
+    savefig(OUTDIR, f"{PREFIX}_daisy_plan_PWV{pwv_mm:.2f}.png")
 
     # -----------------------------
     # TOD Simulation
@@ -541,7 +551,7 @@ def main(
         plans=plans,
         site=site,
         atmosphere="2d",
-        atmosphere_kwargs={"weather": {"pwv": PWV_MM}},
+        atmosphere_kwargs={"weather": {"pwv": pwv_mm}},
         cmb="generate",
         map=input_map,
     )
@@ -585,7 +595,7 @@ def main(
             )
 
         tod0.plot()
-        savefig(OUTDIR, f"{PREFIX}_tod_plot_chunk{CHUNK_NUMBER}_PWV{PWV_MM:.2f}.png")
+        savefig(OUTDIR, f"{PREFIX}_tod_plot_chunk{CHUNK_NUMBER}_PWV{pwv_mm:.2f}.png")
     else:
         print("[skip] tod diagnostics")
 
@@ -606,7 +616,7 @@ def main(
     plt.title("Telescope Pointing vs Time")
     plt.legend()
     plt.grid(True)
-    savefig(OUTDIR, f"{PREFIX}_tod_pointing_azel_PWV{PWV_MM:.2f}.png")
+    savefig(OUTDIR, f"{PREFIX}_tod_pointing_azel_PWV{pwv_mm:.2f}.png")
 
     ra0 = np.nanmean(to_deg_if_rad(tod0.ra), axis=0)
     dec0 = np.nanmean(to_deg_if_rad(tod0.dec), axis=0)
@@ -619,7 +629,7 @@ def main(
     plt.title("Telescope RA/Dec vs Time")
     plt.legend()
     plt.grid(True)
-    savefig(OUTDIR, f"{PREFIX}_tod_pointing_radec_PWV{PWV_MM:.2f}.png")
+    savefig(OUTDIR, f"{PREFIX}_tod_pointing_radec_PWV{pwv_mm:.2f}.png")
 
     # -----------------------------
     # Atmosphere vs elevation (TOD averaged)
@@ -652,7 +662,7 @@ def main(
     #     T_0=T_0
     # )
 
-    print(f"Inferred tau_0 from TOD-avg atmosphere: {tau0_ref:.4f} (PWV={PWV_MM:.2f} mm)")
+    print(f"Inferred tau_0 from TOD-avg atmosphere: {tau0_ref:.4f} (PWV={pwv_mm:.2f} mm)")
 
     dTdel_ref = inst_effective_atm_temp_850GHz(
         mode="inst",
@@ -679,10 +689,10 @@ def main(
         fr"$dT/d\mathrm{{el}}={dTdel_ref:.4f}\,\mathrm{{K/deg}}$)")
     plt.xlabel("Elevation (deg)")
     plt.ylabel("Atmospheric Temperature (K)")
-    plt.title(f"Atmospheric Temperature vs Elevation (PWV={PWV_MM:.2f} mm, TOD-avg)")
+    plt.title(f"Atmospheric Temperature vs Elevation (PWV={pwv_mm:.2f} mm, TOD-avg)")
     plt.grid(True)
     plt.legend()
-    savefig(OUTDIR, f"{PREFIX}_atmosphere_vs_el_tau0_inferred_tangent_PWV{PWV_MM:.2f}.png")
+    savefig(OUTDIR, f"{PREFIX}_atmosphere_vs_el_tau0_{tau0_ref:.4f}_inferred_tangent_PWV{pwv_mm:.2f}.png")
     # -----------------------------
     # BinMapper Mapmaking
     # -----------------------------
@@ -701,7 +711,7 @@ def main(
 
         output_map = mapper.run()
         output_map.plot(nu_index=[0], cmap="coolwarm")
-        savefig(OUTDIR, f"{PREFIX}_output_BinMapper_PWV{PWV_MM:.2f}.png")
+        savefig(OUTDIR, f"{PREFIX}_output_BinMapper_PWV{pwv_mm:.2f}.png")
 
     elif map_type_norm in ("none", "skip", "no"):
         print("[skip] mapmaking")
@@ -709,8 +719,53 @@ def main(
     else:
         raise ValueError(f"Unknown map_type={map_type!r}. Try 'BinMapper' or 'skip'.")
 
+    return tau0_ref, el_ref
+
 if __name__ == "__main__":
     # main(atm_plot=False, map_type="skip", tod_diagnostics=False)
-    main(atm_plot=True, run_mode= "all" , temp_mode="inst", map_type="Binmapper", tod_diagnostics=True)
+    # main(atm_plot=True, run_mode= "all" , temp_mode="inst", map_type="Binmapper", tod_diagnostics=True)
 
-raise SystemExit("Stopping After Main Execution Pipeline.")
+
+
+    pwv_list = np.linspace(0.36, 1.28, 5) # mm, from Q1 to Q3 zenith PMV values
+
+    tau0_list = []
+
+    for pwv in pwv_list:
+
+        pwv_mm = pwv
+        print(f"\n=== Running for PWV={pwv_mm:.2f} mm ===")
+
+        tau0_ref, el_ref = main(atm_plot=False, run_mode= "only_sim" , temp_mode="inst", map_type="skip", tod_diagnostics=True, pwv_mm=pwv_mm)
+        tau0_list.append(tau0_ref)
+
+        print(f"Finished run for PWV={pwv_mm:.2f} mm, inferred tau_0={tau0_ref:.4f}")
+
+    pwv_arr = np.asarray(pwv_list, dtype=np.float64)
+    tau0_arr = np.asarray(tau0_list, dtype=np.float64)
+
+    m = np.isfinite(pwv_arr) & np.isfinite(tau0_arr)
+    pwv_arr = pwv_arr[m]
+    tau0_arr = tau0_arr[m]
+
+    A, B = np.polyfit(pwv_arr, tau0_arr, deg=1)
+    print(f"Linear fit: tau_0 = {A:.4f} * PWV + {B:.4f}")
+
+    plt.figure(figsize=(8, 6))
+
+    plt.plot(pwv_arr, tau0_arr, "o", label="Inferred $\\tau_0$ from TOD")
+
+    pwv_fit = np.linspace(pwv_arr.min(), pwv_arr.max(), 100)
+    tau0_fit = A * pwv_fit + B
+    plt.plot(pwv_fit, tau0_fit,lw=2, ls = "-", label=f"Linear Fit: $\\tau_0$ = {A:.4f} * PWV + {B:.4f}")
+
+    plt.xlabel("PWV (mm)")
+    plt.ylabel("Inferred $\\tau_0$")
+    plt.title("Inferred $\\tau_0$ vs PWV")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(OUTDIR / f"inferred_tau0_vs_PWV_N{len(pwv_arr)}_elmedian_{el_ref:.2f}.png", dpi=200, bbox_inches="tight")
+    plt.close()
+
+
+    raise SystemExit("Stopping After Main Execution Pipeline.")
