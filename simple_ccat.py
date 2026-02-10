@@ -60,7 +60,7 @@ CUTOUT = CUTOUT_ORIONA
 NU_HZ = 280e9  # 280 GHz
 NU_GHZ = NU_HZ / 1e9
 
-PWV_MM = 0.38  #  mm, precip water vapour
+PWV_MM = 0.76  #  mm, precip water vapour
 
 EL_LIMITS = (30, 80)  # degrees
 
@@ -68,7 +68,7 @@ T_0 = 278.868 #K, atmospheric ground temp
 
 # -------- Simulation Parameters --------
 
-START_TIME = "2022-02-10T06:00:00"
+START_TIME = "2022-02-11T12:00:00"
 TOTAL_DURATION_S = 900  # seconds
 SIM_DURATION_S = 900  # seconds
 SAMPLE_RATE_HZ = 15  # Hz
@@ -638,8 +638,15 @@ def main(
 
     tau0_ref = np.median(tau0_samples)
 
-    # el_ref = np.nanmedian(elv)
-    # T_ref = np.nanmedian(Tv)
+    el_ref = np.nanmedian(elv)
+    T_ref = np.nanmedian(Tv)
+
+    dTdel_ref = inst_effective_atm_temp_850GHz(
+        mode="inst",
+        tau_0=tau0_ref,
+        el_deg=el_ref,
+        T_0=T_0
+    )
     
     # tau0_est = tau_0_from_atm_temp(
     #     T_atm=T_ref,
@@ -648,14 +655,6 @@ def main(
     # )
 
     print(f"Inferred tau_0 from TOD-avg atmosphere: {tau0_ref:.4f} (PWV={PWV_MM:.2f} mm)")
-
-    dTdel_ref = inst_effective_atm_temp_850GHz(
-        mode="inst",
-        tau_0=tau0_ref,
-        el_deg=el_ref,
-        T_0=T_0
-    )
-
     print(f"Expected dT/del at el={el_ref:.2f} deg: {dTdel_ref:.6f} K/deg")
 
     # a, b = np.polyfit(elv, Tv, deg=1)
@@ -670,14 +669,14 @@ def main(
     plt.scatter(elv[::step], Tv[::step], s=1, alpha=0.5, label="TOD samples")
     plt.plot(xfit, yfit, lw=2, alpha= 0.75, color="red", label=
         fr"Model tangent "
-        fr"($\tau_0={tau0_est:.4f}$, "
+        fr"($\tau_0={tau0_ref:.4f}$, "
         fr"$dT/d\mathrm{{el}}={dTdel_ref:.4f}\,\mathrm{{K/deg}}$)")
     plt.xlabel("Elevation (deg)")
     plt.ylabel("Atmospheric Temperature (K)")
     plt.title(f"Atmospheric Temperature vs Elevation (PWV={PWV_MM:.2f} mm, TOD-avg)")
     plt.grid(True)
     plt.legend()
-    savefig(OUTDIR, f"{PREFIX}_atmosphere_vs_el_tau0_inferred_tangent_PWV{PWV_MM:.2f}.png")
+    savefig(OUTDIR, f"{PREFIX}_atmosphere_vs_el_elref{el_ref:.2f}_tau0_inferred_tangent_PWV{PWV_MM:.2f}.png")
     # -----------------------------
     # BinMapper Mapmaking
     # -----------------------------
