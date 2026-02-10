@@ -13,9 +13,17 @@ Workflow:
 9)Plot atmosphere vs elevation (TOD averaged)
 
 """
-
-
 from __future__ import annotations
+
+
+import os, sys
+
+os.environ["OMP_NUM_THREADS"] = "1"  # Avoid multithreading issues in numpy/scipy
+os.environ["MKL_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
+os.environ["OPENBLAS_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
+os.environ["NUMEXPR_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
+
+
 
 from pathlib import Path
 
@@ -30,7 +38,7 @@ from maria import fetch
 from maria import Planner
 from maria.mappers import BinMapper
 
-import os, sys
+
 
 from astropy.io import fits
 from astropy.wcs import WCS
@@ -70,7 +78,7 @@ T_0 = 278.868 #K, atmospheric ground temp
 
 # -------- Simulation Parameters --------
 
-START_TIME = "2022-02-10T18:55:00"
+START_TIME = "2022-02-10T23:00:00"
 
 #"2022-02-10T20:30:00" for around 60 degrees 
 #"2022-02-10T18:55:00" for roughly 45 degrees
@@ -467,13 +475,21 @@ def main(
     # 2) FITS prep + Simulation modes
     #    ("only_sim" or "all")
     # -----------------------------
-    if not RAW_FITS.exists():
-        raise FileNotFoundError(f"Input FITS file not found: {RAW_FITS}")
 
-    # FITS prep
-    convert_fits_units(RAW_FITS, JYSR_FITS, input_unit="mJy/arcsec^2", output_unit="Jy/sr")
-    clip_fits_nans(JYSR_FITS, FILLED_FITS, fill_value=0.0)
-    clip_fits_area(FILLED_FITS, REDUCED_FITS, **CUTOUT)
+    if not REDUCED_FITS.exists():
+        convert_fits_units(RAW_FITS, JYSR_FITS, input_unit="mJy/arcsec^2", output_unit="Jy/sr")
+        clip_fits_nans(JYSR_FITS, FILLED_FITS, fill_value=0.0)
+        clip_fits_area(FILLED_FITS, REDUCED_FITS, **CUTOUT)
+    else:
+        print(f"Reduced FITS already exists: {REDUCED_FITS}. Skipping FITS prep steps.")
+
+    # if not RAW_FITS.exists():
+    #     raise FileNotFoundError(f"Input FITS file not found: {RAW_FITS}")
+
+    # # FITS prep
+    # convert_fits_units(RAW_FITS, JYSR_FITS, input_unit="mJy/arcsec^2", output_unit="Jy/sr")
+    # clip_fits_nans(JYSR_FITS, FILLED_FITS, fill_value=0.0)
+    # clip_fits_area(FILLED_FITS, REDUCED_FITS, **CUTOUT)
 
     # Atmosphere plots for "all"
     if do_atm:
@@ -722,6 +738,12 @@ def main(
     return tau0_ref, el_ref
 
 if __name__ == "__main__":
+    import multiprocessing as mp
+    import gc
+
+    mp.set_start_method("spawn", force = True)
+
+
     # main(atm_plot=False, map_type="skip", tod_diagnostics=False)
     # main(atm_plot=True, run_mode= "all" , temp_mode="inst", map_type="Binmapper", tod_diagnostics=True)
 
@@ -740,6 +762,13 @@ if __name__ == "__main__":
         tau0_list.append(tau0_ref)
 
         print(f"Finished run for PWV={pwv_mm:.2f} mm, inferred tau_0={tau0_ref:.4f}")
+
+        gc.collect() # Clean up memory after each run
+    
+    el_refs = np.asarray(el_ref, dtype=np.float64)
+    print(f"Elevation references across runs: {el_refs.min():.2f} to {el_refs.max():.2f} deg, median={np.median(el_refs):.2f} deg")
+    el_ref_name = float(np.median(el_refs))
+
 
     pwv_arr = np.asarray(pwv_list, dtype=np.float64)
     tau0_arr = np.asarray(tau0_list, dtype=np.float64)
@@ -763,8 +792,9 @@ if __name__ == "__main__":
     plt.ylabel("Inferred $\\tau_0$")
     plt.title("Inferred $\\tau_0$ vs PWV")
     plt.grid(True)
+    plt.legend()
     plt.tight_layout()
-    plt.savefig(OUTDIR / f"inferred_tau0_vs_PWV_N{len(pwv_arr)}_elmedian_{el_ref:.2f}.png", dpi=200, bbox_inches="tight")
+    plt.savefig(OUTDIR / f"inferred_tau0_vs_PWV_N{len(pwv_arr)}_elmedian_{el_ref_name:.2f}.png", dpi=200, bbox_inches="tight")
     plt.close()
 
 
