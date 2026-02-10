@@ -78,7 +78,7 @@ T_0 = 278.868 #K, atmospheric ground temp
 
 # -------- Simulation Parameters --------
 
-START_TIME = "2022-02-10T23:00:00"
+START_TIME = "2022-02-10T17:00:00"
 
 #"2022-02-10T20:30:00" for around 60 degrees 
 #"2022-02-10T18:55:00" for roughly 45 degrees
@@ -738,6 +738,11 @@ def main(
     return tau0_ref, el_ref
 
 if __name__ == "__main__":
+
+    import time
+
+    starting_time = time.perf_counter()
+     
     import multiprocessing as mp
     import gc
 
@@ -755,13 +760,17 @@ if __name__ == "__main__":
 
     for pwv in pwv_list:
 
+        main_start_time = time.perf_counter()
+
         pwv_mm = pwv
         print(f"\n=== Running for PWV={pwv_mm:.2f} mm ===")
 
         tau0_ref, el_ref = main(atm_plot=False, run_mode= "only_sim" , temp_mode="inst", map_type="skip", tod_diagnostics=True, pwv_mm=pwv_mm)
         tau0_list.append(tau0_ref)
 
-        print(f"Finished run for PWV={pwv_mm:.2f} mm, inferred tau_0={tau0_ref:.4f}")
+        main_end_time = time.perf_counter()
+        main_elapsed_time = main_end_time - main_start_time
+        print(f"Finished run for PWV={pwv_mm:.2f} mm, inferred tau_0={tau0_ref:.4f} (Elapsed time: {main_elapsed_time:.2f} seconds)")
 
         gc.collect() # Clean up memory after each run
     
@@ -797,5 +806,10 @@ if __name__ == "__main__":
     plt.savefig(OUTDIR / f"inferred_tau0_vs_PWV_N{len(pwv_arr)}_elmedian_{el_ref_name:.2f}.png", dpi=200, bbox_inches="tight")
     plt.close()
 
+    ending_time = time.perf_counter()
+    elapsed_time = ending_time - starting_time
+    print(f"\nTotal execution time: {elapsed_time:.2f} seconds")
+
+    
 
     raise SystemExit("Stopping After Main Execution Pipeline.")
