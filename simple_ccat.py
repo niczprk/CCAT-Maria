@@ -356,6 +356,17 @@ def inst_effective_atm_temp_850GHz(
 
     raise ValueError("Invalid mode. Choose 'inst' or 'fin_diff'.")
 
+def inst_power_per_deg(bandwidth: float, eta: float, dT_del: float) -> float:
+    """
+    Return the power change per degree of elevation due to atmospheric temperature change, in likely pico-Watts/deg.
+    This can be used to estimate how much the atmospheric loading on the instrument changes with elevation, which is important for understanding gain variations and calibration.
+    The power change can be approximated as dP/del = K_B * eta * bandwidth * dT/del, where eta is the optical efficiency and bandwidth is the effective bandwidth of the instrument.
+    Eta in this case will be assumed to be 1.0 for a simple estimate, and bandwidth can be taken as the width of the band (e.g. 40 GHz for the 280 GHz band).
+    The dT/del can be computed using the inst_effective_atm_temp_850GHz function for given tau_0 and elevation.
+    """
+
+    return K_B * eta * bandwidth * dT_del
+
 def compare_maria_atm_temp(
         T_atm: float,
         el_deg: float,
