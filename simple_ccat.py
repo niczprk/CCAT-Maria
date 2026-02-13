@@ -28,6 +28,9 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/s
 from pathlib import Path
 
 import numpy as np
+from scipy.optimize import curve_fit
+
+
 import maria
 import matplotlib
 matplotlib.use("Agg")
@@ -47,6 +50,9 @@ from astropy.coordinates import SkyCoord
 from astropy.nddata import Cutout2D
 
 
+# -----------------------------
+# Fits // Directory Parameters
+# -----------------------------
 
 PREFIX = "OrionA"
 
@@ -65,18 +71,21 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 
 CUTOUT = CUTOUT_ORIONA
 
+# -----------------------------
+#  Simulation Parameters 
+# -----------------------------
+
 NU_HZ = 280e9  # 280 GHz
 NU_GHZ = NU_HZ / 1e9
 
 PWV_MM = 0.36  #  mm, precip water vapour
 
-# 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values
+# 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values for Chajnantor
 
 EL_LIMITS = (30, 70)  # degrees
 
 T_0 = 278.868 #K, atmospheric ground temp
 
-# -------- Simulation Parameters --------
 
 START_TIME = "2022-02-10T17:00:00"
 
@@ -92,7 +101,9 @@ SAMPLE_RATE_HZ = 15  # Hz
 SCAN_PATTERN = "daisy"
 CHUNK_NUMBER = 0
 
-# -------- Physical Constants --------
+# ------------------------------
+#  Physical Constants 
+# ------------------------------
 
 C = 299792458.0                 # m/s
 K_B = 1.380649e-23              # J/K
@@ -100,7 +111,9 @@ H = 6.62607015e-34              # J*s
 T_CMB = 2.7255                  # K
 JY = 1e-26                      # W m^-2 Hz^-1
 
-# -------- Utility Functions --------
+# -----------------------------
+#  Utility Functions 
+# -----------------------------
 
 def savefig(outdir: Path, name: str, dpi: int = 200) -> Path:
     outdir.mkdir(parents=True, exist_ok=True)
@@ -365,6 +378,7 @@ def inst_power_per_deg(bandwidth: float, eta: float, dT_del: float) -> float:
     The dT/del can be computed using the inst_effective_atm_temp_850GHz function for given tau_0 and elevation.
     """
 
+    #haven't implemented this anywhere yet. It will happen
     return K_B * eta * bandwidth * dT_del
 
 def compare_maria_atm_temp(
@@ -471,6 +485,100 @@ def main(
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
         savefig(OUTDIR, "frac_diff_dT_del_Teff_tau0_0p05_to_0p25.png")
+
+        # -----------------------------
+        # Power change per degree: dP/del
+        # -----------------------------
+        bandwidth_hz = 40e9  # 40 GHz bandwidth for 280 GHz band
+        eta = 1.0  # Assume perfect optical efficiency for this estimate
+
+        plt.figure(figsize=(8, 6))
+        for tau in taus:
+            dT_del = inst_effective_atm_temp_850GHz(
+                mode=temp_mode, tau_0=float(tau), el_deg=x, T_0=T_0
+            )  # K/deg
+
+            dP_del_W = inst_power_per_deg(
+                bandwidth=bandwidth_hz,
+                eta=eta,
+                dT_del=dT_del,
+            )  # W/deg
+
+            # plot in pW/deg for readability
+            plt.plot(x, dP_del_W * 1e12, label=fr"$\tau_0$={tau:.2f}")
+
+        plt.xlabel("Elevation (deg)")
+        plt.ylabel(r"$dP/d\mathrm{el}$ (pW/deg)")
+        plt.title(
+            fr"Atmospheric loading slope $dP/d\mathrm{{el}}$ vs Elevation "
+            fr"($\Delta\nu$={bandwidth_hz/1e9:.0f} GHz, $\eta$={eta:.2f})"
+        )
+        plt.grid(True)
+        plt.legend(ncol=2, fontsize=9)
+        savefig(OUTDIR, "inst_dP_del_tau0_0p05_to_0p25.png")
+
+
+        x_data = np.array([-2.3,-1.9,-1.81,-1.75, -1.68, -1.61, -1.575, -1.5]) *1e8
+        y_data = np.array([0.5,2.0,3.0,4.0,5.0, 6.0, 7.0, 8.5]) #power in pW
+
+        def model_responsivity_func(x, a, b, c):
+            """
+            judging from the paper it seems quadratic might be a good first guess for the model,
+            but this can be adjusted based on the expected physical behavior or empirical trends in the data.
+            """
+            return a * x**2 + b * x + c
+        
+        parameters, covariance = curve_fit(model_responsivity_func, x_data, y_data)
+
+        fit_amplitude = parameters[0]
+        fit_center = parameters[1]
+        fit_width = parameters[2]
+
+        y_fit = model_responsivity_func(x, fit_amplitude, fit_center, fit_width)
+
+        plt.figure(figsize=(8, 6))
+        plt.plot(x, y_data, label="Data Points")
+        plt.plot(x, y_fit, label="Fitted Curve")
+        plt.xlabel("Elevation (deg)")
+        plt.ylabel("Responsivity")
+        plt.title("Fitted Responsivity Model vs Elevation")
+        plt.grid(True)
+        plt.legend()
+        savefig(OUTDIR, "fitted_responsivity_model.png")
+
+        # frequency shift plot from power  and responsivity
+
+        f_res = 800e6  # Resonant frequency in Hz (800 MHz)
+
+        def frequency_shift_func(R, f_res, del_P):
+            """
+            This function models the frequency shift (delta_f) of a resonator as a function of its responsivity (R),
+            resonant frequency (f_res), and change in power (del_P).
+            """
+            return R * f_res * del_P
+
+        for taus in taus:
+            dT_del = inst_effective_atm_temp_850GHz(
+                mode=temp_mode, tau_0=float(tau), el_deg=x, T_0=T_0
+            )  # K/deg
+
+            dP_del_W = inst_power_per_deg(
+                bandwidth=bandwidth_hz,
+                eta=eta,
+                dT_del=dT_del,
+            )  # W/deg
+
+            delta_f_Hz = frequency_shift_func(fit_amplitude, f_res, dP_del_W)  # Frequency shift in Hz
+
+            plt.plot(x, delta_f_Hz, label=fr"$\tau_0$={tau:.2f}")
+        
+        plt.xlabel("Elevation (deg)")
+        plt.ylabel("Frequency Shift (Hz)")
+        plt.title("Predicted Resonator Frequency Shift vs Elevation")
+        plt.grid(True)
+        plt.legend(ncol=2, fontsize=9)
+        savefig(OUTDIR, "predicted_frequency_shift.png")
+
 
     # -----------------------------
     # 1) Atmosphere-only mode
@@ -760,10 +868,10 @@ if __name__ == "__main__":
     mp.set_start_method("spawn", force = True)
 
 
-    # main(atm_plot=False, map_type="skip", tod_diagnostics=False)
+    main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", run_mode="only_atm", pwv_mm=0.36)
     # main(atm_plot=True, run_mode= "all" , temp_mode="inst", map_type="Binmapper", tod_diagnostics=True)
 
-
+    raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 
     pwv_list = np.linspace(0.36, 1.28, 5) # mm, from Q1 to Q3 zenith PMV values
 
