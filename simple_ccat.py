@@ -28,8 +28,6 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/s
 from pathlib import Path
 
 import numpy as np
-from scipy.optimize import curve_fit
-
 
 import maria
 import matplotlib
@@ -517,31 +515,29 @@ def main(
         plt.legend(ncol=2, fontsize=9)
         savefig(OUTDIR, "inst_dP_del_tau0_0p05_to_0p25.png")
 
+        from scipy.optimize import curve_fit
 
-        x_data = np.array([-2.3,-1.9,-1.81,-1.75, -1.68, -1.61, -1.575, -1.5]) *1e8
-        y_data = np.array([0.5,2.0,3.0,4.0,5.0, 6.0, 7.0, 8.5]) #power in pW
+        P_data = np.array([-2.3,-1.9,-1.81,-1.75, -1.68, -1.61, -1.575, -1.5], dtype = float) *1e8 # responsivity
+        R_data = np.array([0.5,2.0,3.0,4.0,5.0, 6.0, 7.0, 8.5], dtype = float) #power in pW
 
-        def model_responsivity_func(x, a, b, c):
+        def model_responsivity_func(P_pw, a, b, c):
             """
             judging from the paper it seems quadratic might be a good first guess for the model,
             but this can be adjusted based on the expected physical behavior or empirical trends in the data.
             """
-            return a * x**2 + b * x + c
+            return a * P_pw**2 + b * P_pw + c
         
-        parameters, covariance = curve_fit(model_responsivity_func, x_data, y_data)
+        (a_fit, b_fit, c_fit), cov = curve_fit(model_responsivity_func, P_data, R_data)
 
-        fit_amplitude = parameters[0]
-        fit_center = parameters[1]
-        fit_width = parameters[2]
-
-        y_fit = model_responsivity_func(x, fit_amplitude, fit_center, fit_width)
+        P_grid_pw = np.linspace(P_data.min(), P_data.max(), 100)
+        R_fit = model_responsivity_func(P_grid_pw, a_fit, b_fit, c_fit)
 
         plt.figure(figsize=(8, 6))
-        plt.plot(x, y_data, label="Data Points")
-        plt.plot(x, y_fit, label="Fitted Curve")
-        plt.xlabel("Elevation (deg)")
-        plt.ylabel("Responsivity")
-        plt.title("Fitted Responsivity Model vs Elevation")
+        plt.plot(P_data, R_data, label="Estimated Data Points")
+        plt.plot(P_grid_pw, R_fit, lw=2, label="Quadratic Curve")
+        plt.xlabel("Power (pW)")
+        plt.ylabel(r"Responsivity $R$ (1/W) [paper units]")
+        plt.title("Fitted responsivity model R(P)")
         plt.grid(True)
         plt.legend()
         savefig(OUTDIR, "fitted_responsivity_model.png")
@@ -557,7 +553,12 @@ def main(
             """
             return R * f_res * del_P
 
-        for taus in taus:
+        plt.figure(figsize=(8, 6))
+        for tau in taus:
+
+            Teff = effective_atm_temp_850GHz(pwv=pwv_mm, tau_0=float(tau), el_deg=x, T_0=T_0)
+            P_atm_pw = K_B * Teff * bandwidth_hz * eta * 1e12 # atmospheric power in pW
+
             dT_del = inst_effective_atm_temp_850GHz(
                 mode=temp_mode, tau_0=float(tau), el_deg=x, T_0=T_0
             )  # K/deg
@@ -568,16 +569,18 @@ def main(
                 dT_del=dT_del,
             )  # W/deg
 
-            delta_f_Hz = frequency_shift_func(fit_amplitude, f_res, dP_del_W)  # Frequency shift in Hz
+            R_eval = model_responsivity_func(P_atm_pw, a_fit, b_fit, c_fit) # evaluate responsivity at the atmospheric power levels
+
+            delta_f_Hz = frequency_shift_func(R_eval, f_res, dP_del_W)  # Frequency shift in Hz
 
             plt.plot(x, delta_f_Hz, label=fr"$\tau_0$={tau:.2f}")
         
         plt.xlabel("Elevation (deg)")
-        plt.ylabel("Frequency Shift (Hz)")
-        plt.title("Predicted Resonator Frequency Shift vs Elevation")
+        plt.ylabel(r"$df/d\mathrm{el}$ (Hz/deg)")
+        plt.title(r"Predicted frequency slope vs elevation: $df/d\mathrm{el}=f_\mathrm{res}R(P)\,dP/d\mathrm{el}$")
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
-        savefig(OUTDIR, "predicted_frequency_shift.png")
+        savefig(OUTDIR, "predicted_df_del_vs_elevation.png")
 
 
     # -----------------------------
