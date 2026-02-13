@@ -596,10 +596,10 @@ def main(
                 f"df/del med={np.median(df_del_Hz_per_deg):.3g} Hz/deg"
             )
 
-            plt.plot(x, df_del_Hz_per_deg, label=fr"$\tau_0$={tau:.2f}")
+            plt.plot(x, df_del_Hz_per_deg / 1e6, label=fr"$\tau_0$={tau:.2f}")
 
         plt.xlabel("Elevation (deg)")
-        plt.ylabel(r"$df/d\mathrm{el}$ (Hz/deg)")
+        plt.ylabel(r"$df/d\mathrm{el}$ (MHz/deg)")
         plt.title(r"Predicted frequency slope vs elevation: $df/d\mathrm{el}=f_\mathrm{res}R(P)\,dP/d\mathrm{el}$")
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
