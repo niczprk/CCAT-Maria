@@ -514,30 +514,31 @@ def main(
         plt.legend(ncol=2, fontsize=9)
         savefig(OUTDIR, "inst_dP_del_tau0_0p05_to_0p25.png")
 
+        # -----------------------------
+        # Responsivity fit R(P): fit in W, but derived from pW points
+        # -----------------------------
         from scipy.optimize import curve_fit
 
-        R_data = np.array([-2.375,-1.92,-1.81,-1.75, -1.68, -1.61, -1.575, -1.535, -1.505, -1.5], dtype = float) *1e8 # responsivity
-        P_data_pW = np.array([0.5,2.0,3.0,4.0,5.0, 6.0, 7.0, 7.5, 8.0, 8.5], dtype = float) #power in pW
+        R_data = np.array(
+            [-2.375, -1.92, -1.81, -1.75, -1.68, -1.61, -1.575, -1.535, -1.505, -1.5],
+            dtype=float,
+        ) * 1e8  # responsivity
 
-        P_data_W = P_data_pW * 1e-12 # convert to W for fitting
+        P_data_pW = np.array([0.5, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 7.5, 8.0, 8.5], dtype=float)
 
-        def model_responsivity_func(P_pw, a, b, c):
-            """
-            judging from the paper it seems quadratic might be a good first guess for the model,
-            but this can be adjusted based on the expected physical behavior or empirical trends in the data.
-            """
-            return a * P_pw**2 + b * P_pw + c
-        
-        (a_fit, b_fit, c_fit), cov = curve_fit(model_responsivity_func, P_data_W, R_data)
+        def model_responsivity_func_pW(P_pW, a, b, c):
+            return a * P_pW**2 + b * P_pW + c
 
-        P_grid_W = np.linspace(P_data_W.min(), P_data_W.max(), 200)
-        R_fit = model_responsivity_func(P_grid_W, a_fit, b_fit, c_fit)
+        (a_fit, b_fit, c_fit), cov = curve_fit(model_responsivity_func_pW, P_data_pW, R_data)
+
+        P_grid_pW = np.linspace(P_data_pW.min(), P_data_pW.max(), 200)
+        R_fit = model_responsivity_func_pW(P_grid_pW, a_fit, b_fit, c_fit)
 
         plt.figure(figsize=(8, 6))
-        plt.plot(P_data_W, R_data, "o", label="Estimated Data Points")
-        plt.plot(P_grid_W, R_fit, lw=2, label="Quadratic Curve")
-        plt.xlabel("Power (W)")
-        plt.ylabel(r"Responsivity $R$")
+        plt.plot(P_data_pW, R_data, label="Estimated data points")
+        plt.plot(P_grid_pW, R_fit, lw=2, label="Quadratic fit (P in pW)")
+        plt.xlabel("Power (pW)")
+        plt.ylabel(r"Responsivity $R$ (paper units)")
         plt.title("Fitted responsivity model R(P)")
         plt.grid(True)
         plt.legend()
@@ -547,16 +548,16 @@ def main(
         # Piecewise Responsivity Function for powers past 8.5 pW
         # -----------------------------
 
-        P_MAX_PW = 8.5 * 1e-12 # max power in W for the plot
-        R_CONST = -1.5 * 1e8 # constant responsivity for comparison
+        P_MAX_PW = 8.5
+        R_CONST = -1.5e8
 
-        def R_piecewise(P_W):
+        def R_piecewise(P_pW):
             """
-            Piecewise responsivity function that switches between a fitted model and a constant value.
+            Use quadratic fit for P<=8.5 pW, else constant R_CONST.
             """
-            P = np.asarray(P_W, dtype = float)
-            R_quad = model_responsivity_func(P_W, a_fit, b_fit, c_fit)
-            return np.where(P_W > P_MAX_PW, R_quad, R_CONST)
+            P = np.asarray(P_pW, dtype=float)
+            R_quad = model_responsivity_func_pW(P, a_fit, b_fit, c_fit)
+            return np.where(P <= P_MAX_PW, R_quad, R_CONST)
 
         f_res = 800e6  # Resonant frequency in Hz (800 MHz)
 
@@ -567,7 +568,8 @@ def main(
 
             Teff = effective_atm_temp_850GHz(pwv=pwv_mm, tau_0=float(tau), el_deg=x, T_0=T_0)
 
-            P_atm_pW = K_B * Teff * bandwidth_hz * eta * 1e12  # pW
+            P_atm_pW = K_B * Teff * bandwidth_hz * eta # W
+            P_atm_pW *= 1e12 # convert to pW
 
             dT_del = inst_effective_atm_temp_850GHz(
                 mode=temp_mode, tau_0=float(tau), el_deg=x, T_0=T_0
