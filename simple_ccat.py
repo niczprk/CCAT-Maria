@@ -517,8 +517,8 @@ def main(
 
         from scipy.optimize import curve_fit
 
-        P_data = np.array([-2.3,-1.9,-1.81,-1.75, -1.68, -1.61, -1.575, -1.5], dtype = float) *1e8 # responsivity
-        R_data = np.array([0.5,2.0,3.0,4.0,5.0, 6.0, 7.0, 8.5], dtype = float) #power in pW
+        R_data = np.array([-2.375,-1.92,-1.81,-1.75, -1.68, -1.61, -1.575, -1.535, -1.505, -1.5], dtype = float) *1e8 # responsivity
+        P_data = np.array([0.5,2.0,3.0,4.0,5.0, 6.0, 7.0, 7.5, 8.0, 8.5], dtype = float) #power in pW
 
         def model_responsivity_func(P_pw, a, b, c):
             """
@@ -553,11 +553,16 @@ def main(
             """
             return R * f_res * del_P
 
+        # frequency slope vs elevation from power + responsivity fit
+
+        f_res = 800e6  # Hz
+
         plt.figure(figsize=(8, 6))
         for tau in taus:
 
             Teff = effective_atm_temp_850GHz(pwv=pwv_mm, tau_0=float(tau), el_deg=x, T_0=T_0)
-            P_atm_pw = K_B * Teff * bandwidth_hz * eta * 1e12 # atmospheric power in pW
+
+            P_atm_pW = K_B * Teff * bandwidth_hz * eta * 1e12  # pW
 
             dT_del = inst_effective_atm_temp_850GHz(
                 mode=temp_mode, tau_0=float(tau), el_deg=x, T_0=T_0
@@ -569,19 +574,20 @@ def main(
                 dT_del=dT_del,
             )  # W/deg
 
-            R_eval = model_responsivity_func(P_atm_pw, a_fit, b_fit, c_fit) # evaluate responsivity at the atmospheric power levels
+            dP_del_pW = dP_del_W * 1e12  # pW/deg
 
-            delta_f_Hz = frequency_shift_func(R_eval, f_res, dP_del_W)  # Frequency shift in Hz
+            R_eval = model_responsivity_func(P_atm_pW, a_fit, b_fit, c_fit) #no units reported in paper ;-;
 
-            plt.plot(x, delta_f_Hz, label=fr"$\tau_0$={tau:.2f}")
-        
+            df_del_Hz_per_deg = f_res * R_eval * dP_del_pW  # Hz/deg
+
+            plt.plot(x, df_del_Hz_per_deg, label=fr"$\tau_0$={tau:.2f}")
+
         plt.xlabel("Elevation (deg)")
         plt.ylabel(r"$df/d\mathrm{el}$ (Hz/deg)")
         plt.title(r"Predicted frequency slope vs elevation: $df/d\mathrm{el}=f_\mathrm{res}R(P)\,dP/d\mathrm{el}$")
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
         savefig(OUTDIR, "predicted_df_del_vs_elevation.png")
-
 
     # -----------------------------
     # 1) Atmosphere-only mode
