@@ -502,7 +502,6 @@ def main(
                 dT_del=dT_del,
             )  # W/deg
 
-            # plot in pW/deg for readability
             plt.plot(x, dP_del_W * 1e12, label=fr"$\tau_0$={tau:.2f}")
 
         plt.xlabel("Elevation (deg)")
@@ -518,7 +517,9 @@ def main(
         from scipy.optimize import curve_fit
 
         R_data = np.array([-2.375,-1.92,-1.81,-1.75, -1.68, -1.61, -1.575, -1.535, -1.505, -1.5], dtype = float) *1e8 # responsivity
-        P_data = np.array([0.5,2.0,3.0,4.0,5.0, 6.0, 7.0, 7.5, 8.0, 8.5], dtype = float) #power in pW
+        P_data_pW = np.array([0.5,2.0,3.0,4.0,5.0, 6.0, 7.0, 7.5, 8.0, 8.5], dtype = float) #power in pW
+
+        P_data_W = P_data_pW * 1e-12 # convert to W for fitting
 
         def model_responsivity_func(P_pw, a, b, c):
             """
@@ -527,35 +528,39 @@ def main(
             """
             return a * P_pw**2 + b * P_pw + c
         
-        (a_fit, b_fit, c_fit), cov = curve_fit(model_responsivity_func, P_data, R_data)
+        (a_fit, b_fit, c_fit), cov = curve_fit(model_responsivity_func, P_data_W, R_data)
 
-        P_grid_pw = np.linspace(P_data.min(), P_data.max(), 100)
-        R_fit = model_responsivity_func(P_grid_pw, a_fit, b_fit, c_fit)
+        P_grid_W = np.linspace(P_data_W.min(), P_data_W.max(), 200)
+        R_fit = model_responsivity_func(P_grid_W, a_fit, b_fit, c_fit)
 
         plt.figure(figsize=(8, 6))
-        plt.plot(P_data, R_data, label="Estimated Data Points")
-        plt.plot(P_grid_pw, R_fit, lw=2, label="Quadratic Curve")
-        plt.xlabel("Power (pW)")
-        plt.ylabel(r"Responsivity $R$ (1/W) [paper units]")
+        plt.plot(P_data_W, R_data, "o", label="Estimated Data Points")
+        plt.plot(P_grid_W, R_fit, lw=2, label="Quadratic Curve")
+        plt.xlabel("Power (W)")
+        plt.ylabel(r"Responsivity $R$")
         plt.title("Fitted responsivity model R(P)")
         plt.grid(True)
         plt.legend()
         savefig(OUTDIR, "fitted_responsivity_model.png")
 
-        # frequency shift plot from power  and responsivity
+        # -----------------------------
+        # Piecewise Responsivity Function for powers past 8.5 pW
+        # -----------------------------
+
+        P_MAX_PW = 8.5 * 1e-12 # max power in W for the plot
+        R_CONST = -1.5 * 1e8 # constant responsivity for comparison
+
+        def R_piecewise(P_W):
+            """
+            Piecewise responsivity function that switches between a fitted model and a constant value.
+            """
+            P = np.asarray(P_W, dtype = float)
+            R_quad = model_responsivity_func(P_W, a_fit, b_fit, c_fit)
+            return np.where(P_W > P_MAX_PW, R_quad, R_CONST)
 
         f_res = 800e6  # Resonant frequency in Hz (800 MHz)
 
-        def frequency_shift_func(R, f_res, del_P):
-            """
-            This function models the frequency shift (delta_f) of a resonator as a function of its responsivity (R),
-            resonant frequency (f_res), and change in power (del_P).
-            """
-            return R * f_res * del_P
-
         # frequency slope vs elevation from power + responsivity fit
-
-        f_res = 800e6  # Hz
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
@@ -574,11 +579,20 @@ def main(
                 dT_del=dT_del,
             )  # W/deg
 
-            dP_del_pW = dP_del_W * 1e12  # pW/deg
+            R_eval = R_piecewise(P_atm_pW)  # pW
 
-            R_eval = model_responsivity_func(P_atm_pW, a_fit, b_fit, c_fit) #no units reported in paper ;-;
+            df_del_Hz_per_deg = f_res * R_eval * dP_del_W  # Hz/deg
 
-            df_del_Hz_per_deg = f_res * R_eval * dP_del_pW  # Hz/deg
+            print(
+                f"tau={tau:.2f}: dT/del median={np.median(dT_del):.6f} K/deg, "
+                f"dP/del median={np.median(dP_del_W)*1e12:.6f} pW/deg"
+            )
+            print(
+                f"tau={tau:.2f}  "
+                f"P_atm_pW: min/med/max={P_atm_pW.min():.3g}/{np.median(P_atm_pW):.3g}/{P_atm_pW.max():.3g}  "
+                f"R_eval: min/med/max={R_eval.min():.3g}/{np.median(R_eval):.3g}/{R_eval.max():.3g}  "
+                f"df/del med={np.median(df_del_Hz_per_deg):.3g} Hz/deg"
+            )
 
             plt.plot(x, df_del_Hz_per_deg, label=fr"$\tau_0$={tau:.2f}")
 
