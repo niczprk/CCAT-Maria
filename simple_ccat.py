@@ -536,7 +536,8 @@ def main(
 
         plt.figure(figsize=(8, 6))
         plt.plot(P_data_pW, R_data, label="Estimated data points")
-        plt.plot(P_grid_pW, R_fit, lw=2, label="Quadratic fit (P in pW)")
+        plt.plot(P_grid_pW, R_fit, lw=2, label=rf"Quadratic fit (P in pW)")
+        # $R(P) = ({a_fit:.2e})P^2 + ({b_fit:.2e})P + ({c_fit:.2e})$"
         plt.xlabel("Power (pW)")
         plt.ylabel(r"Responsivity $R$ (paper units)")
         plt.title("Fitted responsivity model R(P)")
