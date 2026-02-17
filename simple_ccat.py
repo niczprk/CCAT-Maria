@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import os, sys
 
+# for multiple runs of maria in the same session
+
 os.environ["OMP_NUM_THREADS"] = "1"  # Avoid multithreading issues in numpy/scipy
 os.environ["MKL_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
 os.environ["OPENBLAS_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
@@ -80,7 +82,7 @@ PWV_MM = 0.36  #  mm, precip water vapour
 
 # 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values for Chajnantor
 
-EL_LIMITS = (30, 70)  # degrees
+EL_LIMITS = (10, 85)  # degrees
 
 T_0 = 278.868 #K, atmospheric ground temp
 
@@ -488,7 +490,7 @@ def main(
         # Power change per degree: dP/del
         # -----------------------------
         bandwidth_hz = 40e9  # 40 GHz bandwidth for 280 GHz band
-        eta = 1.0  # Assume perfect optical efficiency for this estimate
+        eta =  1.0 # Assume perfect optical efficiency for this estimate
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
@@ -562,7 +564,9 @@ def main(
 
         f_res = 800e6  # Resonant frequency in Hz (800 MHz)
 
+        # -----------------------------
         # frequency slope vs elevation from power + responsivity fit
+        # -----------------------------
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
@@ -605,6 +609,46 @@ def main(
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
         savefig(OUTDIR, "predicted_df_del_vs_elevation.png")
+
+        # -----------------------------
+        #  Elevation Change allowed before leaving linear regime
+        # -----------------------------
+
+        Del_f = 2200 # Hz, 1/10th of the FWHM is the estimated linear regime limit for 280GHz MKID array
+
+        plt.figure(figsize=(8, 6))
+        for tau in taus:
+            
+            Teff = effective_atm_temp_850GHz(pwv=pwv_mm, tau_0=float(tau), el_deg=x, T_0=T_0)
+
+            P_atm_pW = K_B * Teff * bandwidth_hz * eta # W
+            P_atm_pW *= 1e12 # convert to pW
+
+            dT_del = inst_effective_atm_temp_850GHz(
+                mode=temp_mode, tau_0=float(tau), el_deg=x, T_0=T_0
+            )  # K/deg
+
+            dP_del_W = inst_power_per_deg(
+                bandwidth=bandwidth_hz,
+                eta=eta,
+                dT_del=dT_del,
+            )  # W/deg
+
+            R_eval = R_piecewise(P_atm_pW)  # pW
+
+            df_del_Hz_per_deg = f_res * R_eval * dP_del_W  # Hz/deg
+
+            del_el_deg = 2200 / df_del_Hz_per_deg  # deg, elevation change corresponding to 2200 Hz frequency shift
+
+            plt.plot(x, del_el_deg, label=fr"$\tau_0$={tau:.2f}")
+        
+        plt.xlabel("Elevation (deg)")
+        plt.ylabel(r" $\Delta\mathrm{el}$ for $|\Delta f|<2200$ Hz (deg)")
+        plt.title(r"Estimated elevation change allowed before leaving linear regime")
+        plt.grid(True)
+        plt.legend(ncol=2, fontsize=9)
+        savefig(OUTDIR, f"allowed_del_el_for_linear_regime_eta{eta:.1f}.png")
+
 
     # -----------------------------
     # 1) Atmosphere-only mode
