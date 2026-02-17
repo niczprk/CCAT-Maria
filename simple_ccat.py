@@ -422,9 +422,13 @@ def main(
     # -----------------------------
     # Atmosphere plots helper
     # -----------------------------
+    bandwidth_hz = 60e9  # GHz bandwidth for 280 GHz band
+    eta = 0.1 # optical efficiency for this estimate
+
+
     def run_atmosphere_plots() -> None:
         x = np.linspace(EL_LIMITS[0], EL_LIMITS[1], 150)
-        taus = np.linspace(0.05, 0.25, 5)
+        taus = np.linspace(0.01, 0.15, 5)
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
@@ -435,7 +439,7 @@ def main(
         plt.title(r"Instantaneous $dT/d\mathrm{el}$ vs Elevation for varying $\tau_0$")
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
-        savefig(OUTDIR, "inst_dT_del_tau0_0p05_to_0p25.png")
+        savefig(OUTDIR, "inst_dT_del_tau0_0p01_to_0p15.png")
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
@@ -446,7 +450,7 @@ def main(
         plt.title(r"Effective Atmospheric Temperature $T_\mathrm{eff}$ vs Elevation for varying $\tau_0$")
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
-        savefig(OUTDIR, "Teff_tau0_0p05_to_0p25.png")
+        savefig(OUTDIR, "Teff_tau0_0p01_to_0p15.png")
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
@@ -458,7 +462,7 @@ def main(
         plt.title(r"Fractional Atmospheric Temperature Derivative vs Elevation for varying $\tau_0$")
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
-        savefig(OUTDIR, "frac_dT_del_Teff_tau0_0p05_to_0p25.png")
+        savefig(OUTDIR, "frac_dT_del_Teff_tau0_0p01_to_0p15.png")
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
@@ -470,13 +474,26 @@ def main(
         plt.title(r"Fractional Diff Atmospheric Temperature Derivative vs Elevation for varying $\tau_0$")
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
-        savefig(OUTDIR, "frac_diff_dT_del_Teff_tau0_0p05_to_0p25.png")
+        savefig(OUTDIR, "frac_diff_dT_del_Teff_tau0_0p01_to_0p15.png")
 
         # -----------------------------
         # Power change per degree: dP/del
         # -----------------------------
-        bandwidth_hz = 40e9  # 40 GHz bandwidth for 280 GHz band
-        eta =  0.1 # Assume perfect optical efficiency for this estimate
+
+        plt.figure(figsize=(8, 6))
+        for tau in taus:
+            P_atm_pW = K_B * effective_atm_temp_850GHz(pwv=pwv_mm, tau_0=float(tau), el_deg=x, T_0=T_0) * bandwidth_hz * eta * 1e12 # pW
+            plt.plot(x, P_atm_pW, label=fr"$\tau_0$={tau:.2f}")
+
+        plt.xlabel("Elevation (deg)")
+        plt.ylabel(r"Power (pW)")
+        plt.title(
+            fr"Atmospheric power loading vs Elevation "
+            fr"($\Delta\nu$={bandwidth_hz/1e9:.0f} GHz, $\eta$={eta:.2f})"
+        )
+        plt.grid(True)
+        plt.legend(ncol=2, fontsize=9)
+        savefig(OUTDIR, "atm_power_vs_elevation.png")
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
@@ -500,7 +517,7 @@ def main(
         )
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
-        savefig(OUTDIR, "inst_dP_del_tau0_0p05_to_0p25.png")
+        savefig(OUTDIR, "inst_dP_del_tau0_0p01_to_0p15.png")
 
         # -----------------------------
         # Responsivity fit R(P): fit in W, but derived from pW points
@@ -558,8 +575,8 @@ def main(
 
             Teff = effective_atm_temp_850GHz(pwv=pwv_mm, tau_0=float(tau), el_deg=x, T_0=T_0)
 
-            P_atm_pW = K_B * Teff * bandwidth_hz * eta # W
-            P_atm_pW *= 1e12 # convert to pW
+            P_atm_pW = K_B * Teff * bandwidth_hz * eta
+            P_atm_pW *= 1e12 
 
             dT_del = inst_effective_atm_temp_850GHz(
                 mode=temp_mode, tau_0=float(tau), el_deg=x, T_0=T_0
