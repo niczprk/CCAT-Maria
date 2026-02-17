@@ -1,21 +1,4 @@
-"""
-CCAT-prime Pipeline Simple Execution Script
-
-Workflow:
-1)Convert JCMT FITS maps from mJy/arcsec^2 to Jy/sr
-2)Fille NaN values in FITS maps
-3)Clip FITS maps to smaller area (if necessary)
-4)Plot dT/d(el) vs Elevation for varying tau_0
-5)Build Instrument + site
-6)Load input map, plan scan, simulate TOD
-7)TOD diagnostics + plots
-8)BinMappper map + plot
-9)Plot atmosphere vs elevation (TOD averaged)
-
-"""
 from __future__ import annotations
-
-
 import os, sys
 
 # for multiple runs of maria in the same session
@@ -24,8 +7,6 @@ os.environ["OMP_NUM_THREADS"] = "1"  # Avoid multithreading issues in numpy/scip
 os.environ["MKL_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
 os.environ["OPENBLAS_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
 os.environ["NUMEXPR_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
-
-
 
 from pathlib import Path
 
@@ -40,8 +21,6 @@ from maria.instrument import Band
 from maria import fetch
 from maria import Planner
 from maria.mappers import BinMapper
-
-
 
 from astropy.io import fits
 from astropy.wcs import WCS
