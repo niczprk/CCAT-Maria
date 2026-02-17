@@ -1,21 +1,15 @@
 from __future__ import annotations
 import os, sys
 
-# for multiple runs of maria in the same session
-
-os.environ["OMP_NUM_THREADS"] = "1"  # Avoid multithreading issues in numpy/scipy
-os.environ["MKL_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
-os.environ["OPENBLAS_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
-os.environ["NUMEXPR_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
-
 from pathlib import Path
 
 import numpy as np
 
-import maria
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+import maria
 from maria import Instrument
 from maria.instrument import Band
 from maria import fetch
@@ -28,6 +22,12 @@ from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astropy.nddata import Cutout2D
 
+# for multiple runs of maria in the same session
+
+os.environ["OMP_NUM_THREADS"] = "1"  # Avoid multithreading issues in numpy/scipy
+os.environ["MKL_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
+os.environ["OPENBLAS_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
+os.environ["NUMEXPR_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
 
 # -----------------------------
 # Fits // Directory Parameters
@@ -476,7 +476,7 @@ def main(
         # Power change per degree: dP/del
         # -----------------------------
         bandwidth_hz = 40e9  # 40 GHz bandwidth for 280 GHz band
-        eta =  1.0 # Assume perfect optical efficiency for this estimate
+        eta =  0.1 # Assume perfect optical efficiency for this estimate
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
@@ -508,12 +508,11 @@ def main(
         from scipy.optimize import curve_fit
 
         R_data = np.array(
-            [-2.375, -1.92, -1.81, -1.75, -1.68, -1.61, -1.575, -1.535, -1.505, -1.5],
+            [-2.375, -2.1, -1.92, -1.87, -1.81, -1.75, -1.68, -1.61, -1.525,  -1.505, -1.5],
             dtype=float,
         ) * 1e8  # responsivity
 
-        P_data_pW = np.array([0.5, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 7.5, 8.0, 8.5], dtype=float)
-
+        P_data_pW = np.array([0.5, 1.0, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 8.5], dtype=float)
         def model_responsivity_func_pW(P_pW, a, b, c):
             return a * P_pW**2 + b * P_pW + c
 
