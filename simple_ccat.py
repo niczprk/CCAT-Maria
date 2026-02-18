@@ -54,6 +54,9 @@ CUTOUT = CUTOUT_ORIONA
 #  Simulation Parameters 
 # -----------------------------
 
+bandwidth_hz = 60e9  # GHz bandwidth for 280 GHz band
+eta = 0.1 # optical efficiency for this estimate
+
 NU_HZ = 280e9  # 280 GHz
 NU_GHZ = NU_HZ / 1e9
 
@@ -61,7 +64,7 @@ PWV_MM = 0.36  #  mm, precip water vapour
 
 # 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values for Chajnantor
 
-EL_LIMITS = (10, 85)  # degrees
+EL_LIMITS = (40, 85)  # degrees
 
 T_0 = 278.868 #K, atmospheric ground temp
 
@@ -422,8 +425,6 @@ def main(
     # -----------------------------
     # Atmosphere plots helper
     # -----------------------------
-    bandwidth_hz = 60e9  # GHz bandwidth for 280 GHz band
-    eta = 0.1 # optical efficiency for this estimate
 
 
     def run_atmosphere_plots() -> None:
@@ -693,7 +694,7 @@ def main(
     # -----------------------------
     f280 = Band(
         center=280e9,
-        width=40e9,
+        width=bandwidth_hz,
         NET_CMB=13e-6,
         knee=1.0,
         gain_error=5e-2,
@@ -901,6 +902,33 @@ def main(
     plt.legend()
     savefig(OUTDIR, f"{PREFIX}_atmosphere_vs_el_elref{el_ref:.2f}_tau0_inferred_tangent_PWV{pwv_mm:.2f}.png")
     # -----------------------------
+    # Compute Detector Loading Power in Maria Atmosphere Model
+    # -----------------------------
+
+    T_rj = tod0.atmosphere # K, Rayleigh-Jeans equivalent temperature from TOD
+
+    P_det_W = K_B * T_rj * bandwidth_hz * eta
+    P_det_pW = P_det_W * 1e12
+
+    P_mean_per_det = np.mean(P_det_pW, axis=1)
+
+    plt.figure(figsize=(8, 6))
+    plt.hist(P_mean_per_det, bins=30, alpha=0.7)
+    plt.xlabel("Mean Detector Power (pW)")
+    plt.ylabel("Number of Detectors")
+    plt.title("Distribution of Mean Detector Power across Detectors")
+    plt.grid(True)
+    savefig(OUTDIR, f"{PREFIX}_detector_power_distribution_PWV{pwv_mm:.2f}.png")
+
+    plt.figure(figsize=(8, 6))
+    plt.hist(P_det_pW.flatten(), bins=100, alpha=0.7)
+    plt.xlabel("Detector Power (pW)")
+    plt.ylabel("Number of Samples")
+    plt.title("Distribution of Detector Power across all samples")
+    plt.grid(True)
+    savefig(OUTDIR, f"{PREFIX}_detector_power_samples_distribution_PWV{pwv_mm:.2f}.png")
+    
+    # -----------------------------
     # BinMapper Mapmaking
     # -----------------------------
     map_type_norm = map_type.lower().strip()
@@ -940,8 +968,8 @@ if __name__ == "__main__":
     mp.set_start_method("spawn", force = True)
 
 
-    main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", run_mode="only_atm", pwv_mm=0.36)
-    # main(atm_plot=True, run_mode= "all" , temp_mode="inst", map_type="Binmapper", tod_diagnostics=True)
+    #main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", run_mode="only_atm", pwv_mm=0.36)
+    main(atm_plot=True, run_mode= "all" , temp_mode="inst", map_type="Binmapper", tod_diagnostics=True)
 
     raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 
