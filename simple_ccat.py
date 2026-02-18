@@ -904,12 +904,9 @@ def main(
     # -----------------------------
     # Compute Detector Loading Power in Maria Atmosphere Model
     # -----------------------------
+    P_det_pW = (K_B * tod0.atmosphere * bandwidth_hz * eta) * 1e12  # (N_det, N_time)
 
-    T_rj = tod0.atmosphere # K, Rayleigh-Jeans equivalent temperature from TOD
-
-    P_det_W = K_B * T_rj * bandwidth_hz * eta
-    P_det_pW = P_det_W * 1e12
-
+    # Per-detector mean: cheap, keep as-is
     P_mean_per_det = np.mean(P_det_pW, axis=1)
 
     plt.figure(figsize=(8, 6))
@@ -920,14 +917,18 @@ def main(
     plt.grid(True)
     savefig(OUTDIR, f"{PREFIX}_detector_power_distribution_PWV{pwv_mm:.2f}.png")
 
+    # --- All-samples distribution: DOWN-SAMPLE HARD ---
+    # Take every k-th time sample, or random sample
+    stride = max(1, P_det_pW.shape[1] // 50_000)  # aim ~50k time samples
+    P_sample = P_det_pW[:, ::stride].ravel()      # ravel() avoids a copy when possible
+
     plt.figure(figsize=(8, 6))
-    plt.hist(P_det_pW.flatten(), bins=100, alpha=0.7)
+    plt.hist(P_sample, bins=100, alpha=0.7)
     plt.xlabel("Detector Power (pW)")
-    plt.ylabel("Number of Samples")
-    plt.title("Distribution of Detector Power across all samples")
+    plt.ylabel("Number of Samples (downsampled)")
+    plt.title(f"Distribution of Detector Power (downsampled: stride={stride})")
     plt.grid(True)
-    savefig(OUTDIR, f"{PREFIX}_detector_power_samples_distribution_PWV{pwv_mm:.2f}.png")
-    
+    savefig(OUTDIR, f"{PREFIX}_detector_power_samples_distribution_PWV{pwv_mm:.2f}_downsampled.png")
     # -----------------------------
     # BinMapper Mapmaking
     # -----------------------------
