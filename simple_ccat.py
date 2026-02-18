@@ -428,7 +428,7 @@ def main(
 
     def run_atmosphere_plots() -> None:
         x = np.linspace(EL_LIMITS[0], EL_LIMITS[1], 150)
-        taus = np.linspace(0.01, 0.15, 5)
+        taus = np.linspace(0.005, 0.10, 5)
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
@@ -439,7 +439,7 @@ def main(
         plt.title(r"Instantaneous $dT/d\mathrm{el}$ vs Elevation for varying $\tau_0$")
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
-        savefig(OUTDIR, "inst_dT_del_tau0_0p01_to_0p15.png")
+        savefig(OUTDIR, "inst_dT_del_tau0_0p005_to_0p10.png")
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
@@ -450,7 +450,7 @@ def main(
         plt.title(r"Effective Atmospheric Temperature $T_\mathrm{eff}$ vs Elevation for varying $\tau_0$")
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
-        savefig(OUTDIR, "Teff_tau0_0p01_to_0p15.png")
+        savefig(OUTDIR, "Teff_tau0_0p005_to_0p10.png")
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
@@ -462,7 +462,7 @@ def main(
         plt.title(r"Fractional Atmospheric Temperature Derivative vs Elevation for varying $\tau_0$")
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
-        savefig(OUTDIR, "frac_dT_del_Teff_tau0_0p01_to_0p15.png")
+        savefig(OUTDIR, "frac_dT_del_Teff_tau0_0p005_to_0p10.png")
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
@@ -474,7 +474,7 @@ def main(
         plt.title(r"Fractional Diff Atmospheric Temperature Derivative vs Elevation for varying $\tau_0$")
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
-        savefig(OUTDIR, "frac_diff_dT_del_Teff_tau0_0p01_to_0p15.png")
+        savefig(OUTDIR, "frac_diff_dT_del_Teff_tau0_0p005_to_0p10.png")
 
         # -----------------------------
         # Power change per degree: dP/del
@@ -517,7 +517,7 @@ def main(
         )
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
-        savefig(OUTDIR, "inst_dP_del_tau0_0p01_to_0p15.png")
+        savefig(OUTDIR, "inst_dP_del_tau0_0p005_to_0p10.png")
 
         # -----------------------------
         # Responsivity fit R(P): fit in W, but derived from pW points
