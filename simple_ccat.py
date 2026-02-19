@@ -54,7 +54,7 @@ CUTOUT = CUTOUT_ORIONA
 #  Simulation Parameters 
 # -----------------------------
 
-bandwidth_hz = 60e9  # GHz bandwidth for 280 GHz band
+bandwidth_hz = 40e9  # GHz bandwidth for 280 GHz band
 eta = 0.1 # optical efficiency for this estimate
 
 NU_HZ = 280e9  # 280 GHz
