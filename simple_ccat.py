@@ -904,31 +904,42 @@ def main(
     # -----------------------------
     # Compute Detector Loading Power in Maria Atmosphere Model
     # -----------------------------
-    P_det_pW = (K_B * tod0.atmosphere * bandwidth_hz * eta) * 1e12  # (N_det, N_time)
+    P_det_pW = (K_B * np.asarray(tod0.atmosphere) * bandwidth_hz * eta) * 1e12  # (N_det, N_time)
+
+    P = np.asarray(P_det_pW, dtype=np.float64)
+
+    P_mean = np.mean(P, axis=1)
+    P_std = np.std(P, axis=1)
+
+    P_ptp = np.nanmax(P, axis=1) - np.nanmin(P, axis=1)
 
     # Per-detector mean: cheap, keep as-is
     P_mean_per_det = np.mean(P_det_pW, axis=1)
 
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(8,6))
     plt.hist(P_mean_per_det, bins=30, alpha=0.7)
     plt.xlabel("Mean Detector Power (pW)")
     plt.ylabel("Number of Detectors")
-    plt.title("Distribution of Mean Detector Power across Detectors")
+    plt.title(f"Distribution of Mean Detector Power (PWV={pwv_mm:.2f} mm)")
     plt.grid(True)
-    savefig(OUTDIR, f"{PREFIX}_detector_power_distribution_PWV{pwv_mm:.2f}.png")
+    savefig(OUTDIR, f"{PREFIX}_detector_power_histogram_PWV{pwv_mm:.2f}.png")
 
-    # --- All-samples distribution: DOWN-SAMPLE HARD ---
-    # Take every k-th time sample, or random sample
-    stride = max(1, P_det_pW.shape[1] // 50_000)  # aim ~50k time samples
-    P_sample = P_det_pW[:, ::stride].ravel()      # ravel() avoids a copy when possible
-
-    plt.figure(figsize=(8, 6))
-    plt.hist(P_sample, bins=100, alpha=0.7)
-    plt.xlabel("Detector Power (pW)")
-    plt.ylabel("Number of Samples (downsampled)")
-    plt.title(f"Distribution of Detector Power (downsampled: stride={stride})")
+    plt.figure(figsize=(8,6))
+    plt.hist(P_std, bins=30, alpha=0.7)
+    plt.xlabel("Std Dev of Detector Power (pW)")
+    plt.ylabel("Number of Detectors")
+    plt.title(f"Distribution of Std Dev of Detector Power (PWV={pwv_mm:.2f} mm)")
     plt.grid(True)
-    savefig(OUTDIR, f"{PREFIX}_detector_power_samples_distribution_PWV{pwv_mm:.2f}_downsampled.png")
+    savefig(OUTDIR, f"{PREFIX}_detector_power_std_histogram_PWV{pwv_mm:.2f}.png")
+
+    plt.figure(figsize=(8,6))
+    plt.hist(P_ptp, bins=30, alpha=0.7)
+    plt.xlabel("Peak-to-Peak Detector Power (pW)")
+    plt.ylabel("Number of Detectors")
+    plt.title(f"Distribution of Peak-to-Peak Detector Power (PWV={pwv_mm:.2f} mm)")
+    plt.grid(True)
+    savefig(OUTDIR, f"{PREFIX}_detector_power_ptp_histogram_PWV{pwv_mm:.2f}.png")
+
     # -----------------------------
     # BinMapper Mapmaking
     # -----------------------------
