@@ -57,6 +57,10 @@ CUTOUT = CUTOUT_ORIONA
 bandwidth_hz = 40e9  # GHz bandwidth for 280 GHz band
 eta = 0.1 # optical efficiency for this estimate
 
+f_res = 800e6  # Resonant frequency in Hz (800 MHz)
+
+Q_r = 36380 # Quality factor taken from Bayguchi thesis
+
 NU_HZ = 280e9  # 280 GHz
 NU_GHZ = NU_HZ / 1e9
 
@@ -565,7 +569,6 @@ def main(
             R_quad = model_responsivity_func_pW(P, a_fit, b_fit, c_fit)
             return np.where(P <= P_MAX_PW, R_quad, R_CONST)
 
-        f_res = 800e6  # Resonant frequency in Hz (800 MHz)
 
         # -----------------------------
         # frequency slope vs elevation from power + responsivity fit
@@ -651,6 +654,36 @@ def main(
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
         savefig(OUTDIR, f"allowed_del_el_for_linear_regime_eta{eta:.1f}.png")
+
+    # elevation change expressed in Delta P for 2200 Hz shift
+        plt.figure(figsize=(8, 6))
+        for tau in taus:
+            Teff = effective_atm_temp_850GHz(pwv=pwv_mm, tau_0=float(tau), el_deg=x, T_0=T_0)
+
+            P_atm_pW = K_B * Teff * bandwidth_hz * eta # W
+            P_atm_pW *= 1e12 # convert to pW
+
+            dT_del = inst_effective_atm_temp_850GHz(
+                mode=temp_mode, tau_0=float(tau), el_deg=x, T_0=T_0
+            )  # K/deg
+
+            dP_del_W = inst_power_per_deg(
+                bandwidth=bandwidth_hz,
+                eta=eta,
+                dT_del=dT_del,
+            )  # W/deg
+
+            R_eval = R_piecewise(P_atm_pW)  # pW
+
+            Del_P = np.abs(1 / (10 * Q_r * R_eval))# pW, power change corresponding to 2200 Hz shift based on responsivity and Q_r
+
+            plt.plot(x, Del_P, label=fr"$\tau_0$={tau:.2f}")
+        plt.xlabel("Elevation (deg)")
+        plt.ylabel(r" $|\Delta P|$ for $|\Delta f|\leq 2200$ pW")
+        plt.title(r"Estimated power change allowed before leaving linear regime")
+        plt.grid(True)
+        plt.legend(ncol=2, fontsize=9)
+        savefig(OUTDIR, f"allowed_Del_P_for_linear_regime_eta{eta:.1f}.png")
 
 
     # -----------------------------
