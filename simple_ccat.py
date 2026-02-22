@@ -54,7 +54,7 @@ CUTOUT = CUTOUT_ORIONA
 #  Simulation Parameters 
 # -----------------------------
 
-bandwidth_hz = 40e9  # GHz bandwidth for 280 GHz band
+bandwidth_hz = 60e9  # GHz bandwidth for 280 GHz band
 eta = 0.1 # optical efficiency for this estimate
 
 f_res = 800e6  # Resonant frequency in Hz (800 MHz)
@@ -654,8 +654,10 @@ def main(
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
         savefig(OUTDIR, f"allowed_del_el_for_linear_regime_eta{eta:.1f}.png")
-
+    # -------------------------------------------------------
     # elevation change expressed in Delta P for 2200 Hz shift
+    # -------------------------------------------------------
+
         plt.figure(figsize=(8, 6))
         for tau in taus:
             Teff = effective_atm_temp_850GHz(pwv=pwv_mm, tau_0=float(tau), el_deg=x, T_0=T_0)
