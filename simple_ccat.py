@@ -54,7 +54,7 @@ CUTOUT = CUTOUT_ORIONA
 #  Simulation Parameters 
 # -----------------------------
 
-bandwidth_hz = 60e9  # GHz bandwidth for 280 GHz band
+bandwidth_hz = 40e9  # GHz bandwidth for 280 GHz band
 eta = 0.1 # optical efficiency for this estimate
 
 f_res = 800e6  # Resonant frequency in Hz (800 MHz)
@@ -677,7 +677,7 @@ def main(
 
             R_eval = R_piecewise(P_atm_pW)  # pW
 
-            Del_P = np.abs(1 / (10 * Q_r * R_eval))# pW, power change corresponding to 2200 Hz shift based on responsivity and Q_r
+            Del_P = np.abs(1e12 / (10 * Q_r * R_eval))# pW, power change corresponding to 2200 Hz shift based on responsivity and Q_r
 
             plt.plot(x, Del_P, label=fr"$\tau_0$={tau:.2f}")
         plt.xlabel("Elevation (deg)")
