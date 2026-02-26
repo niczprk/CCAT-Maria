@@ -59,7 +59,13 @@ eta = 0.1 # optical efficiency for this estimate
 
 f_res = 800e6  # Resonant frequency in Hz (800 MHz)
 
-Q_r = 36380 # Quality factor taken from Bayguchi thesis
+Q_r = 40000 # Quality factor taken from Bayguchi thesis
+
+P_0 = 957e-18 # idk but do not question the mighty jordan wheeler
+
+R_0 = -2.448e9 #avg responsivity in W^-1 from Jordan Wheeler
+
+Del_f = 2200 # Hz, 1/10th of the FWHM is the estimated linear regime limit for 280GHz MKID array
 
 NU_HZ = 280e9  # 280 GHz
 NU_GHZ = NU_HZ / 1e9
@@ -68,7 +74,7 @@ PWV_MM = 0.36  #  mm, precip water vapour
 
 # 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values for Chajnantor
 
-EL_LIMITS = (40, 85)  # degrees
+EL_LIMITS = (30, 70)  # degrees
 
 T_0 = 278.868 #K, atmospheric ground temp
 
@@ -569,6 +575,11 @@ def main(
             R_quad = model_responsivity_func_pW(P, a_fit, b_fit, c_fit)
             return np.where(P <= P_MAX_PW, R_quad, R_CONST)
 
+        def R_paper(P_W):
+            """
+            Model used in 280 GHz result paper, J Wheeler
+            """
+            return R_0 / (np.sqrt(1+ P_W / P_0))
 
         # -----------------------------
         # frequency slope vs elevation from power + responsivity fit
@@ -579,8 +590,10 @@ def main(
 
             Teff = effective_atm_temp_850GHz(pwv=pwv_mm, tau_0=float(tau), el_deg=x, T_0=T_0)
 
-            P_atm_pW = K_B * Teff * bandwidth_hz * eta
-            P_atm_pW *= 1e12 
+            P_atm_W = K_B * Teff * bandwidth_hz * eta # W
+            P_atm_pW = P_atm_W * 1e12 # convert to pW
+
+            R_eval = R_paper(P_atm_W) 
 
             dT_del = inst_effective_atm_temp_850GHz(
                 mode=temp_mode, tau_0=float(tau), el_deg=x, T_0=T_0
@@ -592,7 +605,7 @@ def main(
                 dT_del=dT_del,
             )  # W/deg
 
-            R_eval = R_piecewise(P_atm_pW)  # pW
+            # R_eval = R_piecewise(P_atm_pW)  # pW
 
             df_del_Hz_per_deg = f_res * R_eval * dP_del_W  # Hz/deg
 
@@ -620,15 +633,14 @@ def main(
         #  Elevation Change allowed before leaving linear regime
         # -----------------------------
 
-        Del_f = 2200 # Hz, 1/10th of the FWHM is the estimated linear regime limit for 280GHz MKID array
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
             
             Teff = effective_atm_temp_850GHz(pwv=pwv_mm, tau_0=float(tau), el_deg=x, T_0=T_0)
 
-            P_atm_pW = K_B * Teff * bandwidth_hz * eta # W
-            P_atm_pW *= 1e12 # convert to pW
+            P_atm_W = K_B * Teff * bandwidth_hz * eta # W
+            P_atm_pW = P_atm_W * 1e12 # convert to pW
 
             dT_del = inst_effective_atm_temp_850GHz(
                 mode=temp_mode, tau_0=float(tau), el_deg=x, T_0=T_0
@@ -640,17 +652,20 @@ def main(
                 dT_del=dT_del,
             )  # W/deg
 
-            R_eval = R_piecewise(P_atm_pW)  # pW
+            # R_eval = R_piecewise(P_atm_pW)  # pW
+
+            R_eval = R_paper(P_atm_W) # convert back to W for paper model
 
             df_del_Hz_per_deg = f_res * R_eval * dP_del_W  # Hz/deg
 
-            del_el_deg = 2200 / df_del_Hz_per_deg  # deg, elevation change corresponding to 2200 Hz frequency shift
+            del_el_deg = Del_f / np.abs(df_del_Hz_per_deg)  # deg, elevation change corresponding to 2200 Hz frequency shift
 
             plt.plot(x, del_el_deg, label=fr"$\tau_0$={tau:.2f}")
         
         plt.xlabel("Elevation (deg)")
         plt.ylabel(r" $\Delta\mathrm{el}$ for $|\Delta f|<2200$ Hz (deg)")
         plt.title(r"Estimated elevation change allowed before leaving linear regime")
+        plt.ylim(0, 10.0)
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
         savefig(OUTDIR, f"allowed_del_el_for_linear_regime_eta{eta:.1f}.png")
@@ -662,8 +677,8 @@ def main(
         for tau in taus:
             Teff = effective_atm_temp_850GHz(pwv=pwv_mm, tau_0=float(tau), el_deg=x, T_0=T_0)
 
-            P_atm_pW = K_B * Teff * bandwidth_hz * eta # W
-            P_atm_pW *= 1e12 # convert to pW
+            P_atm_W = K_B * Teff * bandwidth_hz * eta # W
+            P_atm_pW = P_atm_W * 1e12 # convert to pW
 
             dT_del = inst_effective_atm_temp_850GHz(
                 mode=temp_mode, tau_0=float(tau), el_deg=x, T_0=T_0
@@ -675,13 +690,19 @@ def main(
                 dT_del=dT_del,
             )  # W/deg
 
-            R_eval = R_piecewise(P_atm_pW)  # pW
+            # R_eval = R_piecewise(P_atm_pW)  # pW
 
-            Del_P = np.abs(1e12 / (10 * Q_r * R_eval))# pW, power change corresponding to 2200 Hz shift based on responsivity and Q_r
+            R_eval = R_paper(P_atm_W) # convert back to W for paper model
 
-            plt.plot(x, Del_P, label=fr"$\tau_0$={tau:.2f}")
+            # Del_P = np.abs(1 / (10 * Q_r * R_eval))# pW, power change corresponding to 2200 Hz shift based on responsivity and Q_r
+
+            Del_P = (Del_f/f_res) * np.abs(1/R_eval) # W, power change corresponding to 2200 Hz shift based on responsivity and frequency shift ratio
+
+            Del_P_pW = Del_P * 1e12 # convert to pW
+
+            plt.plot(x, Del_P_pW, label=fr"$\tau_0$={tau:.2f}")
         plt.xlabel("Elevation (deg)")
-        plt.ylabel(r" $|\Delta P|$ for $|\Delta f|\leq 2200$ pW")
+        plt.ylabel(r" $|\Delta P|$ for $|\Delta f|\leq 2200$ ($pW$)")
         plt.title(r"Estimated power change allowed before leaving linear regime")
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
@@ -717,6 +738,8 @@ def main(
     # convert_fits_units(RAW_FITS, JYSR_FITS, input_unit="mJy/arcsec^2", output_unit="Jy/sr")
     # clip_fits_nans(JYSR_FITS, FILLED_FITS, fill_value=0.0)
     # clip_fits_area(FILLED_FITS, REDUCED_FITS, **CUTOUT)
+
+
 
     # Atmosphere plots for "all"
     if do_atm:
@@ -761,9 +784,26 @@ def main(
     input_map = maria.map.load(str(REDUCED_FITS), nu=NU_HZ)
 
     print(input_map)
-    input_map.to("Jy/sr").plot(cmap="coolwarm")
+
+    map_jysr = input_map.to("Jy/sr")
+    print(map_jysr)
+    map_jysr.plot(cmap="coolwarm")
     savefig(OUTDIR, f"{PREFIX}_input_map_JySr_PWV{pwv_mm:.2f}.png")
 
+    # map_pW = input_map.to("watts")
+    # print(map_pW)
+    # map_pW.plot(cmap="coolwarm")
+    # savefig(OUTDIR, f"{PREFIX}_input_map_W_PWV{pwv_mm:.2f}.png")
+
+    map_K = input_map.to("K_RJ", band=f280)
+    print(map_K)
+    map_K.plot(cmap="coolwarm")
+    savefig(OUTDIR, f"{PREFIX}_input_map_KRJ_PWV{pwv_mm:.2f}.png")
+
+    map_Kcmb = input_map.to("K_CMB", band=f280)    
+    print(map_Kcmb)
+    map_Kcmb.plot(cmap="coolwarm")
+    savefig(OUTDIR, f"{PREFIX}_input_map_KCMB_PWV{pwv_mm:.2f}.png")
     # -----------------------------
     # Scan Planning
     # -----------------------------
@@ -803,7 +843,7 @@ def main(
     tods = sim.run()
     print(tods)
 
-    tods[0].plot()
+    tods[0].to("pW").plot()
     plt.savefig(
         os.path.join(OUTDIR, f"{PREFIX}_tod_plot_{CHUNK_NUMBER}.png"),
         dpi=200,
@@ -1015,8 +1055,8 @@ if __name__ == "__main__":
     mp.set_start_method("spawn", force = True)
 
 
-    #main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", run_mode="only_atm", pwv_mm=0.36)
-    main(atm_plot=True, run_mode= "all" , temp_mode="inst", map_type="Binmapper", tod_diagnostics=True)
+    main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", run_mode="only_atm", pwv_mm=0.36)
+    #main(atm_plot=True, run_mode= "all" , temp_mode="inst", map_type="Binmapper", tod_diagnostics=True)
 
     raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 
