@@ -33,22 +33,24 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/s
 # Fits // Directory Parameters
 # -----------------------------
 
-PREFIX = "OrionA"
-
-OUTDIR = Path(f"outputs/{PREFIX}_ccat_test_outputs")
+FITS_PREFIX = "OrionA"
 
 DATA_DIR = Path("data")
 
-RAW_FITS = DATA_DIR / f"{PREFIX}_20170726_850_DR3_ext_HK.fits"
-JYSR_FITS = DATA_DIR / f"{PREFIX}_20170726_850_DR3_ext_HK_JySr.fits"
-FILLED_FITS = DATA_DIR / f"{PREFIX}_20170726_850_DR3_ext_HK_JySr_nan_filled.fits"
-REDUCED_FITS = DATA_DIR / f"{PREFIX}_20170726_850_DR3_ext_HK_JySr_reduced_filled.fits"
+RAW_FITS = DATA_DIR / f"{FITS_PREFIX}_20170726_850_DR3_ext_HK.fits"
+JYSR_FITS = DATA_DIR / f"{FITS_PREFIX}_20170726_850_DR3_ext_HK_JySr.fits"
+FILLED_FITS = DATA_DIR / f"{FITS_PREFIX}_20170726_850_DR3_ext_HK_JySr_nan_filled.fits"
+REDUCED_FITS = DATA_DIR / f"{FITS_PREFIX}_20170726_850_DR3_ext_HK_JySr_reduced_filled.fits"
 
 CUTOUT_ORIONA = dict(ra_min=83.2, ra_max=84.0, dec_min=-6.0, dec_max=-4.8)
 
 CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0)
 
 CUTOUT = CUTOUT_ORIONA
+
+PREFIX = "OrionA_large_beam_spacing"
+
+OUTDIR = Path(f"outputs/{PREFIX}_ccat_test_outputs")
 
 # -----------------------------
 #  Simulation Parameters 
@@ -79,7 +81,7 @@ EL_LIMITS = (30, 70)  # degrees
 T_0 = 278.868 #K, atmospheric ground temp
 
 
-START_TIME = "2022-02-10T17:00:00"
+START_TIME = "2022-02-10T18:55:00"
 
 #"2022-02-10T20:30:00" for around 60 degrees 
 #"2022-02-10T18:55:00" for roughly 45 degrees
@@ -413,6 +415,7 @@ def main(
     run_mode: str = "only_atm",
     atm_plot: bool = True,
     temp_mode: str = "inst",
+    ccat_band: str = "280",
     map_type: str = "BinMapper",
     tod_diagnostics: bool = True,
     pwv_mm: float = PWV_MM,
@@ -750,22 +753,74 @@ def main(
     # -----------------------------
     # Instrument
     # -----------------------------
-    f280 = Band(
-        center=280e9,
-        width=bandwidth_hz,
-        NET_CMB=13e-6,
-        knee=1.0,
-        gain_error=5e-2,
-    )
+    if ccat_band == "220":
+        f220 = Band(
+            center=220e9,
+            width=bandwidth_hz,
+            NET_CMB=10e-6,
+            knee=1.0,
+            gain_error=5e-2,
+        )
+        band = f220
+
+    elif ccat_band == "280":
+        f280 = Band(
+            center=280e9,
+            width=bandwidth_hz,
+            NET_CMB=13e-6,
+            knee=1.0,
+            gain_error=5e-2,
+        )
+        band = f280
+
+    elif ccat_band == "350":
+        f350 = Band(
+            center=350e9,
+            width=bandwidth_hz,
+            NET_CMB=20e-6,
+            knee=1.0,
+            gain_error=5e-2,
+        )
+        band = f350
+
+    elif ccat_band == "410":
+        f410 = Band(
+            center=410e9,
+            width=bandwidth_hz,
+            NET_CMB=30e-6,
+            knee=1.0,
+            gain_error=5e-2,
+        )
+        band = f410
+    
+    elif ccat_band == "850":
+        f850 = Band(
+            center=850e9,
+            width=bandwidth_hz,
+            NET_CMB=100e-6,
+            knee=1.0,
+            gain_error=5e-2,
+        )
+        band = f850
+    
+    else:
+        raise ValueError(f"Invalid ccat_band: {ccat_band}. Choose from '220', '280', '350', '410', '850'.")
+    
 
     array_cfg = {
         "shape": "hexagon",
         "field_of_view": 1.3,
-        "beam_spacing": 2.0,
+        "beam_spacing": 4.0,
         "primary_size": 6.0,
-        "bands": [f280],
+        "bands": [band],
         "polarized": False,
     }
+
+    #change beam spacing -> 4 to see if the temperature changes, if it doesnt then there is an assumption abt detectors
+    #maybe, 
+    #what is assumed telescope efficiency 
+    #could run pwv multiples with less detectors for efficiency
+    # 
 
     instrument = maria.get_instrument(array=array_cfg)
     print(instrument)
@@ -1055,8 +1110,8 @@ if __name__ == "__main__":
     mp.set_start_method("spawn", force = True)
 
 
-    main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", run_mode="only_atm", pwv_mm=0.36)
-    #main(atm_plot=True, run_mode= "all" , temp_mode="inst", map_type="Binmapper", tod_diagnostics=True)
+    #main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", ccat_band = "280", run_mode="only_atm", pwv_mm=0.36)
+    main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="280", map_type="Binmapper", tod_diagnostics=True)
 
     raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 
@@ -1071,7 +1126,7 @@ if __name__ == "__main__":
         pwv_mm = pwv
         print(f"\n=== Running for PWV={pwv_mm:.2f} mm ===")
 
-        tau0_ref, el_ref = main(atm_plot=False, run_mode= "only_sim" , temp_mode="inst", map_type="skip", tod_diagnostics=True, pwv_mm=pwv_mm)
+        tau0_ref, el_ref = main(atm_plot=False, run_mode= "only_sim" , temp_mode="inst", ccat_band="280", map_type="skip", tod_diagnostics=True, pwv_mm=pwv_mm)
         tau0_list.append(tau0_ref)
 
         main_end_time = time.perf_counter()
