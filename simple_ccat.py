@@ -756,8 +756,8 @@ def main(
     if ccat_band == "220":
         f220 = Band(
             center=220e9,
-            width=bandwidth_hz,
-            NET_CMB=10e-6,
+            width=56e9,
+            NET_CMB=6.8e-6,
             knee=1.0,
             gain_error=5e-2,
         )
@@ -766,7 +766,7 @@ def main(
     elif ccat_band == "280":
         f280 = Band(
             center=280e9,
-            width=bandwidth_hz,
+            width=60e9,
             NET_CMB=13e-6,
             knee=1.0,
             gain_error=5e-2,
@@ -776,8 +776,8 @@ def main(
     elif ccat_band == "350":
         f350 = Band(
             center=350e9,
-            width=bandwidth_hz,
-            NET_CMB=20e-6,
+            width=35e9,
+            NET_CMB=48e-6,
             knee=1.0,
             gain_error=5e-2,
         )
@@ -786,8 +786,8 @@ def main(
     elif ccat_band == "410":
         f410 = Band(
             center=410e9,
-            width=bandwidth_hz,
-            NET_CMB=30e-6,
+            width=30e9,
+            NET_CMB=182e-6,
             knee=1.0,
             gain_error=5e-2,
         )
@@ -796,8 +796,8 @@ def main(
     elif ccat_band == "850":
         f850 = Band(
             center=850e9,
-            width=bandwidth_hz,
-            NET_CMB=100e-6,
+            width=97e9,
+            NET_CMB=310000e-6,
             knee=1.0,
             gain_error=5e-2,
         )
