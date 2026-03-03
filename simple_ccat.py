@@ -4,6 +4,7 @@ import os, sys
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 import matplotlib
 matplotlib.use("Agg")
@@ -42,13 +43,15 @@ JYSR_FITS = DATA_DIR / f"{FITS_PREFIX}_20170726_850_DR3_ext_HK_JySr.fits"
 FILLED_FITS = DATA_DIR / f"{FITS_PREFIX}_20170726_850_DR3_ext_HK_JySr_nan_filled.fits"
 REDUCED_FITS = DATA_DIR / f"{FITS_PREFIX}_20170726_850_DR3_ext_HK_JySr_reduced_filled.fits"
 
+CCAT_DATA = DATA_DIR / "atm-table-ccat.dat"
+
 CUTOUT_ORIONA = dict(ra_min=83.2, ra_max=84.0, dec_min=-6.0, dec_max=-4.8)
 
 CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0)
 
 CUTOUT = CUTOUT_ORIONA
 
-PREFIX = "OrionA_large_beam_spacing"
+PREFIX = "OrionA_large_beam_spacing_350GHz"
 
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_test_outputs")
 
@@ -56,7 +59,7 @@ OUTDIR = Path(f"outputs/{PREFIX}_ccat_test_outputs")
 #  Simulation Parameters 
 # -----------------------------
 
-bandwidth_hz = 40e9  # GHz bandwidth for 280 GHz band
+bandwidth_hz = 35e9  # GHz bandwidth for 350 GHz band
 eta = 0.1 # optical efficiency for this estimate
 
 f_res = 800e6  # Resonant frequency in Hz (800 MHz)
@@ -67,9 +70,9 @@ P_0 = 957e-18 # idk but do not question the mighty jordan wheeler
 
 R_0 = -2.448e9 #avg responsivity in W^-1 from Jordan Wheeler
 
-Del_f = 2200 # Hz, 1/10th of the FWHM is the estimated linear regime limit for 280GHz MKID array
+Del_f = 2200 # Hz, 1/10th of the FWHM is the estimated linear regime limit for 350GHz MKID array
 
-NU_HZ = 280e9  # 280 GHz
+NU_HZ = 350e9  # 250 GHz
 NU_GHZ = NU_HZ / 1e9
 
 PWV_MM = 0.36  #  mm, precip water vapour
@@ -79,6 +82,7 @@ PWV_MM = 0.36  #  mm, precip water vapour
 EL_LIMITS = (30, 70)  # degrees
 
 T_0 = 278.868 #K, atmospheric ground temp
+
 
 
 START_TIME = "2022-02-10T18:55:00"
@@ -402,7 +406,19 @@ def compare_maria_atm_temp(
     )
     print(f"Atm dT/del: {dT_del:.6f} K/deg for /mathrm$tau_0$={tau_0:.4f} at el={el_deg:.4f} deg")
 
+def deltaP_for_delta_el(el_ref_deg: float, delta_el_deg: float, tau_0: float, bandwidth: float, eta: float, T_0: float = T_0) -> float:
+    """
+    Estimate the change in atmospheric power loading (delta_P) for a given change in elevation (delta_el_deg) around a reference elevation (el_ref_deg),
+    using the atmospheric temperature derivative and the instrument parameters.
+    """
 
+
+    e1 = el_ref_deg - 0.5 * delta_el_deg
+    e2 = el_ref_deg + 0.5 * delta_el_deg
+
+    delta_P = K_B * bandwidth * eta * 1e12 * (effective_atm_temp_850GHz(pwv=None, tau_0=tau_0, el_deg=e2, T_0=T_0) - effective_atm_temp_850GHz(pwv=None, tau_0=tau_0, el_deg=e1, T_0=T_0)) 
+
+    return delta_P
 
 # ----------------------------------------------
 # ---------- Main Execution Pipeline -----------
@@ -711,6 +727,62 @@ def main(
         plt.legend(ncol=2, fontsize=9)
         savefig(OUTDIR, f"allowed_Del_P_for_linear_regime_eta{eta:.1f}.png")
 
+    # -------------------------------------------------------
+    # change in power for given elevation change, of reference elevation, and tau_0
+    # -------------------------------------------------------
+
+        el_ref = 45.0 # degrees, reference elevation for some of the plots
+
+        deltas = [1.0, 2.0, 5.0] # degrees, elevation changes
+
+
+        plt.figure(figsize=(8, 6))
+        for delta in deltas:
+
+            dP = np.array([deltaP_for_delta_el(el_ref_deg=el_ref, delta_el_deg=delta, tau_0=float(tau), bandwidth=bandwidth_hz, eta=eta, T_0=T_0) for tau in taus])
+            plt.plot(taus, np.abs(dP), label=fr"$\Delta\mathrm{{el}}$={delta:.1f} deg")
+
+        plt.xlabel(r"Zenith opacity $\tau_0$")
+        plt.ylabel(r"$|\Delta P|$ (pW)")
+        plt.title(fr"Atmospheric loading change vs $\tau_0$ (Δν={bandwidth_hz/1e9:.0f} GHz, η={eta:.2f})")
+        plt.grid(True)
+        plt.legend()
+        savefig(OUTDIR, f"deltaP_vs_tau0_el{el_ref:.0f}_dels_{'_'.join(str(int(d)) for d in deltas)}deg.png")
+
+    # -------------------------------------------------------
+    # Open CCAT dat file to check for consistency with atmosphere model assumptions
+    # -------------------------------------------------------
+
+    ccat_tab = pd.read_csv(CCAT_DATA)
+
+    print(ccat_tab.head())
+
+    ccat_atm_data = np.loadtxt(CCAT_DATA, comments = "!")
+
+    nu = ccat_atm_data[:, 0]
+    b = ccat_atm_data[:, 1] 
+    c = ccat_atm_data[:, 2] 
+
+    freqs = [220, 280, 350, 410, 850]
+    pwvs = np.linspace(0.36, 1.28)
+
+    plt.figure(figsize=(8, 6))
+    for f in freqs: 
+        idx = np.argmin(np.abs(nu - f))
+        b_f = b[idx]
+        c_f = c[idx]
+
+        tau_0 = b_f * pwvs + c_f
+
+        plt.plot(pwvs, tau_0, label=fr"${f}$ GHz, CCAT fit $\tau_0 = {b_f:.3f} \cdot \mathrm{{PWV}} + {c_f:.3f}$")
+
+    plt.xlabel("PWV (mm)")
+    plt.ylabel(r"Zenith opacity $\tau_0$")
+    plt.title("Atmospheric opacity vs PWV")
+    plt.grid(True)
+    plt.legend()
+    savefig(OUTDIR, f"ccat_tau0_vs_pwv.png")
+
 
     # -----------------------------
     # 1) Atmosphere-only mode
@@ -810,7 +882,7 @@ def main(
     array_cfg = {
         "shape": "hexagon",
         "field_of_view": 1.3,
-        "beam_spacing": 4.0,
+        "beam_spacing": 8.0,
         "primary_size": 6.0,
         "bands": [band],
         "polarized": False,
@@ -850,15 +922,17 @@ def main(
     # map_pW.plot(cmap="coolwarm")
     # savefig(OUTDIR, f"{PREFIX}_input_map_W_PWV{pwv_mm:.2f}.png")
 
-    map_K = input_map.to("K_RJ", band=f280)
-    print(map_K)
-    map_K.plot(cmap="coolwarm")
-    savefig(OUTDIR, f"{PREFIX}_input_map_KRJ_PWV{pwv_mm:.2f}.png")
+    # map_K = input_map.to("K_RJ", band=f280)
+    # print(map_K)
+    # map_K.plot(cmap="coolwarm")
+    # savefig(OUTDIR, f"{PREFIX}_input_map_KRJ_PWV{pwv_mm:.2f}.png")
 
-    map_Kcmb = input_map.to("K_CMB", band=f280)    
-    print(map_Kcmb)
-    map_Kcmb.plot(cmap="coolwarm")
-    savefig(OUTDIR, f"{PREFIX}_input_map_KCMB_PWV{pwv_mm:.2f}.png")
+    # map_Kcmb = input_map.to("K_CMB", band=f280)    
+    # print(map_Kcmb)
+    # map_Kcmb.plot(cmap="coolwarm")
+    # savefig(OUTDIR, f"{PREFIX}_input_map_KCMB_PWV{pwv_mm:.2f}.png")
+
+
     # -----------------------------
     # Scan Planning
     # -----------------------------
@@ -978,7 +1052,7 @@ def main(
     el0 = np.nanmean(to_deg_if_rad(tod0.el), axis=0)
     T_atm0 = np.nanmean(np.asarray(tod0.data["atmosphere"]), axis=0)
 
-    m = np.isfinite(el0) & np.isfinite(T_atm0) & (T_atm0 > 0.0) & (T_atm0 < 0.98 * T_0)
+    m = np.isfinite(el0) & np.isfinite(T_atm0) & (T_atm0 > 0.0) #& (T_atm0 < 0.98 * T_0)
 
     elv = el0[m]
     Tv = T_atm0[m]
@@ -1109,15 +1183,32 @@ if __name__ == "__main__":
 
     mp.set_start_method("spawn", force = True)
 
-
     #main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", ccat_band = "280", run_mode="only_atm", pwv_mm=0.36)
-    main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="280", map_type="Binmapper", tod_diagnostics=True)
 
-    raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
+    # main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="280", map_type="Binmapper", tod_diagnostics=True)
+
+    #raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
+
+    freq_target = NU_GHZ
 
     pwv_list = np.linspace(0.36, 1.28, 5) # mm, from Q1 to Q3 zenith PMV values
 
     tau0_list = []
+
+    ccat_table = np.loadtxt(CCAT_DATA, comments = "!") # just to check that the file can be read without error before starting the loop
+
+    nu = ccat_table[:, 0]
+    b = ccat_table[:, 1]
+    c = ccat_table[:, 2]
+
+
+    idx_freq = np.argmin(np.abs(nu - freq_target))
+
+    b_f = b[idx_freq]
+    c_f = c[idx_freq]
+
+    tau_0 = b_f * pwv_list + c_f
+
 
     for pwv in pwv_list:
 
@@ -1126,7 +1217,7 @@ if __name__ == "__main__":
         pwv_mm = pwv
         print(f"\n=== Running for PWV={pwv_mm:.2f} mm ===")
 
-        tau0_ref, el_ref = main(atm_plot=False, run_mode= "only_sim" , temp_mode="inst", ccat_band="280", map_type="skip", tod_diagnostics=True, pwv_mm=pwv_mm)
+        tau0_ref, el_ref = main(atm_plot=False, run_mode= "only_sim" , temp_mode="inst", ccat_band="350", map_type="skip", tod_diagnostics=True, pwv_mm=pwv_mm)
         tau0_list.append(tau0_ref)
 
         main_end_time = time.perf_counter()
@@ -1158,9 +1249,11 @@ if __name__ == "__main__":
     tau0_fit = A * pwv_fit + B
     plt.plot(pwv_fit, tau0_fit,lw=2, ls = "-", label=f"Linear Fit: $\\tau_0$ = {A:.4f} * PWV + {B:.4f}")
 
+    plt.plot(pwv_arr, tau_0, label=fr"${NU_GHZ:.1f}$ GHz, CCAT fit $\tau_0 = {b_f:.3f} \cdot \mathrm{{PWV}} + {c_f:.3f}$")
+
     plt.xlabel("PWV (mm)")
     plt.ylabel("Inferred $\\tau_0$")
-    plt.title("Inferred $\\tau_0$ vs PWV")
+    plt.title(f"Inferred $\\tau_0$ vs PWV, {NU_GHZ} GHz")
     plt.grid(True)
     plt.legend()
     plt.tight_layout()
