@@ -51,7 +51,7 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 
 CUTOUT = CUTOUT_ORIONA
 
-PREFIX = "OrionA_large_beam_spacing_350GHz"
+PREFIX = "OrionA_atmosphere_ccat_comparison"
 
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_test_outputs")
 
@@ -59,7 +59,7 @@ OUTDIR = Path(f"outputs/{PREFIX}_ccat_test_outputs")
 #  Simulation Parameters 
 # -----------------------------
 
-bandwidth_hz = 35e9  # GHz bandwidth for 350 GHz band
+bandwidth_hz = 60e9  # GHz bandwidth for 410 GHz band
 eta = 0.1 # optical efficiency for this estimate
 
 f_res = 800e6  # Resonant frequency in Hz (800 MHz)
@@ -72,7 +72,7 @@ R_0 = -2.448e9 #avg responsivity in W^-1 from Jordan Wheeler
 
 Del_f = 2200 # Hz, 1/10th of the FWHM is the estimated linear regime limit for 350GHz MKID array
 
-NU_HZ = 350e9  # 250 GHz
+NU_HZ = 280e9  # 410 GHz
 NU_GHZ = NU_HZ / 1e9
 
 PWV_MM = 0.36  #  mm, precip water vapour
@@ -599,6 +599,26 @@ def main(
             Model used in 280 GHz result paper, J Wheeler
             """
             return R_0 / (np.sqrt(1+ P_W / P_0))
+
+        # -----------------------------
+        # Paper Responsivity Model Plot
+        # -----------------------------
+
+        P_plot_pW = np.linspace(0.0001, 10.0, 200)          # pW
+        P_plot_W  = P_plot_pW * 1e-12                       # W
+
+        plt.figure(figsize=(8, 6))
+
+        # Paper model evaluated in W, but plotted vs pW
+        plt.plot(P_plot_pW, R_paper(P_plot_W) / 1e8, label="Paper model (expects W)")
+
+        plt.xlabel("Power (pW)")
+        plt.ylabel(r"Responsivity $R$ ($10^8$ $W^{-1}$)")
+        plt.title("Approximate Responsivity Model")
+        plt.xscale("log")
+        plt.grid(True)
+        plt.legend()
+        savefig(OUTDIR, "paper_model_vs_quadratic_fit.png")
 
         # -----------------------------
         # frequency slope vs elevation from power + responsivity fit
@@ -1183,11 +1203,11 @@ if __name__ == "__main__":
 
     mp.set_start_method("spawn", force = True)
 
-    #main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", ccat_band = "280", run_mode="only_atm", pwv_mm=0.36)
+    main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", ccat_band = "280", run_mode="only_atm", pwv_mm=0.36)
 
     # main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="280", map_type="Binmapper", tod_diagnostics=True)
 
-    #raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
+    raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 
     freq_target = NU_GHZ
 
@@ -1217,7 +1237,7 @@ if __name__ == "__main__":
         pwv_mm = pwv
         print(f"\n=== Running for PWV={pwv_mm:.2f} mm ===")
 
-        tau0_ref, el_ref = main(atm_plot=False, run_mode= "only_sim" , temp_mode="inst", ccat_band="350", map_type="skip", tod_diagnostics=True, pwv_mm=pwv_mm)
+        tau0_ref, el_ref = main(atm_plot=False, run_mode= "only_sim" , temp_mode="inst", ccat_band="410", map_type="skip", tod_diagnostics=True, pwv_mm=pwv_mm)
         tau0_list.append(tau0_ref)
 
         main_end_time = time.perf_counter()
