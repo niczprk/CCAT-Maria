@@ -59,7 +59,7 @@ OUTDIR = Path(f"outputs/{PREFIX}_ccat_test_outputs")
 #  Simulation Parameters 
 # -----------------------------
 
-bandwidth_hz = 60e9  # GHz bandwidth for 410 GHz band
+bandwidth_hz = 97e9  # GHz bandwidth for 410 GHz band
 eta = 0.1 # optical efficiency for this estimate
 
 f_res = 800e6  # Resonant frequency in Hz (800 MHz)
@@ -72,7 +72,7 @@ R_0 = -2.448e9 #avg responsivity in W^-1 from Jordan Wheeler
 
 Del_f = 2200 # Hz, 1/10th of the FWHM is the estimated linear regime limit for 350GHz MKID array
 
-NU_HZ = 280e9  # 410 GHz
+NU_HZ = 850e9  # 410 GHz
 NU_GHZ = NU_HZ / 1e9
 
 PWV_MM = 0.36  #  mm, precip water vapour
@@ -604,7 +604,7 @@ def main(
         # Paper Responsivity Model Plot
         # -----------------------------
 
-        P_plot_pW = np.linspace(0.0001, 10.0, 200)          # pW
+        P_plot_pW = np.logspace(-5, 1, 200)          # pW
         P_plot_W  = P_plot_pW * 1e-12                       # W
 
         plt.figure(figsize=(8, 6))
@@ -618,7 +618,7 @@ def main(
         plt.xscale("log")
         plt.grid(True)
         plt.legend()
-        savefig(OUTDIR, "paper_model_vs_quadratic_fit.png")
+        savefig(OUTDIR, "new_280_responsivity_model.png")
 
         # -----------------------------
         # frequency slope vs elevation from power + responsivity fit
@@ -769,6 +769,42 @@ def main(
         plt.legend()
         savefig(OUTDIR, f"deltaP_vs_tau0_el{el_ref:.0f}_dels_{'_'.join(str(int(d)) for d in deltas)}deg.png") #subtle flex
 
+        # -----------------------------
+        # change in power for given elevation change, of reference elevation, and tau_0
+        # -----------------------------
+
+        plt.figure(figsize=(8, 6))
+        for tau in taus:
+
+            Teff = effective_atm_temp_850GHz(pwv=pwv_mm, tau_0=float(tau), el_deg=x, T_0=T_0)
+
+            P_atm_W = K_B * Teff * bandwidth_hz * eta # W
+            P_atm_pW = P_atm_W * 1e12 # convert to pW
+
+            R_eval = R_paper(P_atm_W) 
+
+            dT_del = inst_effective_atm_temp_850GHz(
+                mode=temp_mode, tau_0=float(tau), el_deg=x, T_0=T_0
+            )  # K/deg
+
+            dP_del_W = inst_power_per_deg(
+                bandwidth=bandwidth_hz,
+                eta=eta,
+                dT_del=dT_del,
+            )  # W/deg
+
+            plt.plot(x, dP_del_W * 1e12, label=fr"$\tau_0$={tau:.2f}")
+
+        plt.xlabel("Elevation (deg)")
+        plt.ylabel(r"$dP/d\mathrm{el}$ (pW/deg)")
+        plt.title(
+            fr"Atmospheric loading slope $dP/d\mathrm{{el}}$ vs Elevation "
+            fr"($\Delta\nu$={bandwidth_hz/1e9:.0f} GHz, $\eta$={eta:.2f})"
+        )
+        plt.grid(True)
+        plt.legend(ncol=2, fontsize=9)
+        savefig(OUTDIR, f"atm_loading_slope_dP_del_vs_elevation_eta{eta:.1f}.png")
+
     # -------------------------------------------------------
     # Open CCAT dat file to check for consistency with atmosphere model assumptions
     # -------------------------------------------------------
@@ -804,47 +840,66 @@ def main(
     savefig(OUTDIR, f"ccat_tau0_vs_pwv.png")
 
 
-    # -------------------------------------------------------
-    # CCAT tau trends for b and c ccat bands GHz
-    # -------------------------------------------------------
+# -------------------------------------------------------
+# CCAT tau trends for b and c ccat bands GHz
+# -------------------------------------------------------
 
     freqs = [220, 280, 350, 410, 850]
     widths = [56, 60, 35, 30, 97]
 
-    maria_b_280 = [0.0414, 0.0622, 0.2543, 0.9822, 0.0]
-    maria_c_280 = [0.0101, 0.0121, 0.0064, -0.1208, 0.0]
+    maria_b = [0.0414, 0.0622, 0.2543, 0.9822, np.nan]
+    maria_c = [0.0101, 0.0121, 0.0064, -0.1208, np.nan]
 
-    ccat_atm_tab = np.loadtxt(CCAT_DATA, comments = "!")
+    ccat_atm_tab = np.loadtxt(CCAT_DATA, comments="!")
 
-    nu = ccat_atm_tab[:,0]
-    b = ccat_atm_tab[:,1]
-    c = ccat_atm_tab[:,2]
+    nu = ccat_atm_tab[:, 0]
+    b = ccat_atm_tab[:, 1]
+    c = ccat_atm_tab[:, 2]
 
-    for f, w in zip(freqs, widths):
-        nu_mask = (nu >= f - w) & (nu <= f + w)
+    for f, w, mb, mc in zip(freqs, widths, maria_b, maria_c):
+        nu_mask = (nu >= f - w/2) & (nu <= f + w/2)
+
+        if not np.any(nu_mask):
+            print(f"No data found in range {f-w/2} to {f+w/2} GHz for band centered at {f} GHz")
+            continue
 
         b_masked = b[nu_mask]
         c_masked = c[nu_mask]
+        nu_masked = nu[nu_mask]
 
+        # ---- b plot ----
         plt.figure(figsize=(8, 6))
-        plt.plot(nu[nu_mask], b_masked, label="b coefficient (PWV slope)")
-        plt.plot(nu[nu_mask], maria_b_280[freqs.index(f)], label="Maria b coefficient at 280 GHz")
+        plt.plot(nu_masked, b_masked, label="CCAT b coefficient (PWV slope)")
+
+        if not np.isnan(mb):
+            plt.axhline(mb, linestyle="--", color = "red",label=f"Maria b coefficient at {f} GHz")
+        else:
+            plt.plot([], [], linestyle="--", color="red", label="Maria b: N/A")  # dummy plot for legend
+
         plt.xlabel("Frequency (GHz)")
-        plt.ylabel("b coefficient (1/mm)")
-        plt.title(f"CCAT tau trends for b {f} GHz")
+        plt.ylabel("b coefficient")
+        plt.title(f"CCAT tau trends for b around {f} GHz")
         plt.grid(True)
         plt.legend()
-        savefig(OUTDIR, f"ccat_tau_trends_{f}GHz.png")
+        savefig(OUTDIR, f"ccat_tau_trends_b_{f}GHz.png")
+        plt.close()
 
+        # ---- c plot ----
         plt.figure(figsize=(8, 6))
-        plt.plot(nu[nu_mask], c_masked, label="c coefficient (PWV intercept)")
-        plt.plot(nu[nu_mask], maria_c_280[freqs.index(f)], label="Maria c coefficient at 280 GHz")
+        plt.plot(nu_masked, c_masked, label="CCAT c coefficient (PWV intercept)")
+
+        if not np.isnan(mc):
+            plt.axhline(mc, linestyle="--", color = "red", label=f"Maria c coefficient at {f} GHz")
+        else:
+            plt.plot([], [], linestyle="--", color="red", label="Maria c: N/A")  # dummy plot for legend
+
         plt.xlabel("Frequency (GHz)")
-        plt.ylabel("c coefficient (1/mm)")
-        plt.title(f"CCAT tau trends for c {f} GHz")
+        plt.ylabel("c coefficient")
+        plt.title(f"CCAT tau trends for c around {f} GHz")
         plt.grid(True)
         plt.legend()
-        savefig(OUTDIR, f"ccat_tau_trends_{f}GHz.png")
+        savefig(OUTDIR, f"ccat_tau_trends_c_{f}GHz.png")
+        plt.close()
 
     # -----------------------------
     # 1) Atmosphere-only mode
@@ -1245,9 +1300,9 @@ if __name__ == "__main__":
 
     mp.set_start_method("spawn", force = True)
 
-    main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", ccat_band = "280", run_mode="only_atm", pwv_mm=0.36)
+    main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", ccat_band = "850", run_mode="only_atm", pwv_mm=0.36)
 
-    #main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="280", map_type="Binmapper", tod_diagnostics=True, pwv_mm=0.36)
+    #main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="850", map_type="Binmapper", tod_diagnostics=True, pwv_mm=0.36)
 
     raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 
