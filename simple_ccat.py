@@ -51,7 +51,7 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 
 CUTOUT = CUTOUT_ORIONA
 
-PREFIX = "OrionA_unpolarized" # for output files, e.g. "OrionA_polarized"
+PREFIX = "OrionA_pwv_trends" # for output files, e.g. "OrionA_polarized"
 
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_test_outputs")
 
@@ -804,6 +804,48 @@ def main(
     savefig(OUTDIR, f"ccat_tau0_vs_pwv.png")
 
 
+    # -------------------------------------------------------
+    # CCAT tau trends for b and c ccat bands GHz
+    # -------------------------------------------------------
+
+    freqs = [220, 280, 350, 410, 850]
+    widths = [56, 60, 35, 30, 97]
+
+    maria_b_280 = [0.0414, 0.0622, 0.2543, 0.9822, 0.0]
+    maria_c_280 = [0.0101, 0.0121, 0.0064, -0.1208, 0.0]
+
+    ccat_atm_tab = np.loadtxt(CCAT_DATA, comments = "!")
+
+    nu = ccat_atm_tab[:,0]
+    b = ccat_atm_tab[:,1]
+    c = ccat_atm_tab[:,2]
+
+    for f, w in zip(freqs, widths):
+        nu_mask = (nu >= f - w) & (nu <= f + w)
+
+        b_masked = b[nu_mask]
+        c_masked = c[nu_mask]
+
+        plt.figure(figsize=(8, 6))
+        plt.plot(nu[nu_mask], b_masked, label="b coefficient (PWV slope)")
+        plt.plot(nu[nu_mask], maria_b_280[freqs.index(f)], label="Maria b coefficient at 280 GHz")
+        plt.xlabel("Frequency (GHz)")
+        plt.ylabel("b coefficient (1/mm)")
+        plt.title(f"CCAT tau trends for b {f} GHz")
+        plt.grid(True)
+        plt.legend()
+        savefig(OUTDIR, f"ccat_tau_trends_{f}GHz.png")
+
+        plt.figure(figsize=(8, 6))
+        plt.plot(nu[nu_mask], c_masked, label="c coefficient (PWV intercept)")
+        plt.plot(nu[nu_mask], maria_c_280[freqs.index(f)], label="Maria c coefficient at 280 GHz")
+        plt.xlabel("Frequency (GHz)")
+        plt.ylabel("c coefficient (1/mm)")
+        plt.title(f"CCAT tau trends for c {f} GHz")
+        plt.grid(True)
+        plt.legend()
+        savefig(OUTDIR, f"ccat_tau_trends_{f}GHz.png")
+
     # -----------------------------
     # 1) Atmosphere-only mode
     # -----------------------------
@@ -1203,9 +1245,9 @@ if __name__ == "__main__":
 
     mp.set_start_method("spawn", force = True)
 
-    #main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", ccat_band = "280", run_mode="only_atm", pwv_mm=0.36)
+    main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", ccat_band = "280", run_mode="only_atm", pwv_mm=0.36)
 
-    main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="280", map_type="Binmapper", tod_diagnostics=True, pwv_mm=0.36)
+    #main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="280", map_type="Binmapper", tod_diagnostics=True, pwv_mm=0.36)
 
     raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 
