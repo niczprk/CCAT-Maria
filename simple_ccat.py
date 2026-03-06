@@ -51,7 +51,7 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 
 CUTOUT = CUTOUT_ORIONA
 
-PREFIX = "OrionA_atmosphere_ccat_comparison"
+PREFIX = "OrionA_unpolarized" # for output files, e.g. "OrionA_polarized"
 
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_test_outputs")
 
@@ -767,7 +767,7 @@ def main(
         plt.title(fr"Atmospheric loading change vs $\tau_0$ (Δν={bandwidth_hz/1e9:.0f} GHz, η={eta:.2f})")
         plt.grid(True)
         plt.legend()
-        savefig(OUTDIR, f"deltaP_vs_tau0_el{el_ref:.0f}_dels_{'_'.join(str(int(d)) for d in deltas)}deg.png")
+        savefig(OUTDIR, f"deltaP_vs_tau0_el{el_ref:.0f}_dels_{'_'.join(str(int(d)) for d in deltas)}deg.png") #subtle flex
 
     # -------------------------------------------------------
     # Open CCAT dat file to check for consistency with atmosphere model assumptions
@@ -1203,9 +1203,9 @@ if __name__ == "__main__":
 
     mp.set_start_method("spawn", force = True)
 
-    main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", ccat_band = "280", run_mode="only_atm", pwv_mm=0.36)
+    #main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", ccat_band = "280", run_mode="only_atm", pwv_mm=0.36)
 
-    # main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="280", map_type="Binmapper", tod_diagnostics=True)
+    main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="280", map_type="Binmapper", tod_diagnostics=True, pwv_mm=0.36)
 
     raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 
