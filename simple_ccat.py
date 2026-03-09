@@ -51,7 +51,7 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 
 CUTOUT = CUTOUT_ORIONA
 
-PREFIX = "OrionA_pwv_trends" # for output files, e.g. "OrionA_polarized"
+PREFIX = "OrionA_410_60deg_el" # for output files, e.g. "OrionA_polarized"
 
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_test_outputs")
 
@@ -75,7 +75,7 @@ Del_f = 2200 # Hz, 1/10th of the FWHM is the estimated linear regime limit for 3
 NU_HZ = 850e9  # 410 GHz
 NU_GHZ = NU_HZ / 1e9
 
-PWV_MM = 0.36  #  mm, precip water vapour
+PWV_MM = 1.28  #  mm, precip water vapour this only affects the main if pwv is None
 
 # 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values for Chajnantor
 
@@ -811,7 +811,7 @@ def main(
 
     ccat_tab = pd.read_csv(CCAT_DATA)
 
-    print(ccat_tab.head())
+    print(ccat_tab.head(20))
 
     ccat_atm_data = np.loadtxt(CCAT_DATA, comments = "!")
 
@@ -819,7 +819,7 @@ def main(
     b = ccat_atm_data[:, 1] 
     c = ccat_atm_data[:, 2] 
 
-    freqs = [220, 280, 350, 410, 850]
+    freqs = [220, 280, 350, 400, 850]
     pwvs = np.linspace(0.36, 1.28)
 
     plt.figure(figsize=(8, 6))
@@ -839,12 +839,11 @@ def main(
     plt.legend()
     savefig(OUTDIR, f"ccat_tau0_vs_pwv.png")
 
-
 # -------------------------------------------------------
 # CCAT tau trends for b and c ccat bands GHz
 # -------------------------------------------------------
 
-    freqs = [220, 280, 350, 410, 850]
+    freqs = [220, 280, 350, 400, 850]
     widths = [56, 60, 35, 30, 97]
 
     maria_b = [0.0414, 0.0622, 0.2543, 0.9822, np.nan]
@@ -974,7 +973,7 @@ def main(
 
     elif ccat_band == "410":
         f410 = Band(
-            center=410e9,
+            center=400e9,
             width=30e9,
             NET_CMB=182e-6,
             knee=1.0,
@@ -1300,9 +1299,9 @@ if __name__ == "__main__":
 
     mp.set_start_method("spawn", force = True)
 
-    main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", ccat_band = "850", run_mode="only_atm", pwv_mm=0.36)
+    #main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", ccat_band = "850", run_mode="only_atm", pwv_mm=0.36)
 
-    #main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="850", map_type="Binmapper", tod_diagnostics=True, pwv_mm=0.36)
+    main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="850", map_type="Binmapper", tod_diagnostics=True, pwv_mm=1.28)
 
     raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 
