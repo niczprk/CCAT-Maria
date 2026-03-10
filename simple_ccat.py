@@ -51,7 +51,7 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 
 CUTOUT = CUTOUT_ORIONA
 
-PREFIX = "OrionA_410_pwv_run" # for output files, e.g. "OrionA_polarized"
+PREFIX = "OrionA_280_efficiency_test_0.8" # for output files, e.g. "OrionA_polarized"
 
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 
@@ -945,6 +945,7 @@ def main(
         f220 = Band(
             center=220e9,
             width=56e9,
+            efficiency= 0.3,
             NET_CMB=6.8e-6,
             knee=1.0,
             gain_error=5e-2,
@@ -955,6 +956,7 @@ def main(
         f280 = Band(
             center=280e9,
             width=60e9,
+            efficiency= 0.8,
             NET_CMB=13e-6,
             knee=1.0,
             gain_error=5e-2,
@@ -965,6 +967,7 @@ def main(
         f350 = Band(
             center=350e9,
             width=35e9,
+            efficiency= 0.3,
             NET_CMB=48e-6,
             knee=1.0,
             gain_error=5e-2,
@@ -975,6 +978,7 @@ def main(
         f410 = Band(
             center=400e9,
             width=30e9,
+            efficiency= 0.3,
             NET_CMB=182e-6,
             knee=1.0,
             gain_error=5e-2,
@@ -985,6 +989,7 @@ def main(
         f850 = Band(
             center=850e9,
             width=97e9,
+            efficiency= 0.3,
             NET_CMB=310000e-6,
             knee=1.0,
             gain_error=5e-2,
@@ -1373,9 +1378,9 @@ if __name__ == "__main__":
     #     print(f"\n=== Running for PWV={pwv:.2f} mm ===")
     #     main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="850", map_type="skip", tod_diagnostics=True, pwv_mm=pwv)
         
-    # main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="850", map_type="Binmapper", tod_diagnostics=True, pwv_mm=)
+    main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="280", map_type="Binmapper", tod_diagnostics=True, pwv_mm=0.36)
 
-    # raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
+    raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 
     freq_target = NU_GHZ
 
