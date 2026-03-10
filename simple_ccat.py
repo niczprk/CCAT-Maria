@@ -51,15 +51,15 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 
 CUTOUT = CUTOUT_ORIONA
 
-PREFIX = "OrionA_410_60deg_el" # for output files, e.g. "OrionA_polarized"
+PREFIX = "OrionA_410_pwv_run" # for output files, e.g. "OrionA_polarized"
 
-OUTDIR = Path(f"outputs/{PREFIX}_ccat_test_outputs")
+OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 
 # -----------------------------
 #  Simulation Parameters 
 # -----------------------------
 
-bandwidth_hz = 97e9  # GHz bandwidth for 410 GHz band
+bandwidth_hz = 30e9  # GHz bandwidth for 350 GHz band
 eta = 0.1 # optical efficiency for this estimate
 
 f_res = 800e6  # Resonant frequency in Hz (800 MHz)
@@ -72,8 +72,8 @@ R_0 = -2.448e9 #avg responsivity in W^-1 from Jordan Wheeler
 
 Del_f = 2200 # Hz, 1/10th of the FWHM is the estimated linear regime limit for 350GHz MKID array
 
-NU_HZ = 850e9  # 410 GHz
-NU_GHZ = NU_HZ / 1e9
+NU_HZ = 410e9  # Hz
+NU_GHZ = NU_HZ / 1e9 #GHz
 
 PWV_MM = 1.28  #  mm, precip water vapour this only affects the main if pwv is None
 
@@ -1080,7 +1080,6 @@ def main(
         site=site,
         atmosphere="2d",
         atmosphere_kwargs={"weather": {"pwv": pwv_mm}},
-        cmb="generate",
         map=input_map,
     )
 
@@ -1160,7 +1159,7 @@ def main(
     savefig(OUTDIR, f"{PREFIX}_tod_pointing_radec_PWV{pwv_mm:.2f}.png")
 
     # -----------------------------
-    # Atmosphere vs elevation (TOD averaged)
+    # Atmosphere vs elevation (TOD averaged) ORIGINAL METHOD
     # -----------------------------
 
 
@@ -1221,10 +1220,78 @@ def main(
     plt.grid(True)
     plt.legend()
     savefig(OUTDIR, f"{PREFIX}_atmosphere_vs_el_elref{el_ref:.2f}_tau0_inferred_tangent_PWV{pwv_mm:.2f}.png")
+
+    # -----------------------------
+    # Atmosphere vs elevation (TOD averaged) THOMAS METHOD
+    # -----------------------------
+
+    tod_true_K_RJ = band.cal("pW -> K_RJ")(tod0.to("pW").signal)
+
+    el0 = np.nanmean(to_deg_if_rad(tod0.el), axis=0)
+    T_sig0 = np.nanmean(np.asarray(tod_true_K_RJ), axis=0)
+
+    m = np.isfinite(el0) & np.isfinite(T_sig0)
+
+    elv = el0[m]
+    Tv_sig = T_sig0[m]
+
+    tau0_samples = tau_0_from_atm_temp(
+        T_atm = Tv_sig,
+        el_deg = elv,
+        T_0 = T_0
+    )
+
+    tau0_ref_new = np.median(tau0_samples)
+
+    el_ref = np.nanmedian(elv)
+    T_ref = np.nanmedian(Tv_sig)
+    
+    # tau0_est = tau_0_from_atm_temp(
+    #     T_atm=T_ref,
+    #     el_deg=el_ref,
+    #     T_0=T_0
+    # )
+
+    print(f"Inferred tau_0 from TOD-avg atmosphere: {tau0_ref_new:.4f} (PWV={pwv_mm:.2f} mm)")
+
+    dTdel_ref = inst_effective_atm_temp_850GHz(
+        mode="inst",
+        tau_0=tau0_ref_new,
+        el_deg=el_ref,
+        T_0=T_0
+    )
+
+    print(f"Expected dT/del at el={el_ref:.2f} deg: {dTdel_ref:.6f} K/deg")
+
+    xfit = np.linspace(elv.min(), elv.max(), 100)
+    yfit = T_ref + dTdel_ref * (xfit - el_ref)
+
+    step = 10
+    plt.figure(figsize=(8, 6))
+    plt.scatter(elv[::step], Tv_sig[::step], s=1, alpha=0.5, label="TOD samples")
+    plt.plot(
+        xfit,
+        yfit,
+        lw=2,
+        color="red",
+        alpha=0.8,
+        label=
+        fr"Model tangent "
+        fr"($\tau_0={tau0_ref_new:.4f}$, "
+        fr"$dT/d\mathrm{{el}}={dTdel_ref:.4f}\,\mathrm{{K/deg}}$)"
+    )
+    plt.xlabel("Elevation (deg)")
+    plt.ylabel(r"Signal Temperature $T$ (K$_{RJ}$)")
+    plt.title(f"Signal in K_RJ vs Elevation (PWV={pwv_mm:.2f} mm, TOD-avg)")
+    plt.grid(True)
+    plt.legend()
+    savefig(OUTDIR, f"{PREFIX}_signal_KRJ_vs_el_PWV{pwv_mm:.2f}.png")
+
+    
     # -----------------------------
     # Compute Detector Loading Power in Maria Atmosphere Model
     # -----------------------------
-    P_det_pW = (K_B * np.asarray(tod0.atmosphere) * bandwidth_hz * eta) * 1e12  # (N_det, N_time)
+    P_det_pW = (K_B * np.asarray(tod0.data["atmosphere"]) * bandwidth_hz * eta) * 1e12  # (N_det, N_time)
 
     P = np.asarray(P_det_pW, dtype=np.float64)
 
@@ -1286,7 +1353,7 @@ def main(
     else:
         raise ValueError(f"Unknown map_type={map_type!r}. Try 'BinMapper' or 'skip'.")
 
-    return tau0_ref, el_ref
+    return tau0_ref_new, el_ref
 
 if __name__ == "__main__":
 
@@ -1301,9 +1368,14 @@ if __name__ == "__main__":
 
     #main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", ccat_band = "850", run_mode="only_atm", pwv_mm=0.36)
 
-    main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="850", map_type="Binmapper", tod_diagnostics=True, pwv_mm=1.28)
+    # pwv_list = [0.36, 1.28]
+    # for pwv in pwv_list:
+    #     print(f"\n=== Running for PWV={pwv:.2f} mm ===")
+    #     main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="850", map_type="skip", tod_diagnostics=True, pwv_mm=pwv)
+        
+    # main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="850", map_type="Binmapper", tod_diagnostics=True, pwv_mm=)
 
-    raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
+    # raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 
     freq_target = NU_GHZ
 
@@ -1333,12 +1405,12 @@ if __name__ == "__main__":
         pwv_mm = pwv
         print(f"\n=== Running for PWV={pwv_mm:.2f} mm ===")
 
-        tau0_ref, el_ref = main(atm_plot=False, run_mode= "only_sim" , temp_mode="inst", ccat_band="410", map_type="skip", tod_diagnostics=True, pwv_mm=pwv_mm)
-        tau0_list.append(tau0_ref)
+        tau0_ref_new, el_ref = main(atm_plot=False, run_mode= "only_sim" , temp_mode="inst", ccat_band="410", map_type="skip", tod_diagnostics=True, pwv_mm=pwv_mm)
+        tau0_list.append(tau0_ref_new)
 
         main_end_time = time.perf_counter()
         main_elapsed_time = main_end_time - main_start_time
-        print(f"Finished run for PWV={pwv_mm:.2f} mm, inferred tau_0={tau0_ref:.4f} (Elapsed time: {main_elapsed_time:.2f} seconds)")
+        print(f"Finished run for PWV={pwv_mm:.2f} mm, inferred tau_0={tau0_ref_new:.4f} (Elapsed time: {main_elapsed_time:.2f} seconds)")
 
         gc.collect() # Clean up memory after each run
     
