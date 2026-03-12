@@ -51,7 +51,7 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 
 CUTOUT = CUTOUT_ORIONA
 
-PREFIX = "OrionA_280_efficiency_test_0.8" # for output files, e.g. "OrionA_polarized"
+PREFIX = "OrionA_410_pwv_run" # for output files, e.g. "OrionA_polarized"
 
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 
@@ -60,7 +60,9 @@ OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 # -----------------------------
 
 bandwidth_hz = 30e9  # GHz bandwidth for 350 GHz band
-eta = 0.1 # optical efficiency for this estimate
+eta = 0.3 # optical efficiency for this estimate
+
+Polarized = False # whether to include polarization in the simulation
 
 f_res = 800e6  # Resonant frequency in Hz (800 MHz)
 
@@ -75,7 +77,7 @@ Del_f = 2200 # Hz, 1/10th of the FWHM is the estimated linear regime limit for 3
 NU_HZ = 410e9  # Hz
 NU_GHZ = NU_HZ / 1e9 #GHz
 
-PWV_MM = 1.28  #  mm, precip water vapour this only affects the main if pwv is None
+PWV_MM = 0.36  #  mm, precip water vapour this only affects the main if pwv is None
 
 # 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values for Chajnantor
 
@@ -424,9 +426,6 @@ def deltaP_for_delta_el(el_ref_deg: float, delta_el_deg: float, tau_0: float, ba
 # ---------- Main Execution Pipeline -----------
 # ----------------------------------------------
 
-
-
-
 def main(
     run_mode: str = "only_atm",
     atm_plot: bool = True,
@@ -458,7 +457,7 @@ def main(
 
     def run_atmosphere_plots() -> None:
         x = np.linspace(EL_LIMITS[0], EL_LIMITS[1], 150)
-        taus = np.linspace(0.005, 0.10, 5)
+        taus = np.linspace(0.01, 0.10, 5)
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
@@ -469,7 +468,7 @@ def main(
         plt.title(r"Instantaneous $dT/d\mathrm{el}$ vs Elevation for varying $\tau_0$")
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
-        savefig(OUTDIR, "inst_dT_del_tau0_0p005_to_0p10.png")
+        savefig(OUTDIR, "inst_dT_del_tau0_0p01_to_0p10.png")
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
@@ -480,7 +479,7 @@ def main(
         plt.title(r"Effective Atmospheric Temperature $T_\mathrm{eff}$ vs Elevation for varying $\tau_0$")
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
-        savefig(OUTDIR, "Teff_tau0_0p005_to_0p10.png")
+        savefig(OUTDIR, "Teff_tau0_0p01_to_0p10.png")
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
@@ -492,7 +491,7 @@ def main(
         plt.title(r"Fractional Atmospheric Temperature Derivative vs Elevation for varying $\tau_0$")
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
-        savefig(OUTDIR, "frac_dT_del_Teff_tau0_0p005_to_0p10.png")
+        savefig(OUTDIR, "frac_dT_del_Teff_tau0_0p01_to_0p10.png")
 
         plt.figure(figsize=(8, 6))
         for tau in taus:
@@ -504,7 +503,7 @@ def main(
         plt.title(r"Fractional Diff Atmospheric Temperature Derivative vs Elevation for varying $\tau_0$")
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
-        savefig(OUTDIR, "frac_diff_dT_del_Teff_tau0_0p005_to_0p10.png")
+        savefig(OUTDIR, "frac_diff_dT_del_Teff_tau0_0p01_to_0p10.png")
 
         # -----------------------------
         # Power change per degree: dP/del
@@ -547,7 +546,7 @@ def main(
         )
         plt.grid(True)
         plt.legend(ncol=2, fontsize=9)
-        savefig(OUTDIR, "inst_dP_del_tau0_0p005_to_0p10.png")
+        savefig(OUTDIR, "inst_dP_del_tau0_0p01_to_0p10.png")
 
         # -----------------------------
         # Responsivity fit R(P): fit in W, but derived from pW points
@@ -846,8 +845,8 @@ def main(
     freqs = [220, 280, 350, 400, 850]
     widths = [56, 60, 35, 30, 97]
 
-    maria_b = [0.0414, 0.0622, 0.2543, 0.9822, np.nan]
-    maria_c = [0.0101, 0.0121, 0.0064, -0.1208, np.nan]
+    maria_b = [0.0376, 0.0518, 0.1488, 0.3195, 0.7298]
+    maria_c = [0.0109, 0.0151, 0.0387, 0.0594, 0.2034]
 
     ccat_atm_tab = np.loadtxt(CCAT_DATA, comments="!")
 
@@ -976,7 +975,7 @@ def main(
 
     elif ccat_band == "410":
         f410 = Band(
-            center=400e9,
+            center=410e9,
             width=30e9,
             efficiency= 0.3,
             NET_CMB=182e-6,
@@ -1006,7 +1005,7 @@ def main(
         "beam_spacing": 8.0,
         "primary_size": 6.0,
         "bands": [band],
-        "polarized": False,
+        "polarized": Polarized,
     }
 
     #change beam spacing -> 4 to see if the temperature changes, if it doesnt then there is an assumption abt detectors
@@ -1371,16 +1370,16 @@ if __name__ == "__main__":
 
     mp.set_start_method("spawn", force = True)
 
-    #main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", ccat_band = "850", run_mode="only_atm", pwv_mm=0.36)
+    #main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", ccat_band = "280", run_mode="only_atm", pwv_mm=0.36)
 
     # pwv_list = [0.36, 1.28]
     # for pwv in pwv_list:
     #     print(f"\n=== Running for PWV={pwv:.2f} mm ===")
     #     main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="850", map_type="skip", tod_diagnostics=True, pwv_mm=pwv)
         
-    main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="280", map_type="Binmapper", tod_diagnostics=True, pwv_mm=0.36)
+    #main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="280", map_type="Binmapper", tod_diagnostics=True, pwv_mm=0.36)
 
-    raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
+    #raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 
     freq_target = NU_GHZ
 
