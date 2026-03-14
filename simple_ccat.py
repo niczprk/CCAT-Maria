@@ -51,7 +51,7 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 
 CUTOUT = CUTOUT_ORIONA
 
-PREFIX = "OrionA_compact_280_pwv_tau" # for output files, e.g. "OrionA_polarized"
+PREFIX = "OrionA_compact_350_pwv_tau" # for output files, e.g. "OrionA_polarized"
 
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 
@@ -59,7 +59,8 @@ OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 #  Simulation Parameters 
 # -----------------------------
 
-bandwidth_hz = 60e9  # GHz bandwidth for 350 GHz band
+NU_HZ = 350e9  # Hz
+bandwidth_hz = 35e9  # GHz bandwidth for 350 GHz band
 eta = 0.3 # optical efficiency for this estimate
 
 Polarized = False # whether to include polarization in the simulation
@@ -74,7 +75,6 @@ R_0 = -2.448e9 #avg responsivity in W^-1 from Jordan Wheeler
 
 Del_f = 2200 # Hz, 1/10th of the FWHM is the estimated linear regime limit for 350GHz MKID array
 
-NU_HZ = 280e9  # Hz
 NU_GHZ = NU_HZ / 1e9 #GHz
 
 PWV_MM = 0.36  #  mm, precip water vapour this only affects the main if pwv is None
@@ -1389,7 +1389,7 @@ if __name__ == "__main__":
 
     #raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 
-    selected_band = "280"#make sure these match
+    selected_band = "350" #make sure these match
     band_center = band_info[selected_band]["center"]
     band_width = band_info[selected_band]["width"]
     freq_target = band_center # GHz, for CCAT table lookup
