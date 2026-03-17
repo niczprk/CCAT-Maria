@@ -51,7 +51,7 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 
 CUTOUT = CUTOUT_ORIONA
 
-PREFIX = "OrionA_compact_350_pwv_tau" # for output files, e.g. "OrionA_polarized"
+PREFIX = "OrionA_eta0.9_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized"
 
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 
@@ -61,9 +61,9 @@ OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 
 NU_HZ = 350e9  # Hz
 bandwidth_hz = 35e9  # GHz bandwidth for 350 GHz band
-eta = 0.3 # optical efficiency for this estimate
+eta = 0.9 # optical efficiency for this estimate
 
-Polarized = False # whether to include polarization in the simulation
+Polarized = True # whether to include polarization in the simulation
 
 f_res = 800e6  # Resonant frequency in Hz (800 MHz)
 
@@ -944,7 +944,7 @@ def main(
         f220 = Band(
             center=220e9,
             width=56e9,
-            efficiency= 0.3,
+            efficiency= eta,
             NET_CMB=6.8e-6,
             knee=1.0,
             gain_error=5e-2,
@@ -955,7 +955,7 @@ def main(
         f280 = Band(
             center=280e9,
             width=60e9,
-            efficiency= 0.8,
+            efficiency= eta,
             NET_CMB=13e-6,
             knee=1.0,
             gain_error=5e-2,
@@ -966,7 +966,7 @@ def main(
         f350 = Band(
             center=350e9,
             width=35e9,
-            efficiency= 0.3,
+            efficiency= eta,
             NET_CMB=48e-6,
             knee=1.0,
             gain_error=5e-2,
@@ -977,7 +977,7 @@ def main(
         f410 = Band(
             center=410e9,
             width=30e9,
-            efficiency= 0.3,
+            efficiency= eta,
             NET_CMB=182e-6,
             knee=1.0,
             gain_error=5e-2,
@@ -988,7 +988,7 @@ def main(
         f850 = Band(
             center=850e9,
             width=97e9,
-            efficiency= 0.3,
+            efficiency= eta,
             NET_CMB=310000e-6,
             knee=1.0,
             gain_error=5e-2,
@@ -1295,7 +1295,45 @@ def main(
     # -----------------------------
     # Compute Detector Loading Power in Maria Atmosphere Model
     # -----------------------------
-    P_det_pW = (K_B * np.asarray(tod0.data["atmosphere"]) * bandwidth_hz * eta) * 1e12  # (N_det, N_time)
+    P_det_atm_pW = (K_B * np.asarray(tod0.data["atmosphere"]) * bandwidth_hz * eta) * 1e12  # (N_det, N_time)
+
+    P = np.asarray(P_det_atm_pW, dtype=np.float64)
+
+    P_mean = np.mean(P, axis=1)
+    P_std = np.std(P, axis=1)
+
+    P_ptp = np.nanmax(P, axis=1) - np.nanmin(P, axis=1)
+
+    # Per-detector mean: cheap, keep as-is
+    P_mean_per_det = np.mean(P_det_atm_pW, axis=1)
+
+    plt.figure(figsize=(8,6))
+    plt.hist(P_mean_per_det, bins=30, alpha=0.7)
+    plt.xlabel("Mean Detector Power (pW)")
+    plt.ylabel("Number of Detectors")
+    plt.title(f"Distribution of Mean On-Sky Detector Power (PWV={pwv_mm:.2f} mm $\eta$={eta:.2f} )")
+    plt.grid(True)
+    savefig(OUTDIR, f"{PREFIX}_detector_on_sky_power_eta_{eta:.2f}_histogram_PWV{pwv_mm:.2f}.png")
+
+    plt.figure(figsize=(8,6))
+    plt.hist(P_std, bins=30, alpha=0.7)
+    plt.xlabel("Std Dev of Detector Power (pW)")
+    plt.ylabel("Number of Detectors")
+    plt.title(f"Distribution of Std Dev of On-Sky Detector Power (PWV={pwv_mm:.2f} mm $\eta$={eta:.2f} )")
+    plt.grid(True)
+    savefig(OUTDIR, f"{PREFIX}_detector_on_sky_power_eta_{eta:.2f}_std_histogram_PWV{pwv_mm:.2f}.png")
+
+    plt.figure(figsize=(8,6))
+    plt.hist(P_ptp, bins=30, alpha=0.7)
+    plt.xlabel("Peak-to-Peak Detector Power (pW)")
+    plt.ylabel("Number of Detectors")
+    plt.title(f"Distribution of Peak-to-Peak On-Sky Detector Power (PWV={pwv_mm:.2f} mm $\eta$={eta:.2f} )")
+    plt.grid(True)
+    savefig(OUTDIR, f"{PREFIX}_detector_on_sky_power_eta_{eta:.2f}_ptp_histogram_PWV{pwv_mm:.2f}.png")
+
+
+    P_det_pW = (K_B * band.cal("pW -> K_RJ")(tod0.to("pW").signal) * bandwidth_hz * eta) * 1e12  # (N_det, N_time)
+
 
     P = np.asarray(P_det_pW, dtype=np.float64)
 
@@ -1311,30 +1349,33 @@ def main(
     plt.hist(P_mean_per_det, bins=30, alpha=0.7)
     plt.xlabel("Mean Detector Power (pW)")
     plt.ylabel("Number of Detectors")
-    plt.title(f"Distribution of Mean Detector Power (PWV={pwv_mm:.2f} mm)")
+    plt.title(f"Distribution of Mean Atmospheric Detector Power (PWV={pwv_mm:.2f} mm $\eta$={eta:.2f} )")
     plt.grid(True)
-    savefig(OUTDIR, f"{PREFIX}_detector_power_histogram_PWV{pwv_mm:.2f}.png")
+    savefig(OUTDIR, f"{PREFIX}_detector_atmospheric_power_eta_{eta:.2f}_histogram_PWV{pwv_mm:.2f}.png")
 
     plt.figure(figsize=(8,6))
     plt.hist(P_std, bins=30, alpha=0.7)
     plt.xlabel("Std Dev of Detector Power (pW)")
     plt.ylabel("Number of Detectors")
-    plt.title(f"Distribution of Std Dev of Detector Power (PWV={pwv_mm:.2f} mm)")
+    plt.title(f"Distribution of Std Dev of Atmospheric Detector Power (PWV={pwv_mm:.2f} mm $\eta$={eta:.2f} )")
     plt.grid(True)
-    savefig(OUTDIR, f"{PREFIX}_detector_power_std_histogram_PWV{pwv_mm:.2f}.png")
+    savefig(OUTDIR, f"{PREFIX}_detector_atmospheric_power_eta_{eta:.2f}_std_histogram_PWV{pwv_mm:.2f}.png")
 
     plt.figure(figsize=(8,6))
     plt.hist(P_ptp, bins=30, alpha=0.7)
     plt.xlabel("Peak-to-Peak Detector Power (pW)")
     plt.ylabel("Number of Detectors")
-    plt.title(f"Distribution of Peak-to-Peak Detector Power (PWV={pwv_mm:.2f} mm)")
+    plt.title(f"Distribution of Peak-to-Peak Atmospheric Detector Power (PWV={pwv_mm:.2f} mm $\eta$={eta:.2f} )")
     plt.grid(True)
-    savefig(OUTDIR, f"{PREFIX}_detector_power_ptp_histogram_PWV{pwv_mm:.2f}.png")
+    savefig(OUTDIR, f"{PREFIX}_detector_atmospheric_power_eta_{eta:.2f}_ptp_histogram_PWV{pwv_mm:.2f}.png")
 
     # -----------------------------
     # BinMapper Mapmaking
     # -----------------------------
     map_type_norm = map_type.lower().strip()
+
+    # tod_difference = tods.data["atmosphere"] - tod_true_K_RJ = band.cal("pW -> K_RJ")(tods.to("pW").signal)
+
 
     if map_type_norm == "binmapper":
         mapper = BinMapper(
@@ -1369,6 +1410,11 @@ if __name__ == "__main__":
     "850": {"center": 850.0, "width": 97.0},
     }
 
+    selected_band = "350" #make sure these match
+    band_center = band_info[selected_band]["center"]
+    band_width = band_info[selected_band]["width"]
+    freq_target = band_center # GHz, for CCAT table lookup
+
     import time
 
     starting_time = time.perf_counter()
@@ -1378,7 +1424,7 @@ if __name__ == "__main__":
 
     mp.set_start_method("spawn", force = True)
 
-    #main(atm_plot=True, map_type="skip", tod_diagnostics=False, temp_mode="inst", ccat_band = "280", run_mode="only_atm", pwv_mm=0.36)
+    main(atm_plot=True, map_type="skip", temp_mode="inst", ccat_band = selected_band, run_mode="all", tod_diagnostics=True, pwv_mm=0.36)
 
     # pwv_list = [0.36, 1.28]
     # for pwv in pwv_list:
@@ -1387,12 +1433,9 @@ if __name__ == "__main__":
         
     #main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="280", map_type="Binmapper", tod_diagnostics=True, pwv_mm=0.36)
 
-    #raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
+    raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 
-    selected_band = "350" #make sure these match
-    band_center = band_info[selected_band]["center"]
-    band_width = band_info[selected_band]["width"]
-    freq_target = band_center # GHz, for CCAT table lookup
+
 
 
 
