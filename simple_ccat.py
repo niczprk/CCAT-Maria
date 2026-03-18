@@ -1291,18 +1291,69 @@ def main(
     plt.legend()
     savefig(OUTDIR, f"{PREFIX}_signal_KRJ_vs_el_PWV{pwv_mm:.2f}.png")
 
-    
+    # -----------------------------
+    # Compute Detector Loading Power in Maria direct from TOD Model
+    # -----------------------------
+
+
+    P_det = tod.to("pW").signal
+    P = np.asarray(P_det, dtype=np.float64)
+
+    print("P shape:", P.shape)
+
+    P_mean = np.nanmean(P, axis=1).ravel()
+    P_std  = np.nanstd(P, axis=1).ravel()
+    P_ptp  = (np.nanmax(P, axis=1) - np.nanmin(P, axis=1)).ravel()
+
+    print("P_mean shape:", P_mean.shape)
+    print("P_std shape:", P_std.shape)
+    print("P_ptp shape:", P_ptp.shape)
+
+    print("P_mean min/max:", np.nanmin(P_mean), np.nanmax(P_mean))
+    print("P_std min/max:", np.nanmin(P_std), np.nanmax(P_std))
+    print("P_ptp min/max:", np.nanmin(P_ptp), np.nanmax(P_ptp))
+
+    plt.figure(figsize=(8,6))
+    plt.hist(P_mean[np.isfinite(P_mean)], bins=30, alpha=0.7, density=False)
+    plt.xlabel("Mean Detector Power (pW)")
+    plt.ylabel("Number of Detectors")
+    plt.title(f"Distribution of Mean Direct Detector Power (PWV={pwv_mm:.2f} mm $\\eta$={eta:.2f})")
+    plt.grid(True)
+    savefig(OUTDIR, f"{PREFIX}_detector_direct_power_eta_{eta:.2f}_histogram_PWV{pwv_mm:.2f}.png")
+
+    # plt.figure(figsize=(8,6))
+    # plt.hist(P_std[np.isfinite(P_std)], bins=30, alpha=0.7)
+    # plt.xlabel("Std Dev of Detector Power (pW)")
+    # plt.ylabel("Number of Detectors")
+    # plt.title(f"Distribution of Std Dev of Direct Detector Power (PWV={pwv_mm:.2f} mm $\eta$={eta:.2f} )")
+    # plt.grid(True)
+    # savefig(OUTDIR, f"{PREFIX}_detector_direct_power_eta_{eta:.2f}_std_histogram_PWV{pwv_mm:.2f}.png")
+
+    # plt.figure(figsize=(8,6))
+    # plt.hist(P_ptp[np.isfinite(P_ptp)], bins=30, alpha=0.7)
+    # plt.xlabel("Peak-to-Peak Detector Power (pW)")
+    # plt.ylabel("Number of Detectors")
+    # plt.title(f"Distribution of Peak-to-Peak Direct Detector Power (PWV={pwv_mm:.2f} mm $\eta$={eta:.2f} )")
+    # plt.grid(True)
+    # savefig(OUTDIR, f"{PREFIX}_detector_direct_power_eta_{eta:.2f}_ptp_histogram_PWV{pwv_mm:.2f}.png")
+
+
+    cal_factor = band.cal("pW -> K_RJ")
+    print("Calibration object:", cal_factor)
+        
     # -----------------------------
     # Compute Detector Loading Power in Maria Atmosphere Model
     # -----------------------------
+
+
     P_det_atm_pW = (K_B * np.asarray(tod0.data["atmosphere"]) * bandwidth_hz * eta) * 1e12  # (N_det, N_time)
 
     P = np.asarray(P_det_atm_pW, dtype=np.float64)
 
-    P_mean = np.mean(P, axis=1)
-    P_std = np.std(P, axis=1)
+    P_mean = np.mean(P_det_atm_pW, axis=1)
+    P_std = np.std(P_det_atm_pW, axis=1)
 
-    P_ptp = np.nanmax(P, axis=1) - np.nanmin(P, axis=1)
+    P_ptp = np.nanmax(P_det_atm_pW, axis=1) - np.nanmin(P_det_atm_pW, axis=1)
 
     # Per-detector mean: cheap, keep as-is
     P_mean_per_det = np.mean(P_det_atm_pW, axis=1)
@@ -1315,21 +1366,21 @@ def main(
     plt.grid(True)
     savefig(OUTDIR, f"{PREFIX}_detector_on_sky_power_eta_{eta:.2f}_histogram_PWV{pwv_mm:.2f}.png")
 
-    plt.figure(figsize=(8,6))
-    plt.hist(P_std, bins=30, alpha=0.7)
-    plt.xlabel("Std Dev of Detector Power (pW)")
-    plt.ylabel("Number of Detectors")
-    plt.title(f"Distribution of Std Dev of On-Sky Detector Power (PWV={pwv_mm:.2f} mm $\eta$={eta:.2f} )")
-    plt.grid(True)
-    savefig(OUTDIR, f"{PREFIX}_detector_on_sky_power_eta_{eta:.2f}_std_histogram_PWV{pwv_mm:.2f}.png")
+    # plt.figure(figsize=(8,6))
+    # plt.hist(P_std, bins=30, alpha=0.7)
+    # plt.xlabel("Std Dev of Detector Power (pW)")
+    # plt.ylabel("Number of Detectors")
+    # plt.title(f"Distribution of Std Dev of On-Sky Detector Power (PWV={pwv_mm:.2f} mm $\eta$={eta:.2f} )")
+    # plt.grid(True)
+    # savefig(OUTDIR, f"{PREFIX}_detector_on_sky_power_eta_{eta:.2f}_std_histogram_PWV{pwv_mm:.2f}.png")
 
-    plt.figure(figsize=(8,6))
-    plt.hist(P_ptp, bins=30, alpha=0.7)
-    plt.xlabel("Peak-to-Peak Detector Power (pW)")
-    plt.ylabel("Number of Detectors")
-    plt.title(f"Distribution of Peak-to-Peak On-Sky Detector Power (PWV={pwv_mm:.2f} mm $\eta$={eta:.2f} )")
-    plt.grid(True)
-    savefig(OUTDIR, f"{PREFIX}_detector_on_sky_power_eta_{eta:.2f}_ptp_histogram_PWV{pwv_mm:.2f}.png")
+    # plt.figure(figsize=(8,6))
+    # plt.hist(P_ptp, bins=30, alpha=0.7)
+    # plt.xlabel("Peak-to-Peak Detector Power (pW)")
+    # plt.ylabel("Number of Detectors")
+    # plt.title(f"Distribution of Peak-to-Peak On-Sky Detector Power (PWV={pwv_mm:.2f} mm $\eta$={eta:.2f} )")
+    # plt.grid(True)
+    # savefig(OUTDIR, f"{PREFIX}_detector_on_sky_power_eta_{eta:.2f}_ptp_histogram_PWV{pwv_mm:.2f}.png")
 
 
     P_det_pW = (K_B * band.cal("pW -> K_RJ")(tod0.to("pW").signal) * bandwidth_hz * eta) * 1e12  # (N_det, N_time)
@@ -1337,10 +1388,10 @@ def main(
 
     P = np.asarray(P_det_pW, dtype=np.float64)
 
-    P_mean = np.mean(P, axis=1)
-    P_std = np.std(P, axis=1)
+    P_mean = np.mean(P_det_pW, axis=1)
+    P_std = np.std(P_det_pW, axis=1)
 
-    P_ptp = np.nanmax(P, axis=1) - np.nanmin(P, axis=1)
+    P_ptp = np.nanmax(P_det_pW, axis=1) - np.nanmin(P_det_pW, axis=1)
 
     # Per-detector mean: cheap, keep as-is
     P_mean_per_det = np.mean(P_det_pW, axis=1)
@@ -1353,21 +1404,21 @@ def main(
     plt.grid(True)
     savefig(OUTDIR, f"{PREFIX}_detector_atmospheric_power_eta_{eta:.2f}_histogram_PWV{pwv_mm:.2f}.png")
 
-    plt.figure(figsize=(8,6))
-    plt.hist(P_std, bins=30, alpha=0.7)
-    plt.xlabel("Std Dev of Detector Power (pW)")
-    plt.ylabel("Number of Detectors")
-    plt.title(f"Distribution of Std Dev of Atmospheric Detector Power (PWV={pwv_mm:.2f} mm $\eta$={eta:.2f} )")
-    plt.grid(True)
-    savefig(OUTDIR, f"{PREFIX}_detector_atmospheric_power_eta_{eta:.2f}_std_histogram_PWV{pwv_mm:.2f}.png")
+    # plt.figure(figsize=(8,6))
+    # plt.hist(P_std, bins=30, alpha=0.7)
+    # plt.xlabel("Std Dev of Detector Power (pW)")
+    # plt.ylabel("Number of Detectors")
+    # plt.title(f"Distribution of Std Dev of Atmospheric Detector Power (PWV={pwv_mm:.2f} mm $\eta$={eta:.2f} )")
+    # plt.grid(True)
+    # savefig(OUTDIR, f"{PREFIX}_detector_atmospheric_power_eta_{eta:.2f}_std_histogram_PWV{pwv_mm:.2f}.png")
 
-    plt.figure(figsize=(8,6))
-    plt.hist(P_ptp, bins=30, alpha=0.7)
-    plt.xlabel("Peak-to-Peak Detector Power (pW)")
-    plt.ylabel("Number of Detectors")
-    plt.title(f"Distribution of Peak-to-Peak Atmospheric Detector Power (PWV={pwv_mm:.2f} mm $\eta$={eta:.2f} )")
-    plt.grid(True)
-    savefig(OUTDIR, f"{PREFIX}_detector_atmospheric_power_eta_{eta:.2f}_ptp_histogram_PWV{pwv_mm:.2f}.png")
+    # plt.figure(figsize=(8,6))
+    # plt.hist(P_ptp, bins=30, alpha=0.7)
+    # plt.xlabel("Peak-to-Peak Detector Power (pW)")
+    # plt.ylabel("Number of Detectors")
+    # plt.title(f"Distribution of Peak-to-Peak Atmospheric Detector Power (PWV={pwv_mm:.2f} mm $\eta$={eta:.2f} )")
+    # plt.grid(True)
+    # savefig(OUTDIR, f"{PREFIX}_detector_atmospheric_power_eta_{eta:.2f}_ptp_histogram_PWV{pwv_mm:.2f}.png")
 
     # -----------------------------
     # BinMapper Mapmaking
