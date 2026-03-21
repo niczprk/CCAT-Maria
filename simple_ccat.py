@@ -1084,6 +1084,8 @@ def main(
         site=site,
         atmosphere="2d",
         atmosphere_kwargs={"weather": {"pwv": pwv_mm}},
+        # cmb = "generate",
+        # cmb_kwargs = {"source": "planck"},
         map=input_map,
     )
 
@@ -1320,6 +1322,32 @@ def main(
     plt.title(f"Distribution of Mean Direct Detector Power (PWV={pwv_mm:.2f} mm $\\eta$={eta:.2f})")
     plt.grid(True)
     savefig(OUTDIR, f"{PREFIX}_detector_direct_power_eta_{eta:.2f}_histogram_PWV{pwv_mm:.2f}.png")
+
+    KRJ_det = tod.to("K_RJ").signal
+    K_RJ = np.asarray(KRJ_det, dtype=np.float64)
+
+    print("K_RJ shape:", K_RJ.shape)
+
+    K_RJ_mean = np.nanmean(K_RJ, axis=1).ravel()
+    K_RJ_std  = np.nanstd(K_RJ, axis=1).ravel()
+    K_RJ_ptp  = (np.nanmax(K_RJ, axis=1) - np.nanmin(K_RJ, axis=1)).ravel()
+
+    print("K_RJ_mean shape:", K_RJ_mean.shape)
+    print("K_RJ_std shape:", K_RJ_std.shape)
+    print("K_RJ_ptp shape:", K_RJ_ptp.shape)
+
+    print("K_RJ_mean min/max:", np.nanmin(K_RJ_mean), np.nanmax(K_RJ_mean))
+    print("K_RJ_std min/max:", np.nanmin(K_RJ_std), np.nanmax(K_RJ_std))
+    print("K_RJ_ptp min/max:", np.nanmin(K_RJ_ptp), np.nanmax(K_RJ_ptp))
+
+    plt.figure(figsize=(8,6))
+    plt.hist(K_RJ_mean[np.isfinite(K_RJ_mean)], bins=30, alpha=0.7, density=False)
+    plt.xlabel("Mean Detector Temperature (K_RJ)")
+    plt.ylabel("Number of Detectors")
+    plt.title(f"Distribution of Mean Direct Detector Temperature (PWV={pwv_mm:.2f} mm $\\eta$={eta:.2f})")
+    plt.grid(True)
+    savefig(OUTDIR, f"{PREFIX}_detector_direct_KRJ_eta_{eta:.2f}_histogram_PWV{pwv_mm:.2f}.png")
+
 
     # plt.figure(figsize=(8,6))
     # plt.hist(P_std[np.isfinite(P_std)], bins=30, alpha=0.7)
