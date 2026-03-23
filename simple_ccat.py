@@ -51,19 +51,25 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 
 CUTOUT = CUTOUT_ORIONA
 
-PREFIX = "OrionA_eta0.9_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized"
+PREFIX = "OrionA_atmosphere"#_220GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized"
 
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 
 # -----------------------------
 #  Simulation Parameters 
 # -----------------------------
+selected_band = "220" #make sure these match
 
-NU_HZ = 350e9  # Hz
-bandwidth_hz = 35e9  # GHz bandwidth for 350 GHz band
-eta = 0.9 # optical efficiency for this estimate
+NU_HZ = 220e9  # Hz
+bandwidth_hz = 60e9  # GHz bandwidth for 220 GHz band
+eta = 0.5 # optical efficiency for this estimate
 
-Polarized = True # whether to include polarization in the simulation
+Polarized = False # whether to include polarization in the simulation
+
+if Polarized:
+    p = 0.5 # fractional polarization of the source, for this estimates
+else:
+    p = 1.0
 
 f_res = 800e6  # Resonant frequency in Hz (800 MHz)
 
@@ -804,6 +810,51 @@ def main(
         plt.legend(ncol=2, fontsize=9)
         savefig(OUTDIR, f"atm_loading_slope_dP_del_vs_elevation_eta{eta:.1f}.png")
 
+
+
+
+    # -------------------------------------------------------
+    # Open CCAT dat file to check for consistency with atmosphere model assumptions
+    # -------------------------------------------------------
+
+        plt.figure(figsize=(8, 6))
+        for tau in taus:
+
+            Teff = effective_atm_temp_850GHz(pwv=pwv_mm, tau_0=float(tau), el_deg=x, T_0=T_0)
+
+            P_atm_W = K_B * Teff * bandwidth_hz * eta # W
+
+            R_eval = R_paper(P_atm_W) 
+
+            dT_del = inst_effective_atm_temp_850GHz(
+                mode=temp_mode, tau_0=float(tau), el_deg=x, T_0=T_0
+            )  # K/deg
+
+            dP_del_W = inst_power_per_deg(
+            bandwidth=bandwidth_hz,
+            eta=eta,
+            dT_del=dT_del,
+            )  # W/deg
+
+            # dP_del_W = inst_power_per_deg(
+            #     bandwidth=bandwidth_hz,
+            #     eta=eta,
+            #     dT_del=dT_del,
+            # )  # W/deg
+
+            # del_f_fwhm = Q_r * bandwidth_hz * eta * K_B * R_eval * dT_del  # Hz, frequency change corresponding to power change for given dT/del and responsivity
+            del_f_fwhm = Q_r * R_eval * dP_del_W  # Hz, frequency change corresponding to power change for given dT/del and responsivity
+            plt.plot(x, del_f_fwhm, label=fr"$\tau_0$={tau:.2f}")
+        plt.xlabel("Elevation (deg)")
+        plt.ylabel(r"$\frac{d}{d(\mathrm{el})}(\delta f / \mathrm{FWHM})$")
+        plt.title(
+            fr"Frequency change vs Elevation "
+            fr"($\Delta\nu$={bandwidth_hz/1e9:.0f} GHz, $\eta$={eta:.2f})"
+        )
+        plt.grid(True)
+        plt.legend(ncol=2, fontsize=9)
+        savefig(OUTDIR, f"freq_change_vs_elevation_eta{eta:.1f}.png")
+
     # -------------------------------------------------------
     # Open CCAT dat file to check for consistency with atmosphere model assumptions
     # -------------------------------------------------------
@@ -1349,6 +1400,9 @@ def main(
     savefig(OUTDIR, f"{PREFIX}_detector_direct_KRJ_eta_{eta:.2f}_histogram_PWV{pwv_mm:.2f}.png")
 
 
+
+
+
     # plt.figure(figsize=(8,6))
     # plt.hist(P_std[np.isfinite(P_std)], bins=30, alpha=0.7)
     # plt.xlabel("Std Dev of Detector Power (pW)")
@@ -1364,11 +1418,58 @@ def main(
     # plt.title(f"Distribution of Peak-to-Peak Direct Detector Power (PWV={pwv_mm:.2f} mm $\eta$={eta:.2f} )")
     # plt.grid(True)
     # savefig(OUTDIR, f"{PREFIX}_detector_direct_power_eta_{eta:.2f}_ptp_histogram_PWV{pwv_mm:.2f}.png")
-
-
     cal_factor = band.cal("pW -> K_RJ")
     print("Calibration object:", cal_factor)
-        
+    print(type(cal_factor))
+    print(cal_factor.__dict__)
+
+    cal_factor_maria = cal_factor(1.0)  # K_RJ / pW
+
+    print(f"Calibration conversion factor from Maria: {cal_factor_maria:.6e} K/pW")
+
+    # -----------------------------
+    # Compare Calibration Conversion Factor from Maria to Simple Estimate
+    # -----------------------------
+
+    bandwidth_list = [56e9, 60e9, 35e9, 30e9, 97e9]
+    band_labels = ["220 Band", "280 Band", "350 Band", "410 Band", "850 GHz"]
+
+    cal_facs = [1e-12 / (p * eta * bw * K_B) for bw in bandwidth_list]
+
+    # compare Maria to the matching analytic band
+    idx_match = 0  # 350 GHz band
+    cal_fac_match = cal_facs[idx_match]
+
+    percent_diff = 100.0 * (cal_fac_match - cal_factor_maria) / cal_factor_maria
+
+    band_labels_maria = band_labels + [f"Maria ({NU_GHZ} GHz)"]
+    cal_facs_maria = cal_facs + [cal_factor_maria]
+
+    for label, bw, cf in zip(band_labels, bandwidth_list, cal_facs):
+        print(f"{label:8s}  bw={bw/1e9:6.1f} GHz   cal_fac={cf:.6e} K/pW")
+
+    print(f"Maria ({NU_GHZ} GHz): cal_fac={cal_factor_maria:.6e} K/pW")
+    print(f"Percent difference vs matching analytic band: {percent_diff:.2f}%")
+
+    plt.figure(figsize=(8, 6))
+    bars = plt.bar(band_labels_maria, cal_facs_maria, color=["blue"] * 5 + ["red"])
+
+    maria_bar = bars[-1]
+    plt.text(
+        maria_bar.get_x() + maria_bar.get_width() / 2,
+        maria_bar.get_height(),
+        f"{percent_diff:.1f}%",
+        ha="center",
+        va="bottom",
+        fontsize=10
+    )
+
+    plt.ylabel("Calibration Conversion Factor (K/pW)")
+    plt.title("Calibration Conversion Factor for CCAT Bands")
+    plt.grid(True, axis="y")
+    plt.xticks(rotation=45, ha="right")
+    plt.tight_layout()
+    savefig(OUTDIR, "calibration_conversion_factors.png")
     # -----------------------------
     # Compute Detector Loading Power in Maria Atmosphere Model
     # -----------------------------
@@ -1489,7 +1590,6 @@ if __name__ == "__main__":
     "850": {"center": 850.0, "width": 97.0},
     }
 
-    selected_band = "350" #make sure these match
     band_center = band_info[selected_band]["center"]
     band_width = band_info[selected_band]["width"]
     freq_target = band_center # GHz, for CCAT table lookup
