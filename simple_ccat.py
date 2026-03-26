@@ -16,6 +16,7 @@ from maria.instrument import Band
 from maria import fetch
 from maria import Planner
 from maria.mappers import BinMapper
+from maria.spectrum import AtmosphericSpectrum
 
 from astropy.io import fits
 from astropy.wcs import WCS
@@ -1215,68 +1216,68 @@ def main(
     plt.grid(True)
     savefig(OUTDIR, f"{PREFIX}_tod_pointing_radec_PWV{pwv_mm:.2f}.png")
 
-    # -----------------------------
-    # Atmosphere vs elevation (TOD averaged) ORIGINAL METHOD
-    # -----------------------------
+    # # -----------------------------
+    # # Atmosphere vs elevation (TOD averaged) ORIGINAL METHOD
+    # # -----------------------------
 
 
 
-    el0 = np.nanmean(to_deg_if_rad(tod0.el), axis=0)
-    T_atm0 = np.nanmean(np.asarray(tod0.data["atmosphere"]), axis=0)
+    # el0 = np.nanmean(to_deg_if_rad(tod0.el), axis=0)
+    # T_atm0 = np.nanmean(np.asarray(tod0.data["atmosphere"]), axis=0)
 
-    m = np.isfinite(el0) & np.isfinite(T_atm0) & (T_atm0 > 0.0) #& (T_atm0 < 0.98 * T_0)
+    # m = np.isfinite(el0) & np.isfinite(T_atm0) & (T_atm0 > 0.0) #& (T_atm0 < 0.98 * T_0)
 
-    elv = el0[m]
-    Tv = T_atm0[m]
+    # elv = el0[m]
+    # Tv = T_atm0[m]
 
-    tau0_samples = tau_0_from_atm_temp(
-        T_atm = Tv,
-        el_deg = elv,
-        T_0 = T_0
-    )
+    # tau0_samples = tau_0_from_atm_temp(
+    #     T_atm = Tv,
+    #     el_deg = elv,
+    #     T_0 = T_0
+    # )
 
-    tau0_ref = np.median(tau0_samples)
+    # tau0_ref = np.median(tau0_samples)
 
-    el_ref = np.nanmedian(elv)
-    T_ref = np.nanmedian(Tv)
+    # el_ref = np.nanmedian(elv)
+    # T_ref = np.nanmedian(Tv)
     
-    # tau0_est = tau_0_from_atm_temp(
-    #     T_atm=T_ref,
+    # # tau0_est = tau_0_from_atm_temp(
+    # #     T_atm=T_ref,
+    # #     el_deg=el_ref,
+    # #     T_0=T_0
+    # # )
+
+    # print(f"Inferred tau_0 from TOD-avg atmosphere: {tau0_ref:.4f} (PWV={pwv_mm:.2f} mm)")
+
+    # dTdel_ref = inst_effective_atm_temp_850GHz(
+    #     mode="inst",
+    #     tau_0=tau0_ref,
     #     el_deg=el_ref,
     #     T_0=T_0
     # )
 
-    print(f"Inferred tau_0 from TOD-avg atmosphere: {tau0_ref:.4f} (PWV={pwv_mm:.2f} mm)")
+    # print(f"Expected dT/del at el={el_ref:.2f} deg: {dTdel_ref:.6f} K/deg")
 
-    dTdel_ref = inst_effective_atm_temp_850GHz(
-        mode="inst",
-        tau_0=tau0_ref,
-        el_deg=el_ref,
-        T_0=T_0
-    )
+    # # a, b = np.polyfit(elv, Tv, deg=1)
 
-    print(f"Expected dT/del at el={el_ref:.2f} deg: {dTdel_ref:.6f} K/deg")
+    # # print(f"Atmosphere vs Elevation fit: T_atm = {a:.4f} * el + {b:.4f} [K]")
 
-    # a, b = np.polyfit(elv, Tv, deg=1)
+    # xfit = np.linspace(elv.min(), elv.max(), 100)
+    # yfit = T_ref + dTdel_ref * (xfit - el_ref)
 
-    # print(f"Atmosphere vs Elevation fit: T_atm = {a:.4f} * el + {b:.4f} [K]")
-
-    xfit = np.linspace(elv.min(), elv.max(), 100)
-    yfit = T_ref + dTdel_ref * (xfit - el_ref)
-
-    step = 10
-    plt.figure(figsize=(8, 6))
-    plt.scatter(elv[::step], Tv[::step], s=1, alpha=0.5, label="TOD samples")
-    plt.plot(xfit, yfit, lw=2, alpha= 0.75, color="red", label=
-        fr"Model tangent "
-        fr"($\tau_0={tau0_ref:.4f}$, "
-        fr"$dT/d\mathrm{{el}}={dTdel_ref:.4f}\,\mathrm{{K/deg}}$)")
-    plt.xlabel("Elevation (deg)")
-    plt.ylabel("Atmospheric Temperature (K)")
-    plt.title(f"Atmospheric Temperature vs Elevation (PWV={pwv_mm:.2f} mm, TOD-avg)")
-    plt.grid(True)
-    plt.legend()
-    savefig(OUTDIR, f"{PREFIX}_atmosphere_vs_el_elref{el_ref:.2f}_tau0_inferred_tangent_PWV{pwv_mm:.2f}.png")
+    # step = 10
+    # plt.figure(figsize=(8, 6))
+    # plt.scatter(elv[::step], Tv[::step], s=1, alpha=0.5, label="TOD samples")
+    # plt.plot(xfit, yfit, lw=2, alpha= 0.75, color="red", label=
+    #     fr"Model tangent "
+    #     fr"($\tau_0={tau0_ref:.4f}$, "
+    #     fr"$dT/d\mathrm{{el}}={dTdel_ref:.4f}\,\mathrm{{K/deg}}$)")
+    # plt.xlabel("Elevation (deg)")
+    # plt.ylabel("Atmospheric Temperature (K)")
+    # plt.title(f"Atmospheric Temperature vs Elevation (PWV={pwv_mm:.2f} mm, TOD-avg)")
+    # plt.grid(True)
+    # plt.legend()
+    # savefig(OUTDIR, f"{PREFIX}_atmosphere_vs_el_elref{el_ref:.2f}_tau0_inferred_tangent_PWV{pwv_mm:.2f}.png")
 
     # -----------------------------
     # Atmosphere vs elevation (TOD averaged) THOMAS METHOD
@@ -1550,6 +1551,31 @@ def main(
     # savefig(OUTDIR, f"{PREFIX}_detector_atmospheric_power_eta_{eta:.2f}_ptp_histogram_PWV{pwv_mm:.2f}.png")
 
     # -----------------------------
+    # Test extracting Tau from transmission
+    # -----------------------------
+
+    pwv_list = [0.36, 0.64, 0.92, 1.28] # mm, from Q1 to Q3 zenith PMV values
+
+
+    atm_spec = AtmosphericSpectrum(region="chajnantor", altitude=5600)
+
+    #broadcastable 
+    elev = np.radians(np.linspace(30,70,6))[:, None]
+    nu = band.nu.Hz
+    for pwv in pwv_list:
+
+        plt.figure(figsize=(8,6))
+        tau = atm_spec.transmission(nu=nu, elevation = elev, pwv = pwv )
+        plt.plot(nu / 1e9, tau.T, label=f"PWV={pwv:.2f} mm")
+        plt.xlabel("Frequency (GHz)")
+        plt.ylabel("Atmospheric Transmission")
+        plt.title(f"Atmospheric Transmission vs Frequency for Different PWV Values")
+        plt.grid(True)
+        plt.legend()
+        savefig(OUTDIR, f"{PREFIX}_atmospheric_transmission_vs_frequency_PWV{pwv:.2f}.png")
+
+
+    # -----------------------------
     # BinMapper Mapmaking
     # -----------------------------
     map_type_norm = map_type.lower().strip()
@@ -1614,7 +1640,12 @@ if __name__ == "__main__":
 
     raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 
-
+# -------------------------------------------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------------------------------------------
 
 
 
