@@ -59,10 +59,10 @@ OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 # -----------------------------
 #  Simulation Parameters 
 # -----------------------------
-selected_band = "220" #make sure these match
+selected_band = "850" #make sure these match
 
-NU_HZ = 220e9  # Hz
-bandwidth_hz = 60e9  # GHz bandwidth for 220 GHz band
+NU_HZ = 850e9  # Hz
+bandwidth_hz = 97e9  # GHz bandwidth for 410 GHz band
 eta = 0.5 # optical efficiency for this estimate
 
 Polarized = False # whether to include polarization in the simulation
@@ -1551,7 +1551,7 @@ def main(
     # savefig(OUTDIR, f"{PREFIX}_detector_atmospheric_power_eta_{eta:.2f}_ptp_histogram_PWV{pwv_mm:.2f}.png")
 
     # -----------------------------
-    # Test extracting Tau from transmission
+    # Extracting Tau from transmission
     # -----------------------------
 
     pwv_list = [0.36, 0.64, 0.92, 1.28] # mm, from Q1 to Q3 zenith PMV values
@@ -1572,8 +1572,149 @@ def main(
         plt.title(f"Atmospheric Transmission vs Frequency for Different PWV Values")
         plt.grid(True)
         plt.legend()
-        savefig(OUTDIR, f"{PREFIX}_atmospheric_transmission_vs_frequency_PWV{pwv:.2f}.png")
+        savefig(OUTDIR, f"{PREFIX}_atmospheric_transmission_vs_frequency_PWV{pwv:.2f}_{selected_band}GHz.png")
+    # -----------------------------
+    # Inferring Transmission and Tau0 vs PWV
+    # -----------------------------
 
+    pwv_list = np.linspace(0.36, 1.28, 25)  # mm
+    elev_deg_list = [30.0, 40.0, 50.0, 60.0, 70.0]
+    elev_rad_list = np.radians(elev_deg_list)
+
+    atm_spec = AtmosphericSpectrum(region="chajnantor", altitude=5600)
+    nu = band.nu.Hz
+
+    plt.figure(figsize=(8, 6))
+    for elev_deg, elev_rad in zip(elev_deg_list, elev_rad_list):
+        trans_band_list = []
+
+        for pwv in pwv_list:
+            trans = atm_spec.transmission(nu=nu, elevation=elev_rad, pwv=pwv)
+            trans_band = np.mean(trans)
+            trans_band_list.append(trans_band)
+
+        plt.plot(pwv_list, trans_band_list, marker='o', label=f"{elev_deg:.0f} deg")
+
+    plt.xlabel("PWV (mm)")
+    plt.ylabel("Band-Averaged Atmospheric Transmission")
+    plt.title("Band-Averaged Atmospheric Transmission vs PWV")
+    plt.grid(True)
+    plt.legend()
+    savefig(OUTDIR, f"{PREFIX}_band_averaged_transmission_vs_pwv_all_elev.png")
+
+
+    plt.figure(figsize=(8, 6))
+    for elev_deg, elev_rad in zip(elev_deg_list, elev_rad_list):
+        tau0_band_list = []
+
+        for pwv in pwv_list:
+            trans = atm_spec.transmission(nu=nu, elevation=elev_rad, pwv=pwv)
+            tau0 = -np.log(trans) * np.sin(elev_rad)
+            tau0_band = np.mean(tau0)
+            tau0_band_list.append(tau0_band)
+
+        plt.plot(pwv_list, tau0_band_list, marker='o', label=f"{elev_deg:.0f} deg")
+
+    plt.xlabel("PWV (mm)")
+    plt.ylabel("Band-Averaged Zenith Optical Depth")
+    plt.title("Band-Averaged Zenith Optical Depth vs PWV")
+    plt.grid(True)
+    plt.legend()
+    savefig(OUTDIR, f"{PREFIX}_band_averaged_tau0_vs_pwv_all_elev.png")
+
+    # -----------------------------
+    # Transmission-derived tau0 vs PWV for current Maria band
+    # -----------------------------
+
+    pwv_arr = np.linspace(0.36, 1.28, 25)
+    elev_deg_ref = 50.0
+    elev_rad_ref = np.radians(elev_deg_ref)
+
+    atm_spec = AtmosphericSpectrum(region="chajnantor", altitude=5600)
+    nu = band.nu.Hz
+    nu_ghz = nu / 1e9
+
+    # choose either "center" or "bandavg"
+    mode_tau = "center"
+
+    tau0_trans_list = []
+    trans_rep_list = []
+
+    if mode_tau == "center":
+        nu0_idx = np.argmin(np.abs(nu - band.center.Hz))
+
+    for pwv in pwv_arr:
+        trans = atm_spec.transmission(nu=nu, elevation=elev_rad_ref, pwv=pwv)
+
+        # line-of-sight -> zenith optical depth
+        tau0_nu = -np.log(trans) * np.sin(elev_rad_ref)
+
+        if mode_tau == "center":
+            tau0_rep = tau0_nu[nu0_idx]
+            trans_rep = trans[nu0_idx]
+        elif mode_tau == "bandavg":
+            tau0_rep = np.mean(tau0_nu)
+            trans_rep = np.mean(trans)
+        else:
+            raise ValueError("mode_tau must be 'center' or 'bandavg'")
+
+        tau0_trans_list.append(tau0_rep)
+        trans_rep_list.append(trans_rep)
+
+    tau0_trans_arr = np.asarray(tau0_trans_list, dtype=float)
+    trans_rep_arr = np.asarray(trans_rep_list, dtype=float)
+
+    (B_trans, C_trans), cov_trans = np.polyfit(pwv_arr, tau0_trans_arr, deg=1, cov=True)
+    B_trans_err, C_trans_err = np.sqrt(np.diag(cov_trans))
+
+    pwv_fit = np.linspace(pwv_arr.min(), pwv_arr.max(), 200)
+    tau0_fit_trans = B_trans * pwv_fit + C_trans
+
+    ccat_table = np.loadtxt(CCAT_DATA, comments="!")
+    nu_tab = ccat_table[:, 0]
+    b_tab = ccat_table[:, 1]
+    c_tab = ccat_table[:, 2]
+
+    if mode_tau == "center":
+        idx_ccat = np.argmin(np.abs(nu_tab - band.center.Hz / 1e9))
+        B_ccat = b_tab[idx_ccat]
+        C_ccat = c_tab[idx_ccat]
+
+    elif mode_tau == "bandavg":
+        band_lo = (band.center.Hz - band.width.Hz / 2) / 1e9
+        band_hi = (band.center.Hz + band.width.Hz / 2) / 1e9
+
+        m_band = (nu_tab >= band_lo) & (nu_tab <= band_hi)
+
+        B_ccat = np.mean(b_tab[m_band])
+        C_ccat = np.mean(c_tab[m_band])
+
+    else:
+        raise ValueError("mode_tau must be 'center' or 'bandavg'")
+
+    tau0_fit_ccat = B_ccat * pwv_fit + C_ccat
+
+    plt.figure(figsize=(8,6))
+    # plt.plot(pwv_arr, tau0_trans_arr, "o", label="Maria transmission-derived $\\tau_0$")
+    plt.plot(
+        pwv_fit,
+        tau0_fit_trans,
+        lw=2,
+        label=fr"Maria trans fit: $\tau_0 = ({B_trans:.4f}\pm{B_trans_err:.4f})\,\mathrm{{PWV}} + ({C_trans:.4f}\pm{C_trans_err:.4f})$"
+    )
+    plt.plot(
+        pwv_fit,
+        tau0_fit_ccat,
+        "--",
+        lw=2,
+        label=fr"CCAT: $\tau_0 = {B_ccat:.4f}\,\mathrm{{PWV}} + {C_ccat:.4f}$"
+    )
+    plt.xlabel("PWV (mm)")
+    plt.ylabel("Zenith Optical Depth $\\tau_0$")
+    plt.title(f"Transmission-derived $\\tau_0$ vs PWV for {ccat_band} GHz band")
+    plt.grid(True)
+    plt.legend(fontsize=9)
+    savefig(OUTDIR, f"{PREFIX}_transmission_tau0_vs_pwv_{ccat_band}GHz_{mode_tau}.png")
 
     # -----------------------------
     # BinMapper Mapmaking
