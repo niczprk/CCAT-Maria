@@ -54,17 +54,17 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 
 CUTOUT = CUTOUT_ORIONA
 
-PREFIX = "OrionA_220_GHz"#_220GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized"
+PREFIX = "OrionA_850_GHz"#_280GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized"
 
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 
 # -----------------------------
 #  Simulation Parameters 
 # -----------------------------
-selected_band = "220" #make sure these match
+selected_band = "850" #make sure these match
 
-NU_HZ = 220e9  # Hz
-bandwidth_hz = 56e9  # GHz bandwidth for 220 GHz band
+NU_HZ = 850e9  # Hz
+bandwidth_hz = 97e9  # GHz bandwidth for 850 GHz band
 eta = 0.5 # optical efficiency for this estimate
 
 Polarized = False # whether to include polarization in the simulation
@@ -1586,43 +1586,54 @@ def main(
     atm_spec = AtmosphericSpectrum(region="chajnantor", altitude=5600)
     nu = band.nu.Hz
 
+    nu0_idx = np.argmin(np.abs(nu - band.center.Hz))
+    nu0_ghz = nu[nu0_idx] / 1e9
+
     plt.figure(figsize=(8, 6))
     for elev_deg, elev_rad in zip(elev_deg_list, elev_rad_list):
-        trans_band_list = []
+        # trans_band_list = []
+        trans_center_list = []
 
         for pwv in pwv_list:
             trans = atm_spec.transmission(nu=nu, elevation=elev_rad, pwv=pwv)
-            trans_band = np.mean(trans)
-            trans_band_list.append(trans_band)
+            # trans_band = np.mean(trans)
+            # trans_band_list.append(trans_band)
 
-        plt.plot(pwv_list, trans_band_list, marker='o', label=f"{elev_deg:.0f} deg")
+            trans_center = trans[nu0_idx]
+            trans_center_list.append(trans_center)
+
+
+        plt.plot(pwv_list, trans_center_list, marker='o', label=f"{elev_deg:.0f} deg")
 
     plt.xlabel("PWV (mm)")
-    plt.ylabel("Band-Averaged Atmospheric Transmission")
-    plt.title("Band-Averaged Atmospheric Transmission vs PWV")
+    plt.ylabel("Atmospheric Transmission at Band Centre")
+    plt.title(f"Transmission vs PWV at Band Centre ({nu0_ghz:.1f} GHz)")
     plt.grid(True)
     plt.legend()
-    savefig(OUTDIR, f"{PREFIX}_band_averaged_transmission_vs_pwv_all_elev.png")
+    savefig(OUTDIR, f"{PREFIX}_band_center_transmission_vs_pwv_all_elev.png")
 
 
     plt.figure(figsize=(8, 6))
     for elev_deg, elev_rad in zip(elev_deg_list, elev_rad_list):
-        tau0_band_list = []
+        # tau0_band_list = []
+        tau0_center_list = []
 
         for pwv in pwv_list:
             trans = atm_spec.transmission(nu=nu, elevation=elev_rad, pwv=pwv)
             tau0 = -np.log(trans) * np.sin(elev_rad)
-            tau0_band = np.mean(tau0)
-            tau0_band_list.append(tau0_band)
+            # tau0_band = np.mean(tau0)
+            # tau0_band_list.append(tau0_band)
+            tau0_center = tau0[nu0_idx]
+            tau0_center_list.append(tau0_center)
 
-        plt.plot(pwv_list, tau0_band_list, marker='o', label=f"{elev_deg:.0f} deg")
+        plt.plot(pwv_list, tau0_center_list, marker='o', label=f"{elev_deg:.0f} deg")
 
     plt.xlabel("PWV (mm)")
-    plt.ylabel("Band-Averaged Zenith Optical Depth")
-    plt.title("Band-Averaged Zenith Optical Depth vs PWV")
+    plt.ylabel("Zenith Optical Depth at Band Centre")
+    plt.title(f"Zenith Optical Depth vs PWV at Band Centre ({nu0_ghz:.1f} GHz)")
     plt.grid(True)
     plt.legend()
-    savefig(OUTDIR, f"{PREFIX}_band_averaged_tau0_vs_pwv_all_elev.png")
+    savefig(OUTDIR, f"{PREFIX}_band_center_tau0_vs_pwv_all_elev.png")
 
     # -----------------------------
     # Transmission-derived tau0 vs PWV for current Maria band
@@ -1768,8 +1779,8 @@ def main(
     C_ccat_interp = interp_C(nu_ghz_band)
 
     plt.figure(figsize=(8,6))
-    plt.plot(nu_ghz_band, B_maria, label="Maria B(ν)")
-    plt.plot(nu_ghz_band, B_ccat_interp, "--", label="CCAT B(ν)")
+    plt.plot(nu_ghz_band, B_maria, label="Maria B(ν)", color="tab:green")
+    plt.plot(nu_ghz_band, B_ccat_interp, "-", label="CCAT B(ν)", color="tab:blue")
     plt.xlabel("Frequency (GHz)")
     plt.ylabel("B coefficient")
     plt.legend()
@@ -1777,7 +1788,7 @@ def main(
     savefig(OUTDIR, f"{PREFIX}_B_coefficient_comparison_{ccat_band}GHz_{mode_tau}.png")
 
     plt.figure(figsize=(8,6))
-    plt.plot(nu_ghz_band, B_maria - B_ccat_interp, label="ΔB = Maria - CCAT")
+    plt.plot(nu_ghz_band, B_maria - B_ccat_interp, label="ΔB = Maria - CCAT", color="tab:red")
     plt.axhline(0, color="k", linestyle="--")
     plt.xlabel("Frequency (GHz)")
     plt.ylabel("ΔB")
@@ -1786,8 +1797,8 @@ def main(
     savefig(OUTDIR, f"{PREFIX}_B_residual_{ccat_band}GHz_{mode_tau}.png")
 
     plt.figure(figsize=(8,6))
-    plt.plot(nu_ghz_band, C_maria, label="Maria C(ν)")
-    plt.plot(nu_ghz_band, C_ccat_interp, "--", label="CCAT C(ν)")
+    plt.plot(nu_ghz_band, C_maria, label="Maria C(ν)", color="tab:green")
+    plt.plot(nu_ghz_band, C_ccat_interp, "-", label="CCAT C(ν)", color="tab:blue")
     plt.xlabel("Frequency (GHz)")
     plt.ylabel("C coefficient")
     plt.legend()
@@ -1795,7 +1806,7 @@ def main(
     savefig(OUTDIR, f"{PREFIX}_C_coefficient_comparison_{ccat_band}GHz_{mode_tau}.png")
 
     plt.figure(figsize=(8,6))
-    plt.plot(nu_ghz_band, C_maria - C_ccat_interp, label="ΔC = Maria - CCAT")
+    plt.plot(nu_ghz_band, C_maria - C_ccat_interp, label="ΔC = Maria - CCAT", color="tab:red")
     plt.axhline(0, color="k", linestyle="--")
     plt.xlabel("Frequency (GHz)")
     plt.ylabel("ΔC")
@@ -1856,7 +1867,7 @@ if __name__ == "__main__":
 
     mp.set_start_method("spawn", force = True)
 
-    #main(atm_plot=True, map_type="skip", temp_mode="inst", ccat_band = selected_band, run_mode="all", tod_diagnostics=True, pwv_mm=0.36)
+    main(atm_plot=True, map_type="skip", temp_mode="inst", ccat_band = selected_band, run_mode="all", tod_diagnostics=True, pwv_mm=0.36)
 
     # pwv_list = [0.36, 1.28]
     # for pwv in pwv_list:
@@ -1865,7 +1876,7 @@ if __name__ == "__main__":
         
     #main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="280", map_type="Binmapper", tod_diagnostics=True, pwv_mm=0.36)
 
-    #raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
+    raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 
 # -------------------------------------------------------------------------------------------------------------------------------------
 # -------------------------------------------------------------------------------------------------------------------------------------
@@ -1873,15 +1884,12 @@ if __name__ == "__main__":
 # -------------------------------------------------------------------------------------------------------------------------------------
 # -------------------------------------------------------------------------------------------------------------------------------------
 # -------------------------------------------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------------------------------------------
 
-
-
-    pwv_list = np.linspace(0.36, 1.28, 5) # mm, from Q1 to Q3 zenith PMV values
+    pwv_list = np.linspace(0.36, 1.28, 5)  # mm, from Q1 to Q3 zenith PWV values
 
     tau0_list = []
     el_ref_list = []
-
-
 
     for pwv in pwv_list:
 
@@ -1890,20 +1898,35 @@ if __name__ == "__main__":
         pwv_mm = pwv
         print(f"\n=== Running for PWV={pwv_mm:.2f} mm ===")
 
-        tau0_ref_new, el_ref = main(atm_plot=False, run_mode= "only_sim" , temp_mode="inst", ccat_band=selected_band, map_type="skip", tod_diagnostics=True, pwv_mm=pwv_mm)
+        tau0_ref_new, el_ref = main(
+            atm_plot=False,
+            run_mode="only_sim",
+            temp_mode="inst",
+            ccat_band=selected_band,
+            map_type="skip",
+            tod_diagnostics=True,
+            pwv_mm=pwv_mm,
+        )
         tau0_list.append(tau0_ref_new)
         el_ref_list.append(el_ref)
 
         main_end_time = time.perf_counter()
         main_elapsed_time = main_end_time - main_start_time
-        print(f"Finished run for PWV={pwv_mm:.2f} mm, inferred tau_0={tau0_ref_new:.4f} (Elapsed time: {main_elapsed_time:.2f} seconds)")
+        print(
+            f"Finished run for PWV={pwv_mm:.2f} mm, "
+            f"inferred tau_0={tau0_ref_new:.4f} "
+            f"(Elapsed time: {main_elapsed_time:.2f} seconds)"
+        )
 
-        gc.collect() # Clean up memory after each run
-    
+        gc.collect()
+
     el_refs = np.asarray(el_ref_list, dtype=np.float64)
-    print(f"Elevation references across runs: {el_refs.min():.2f} to {el_refs.max():.2f} deg, median={np.median(el_refs):.2f} deg")
+    print(
+        f"Elevation references across runs: "
+        f"{el_refs.min():.2f} to {el_refs.max():.2f} deg, "
+        f"median={np.median(el_refs):.2f} deg"
+    )
     el_ref_name = float(np.median(el_refs))
-
 
     pwv_arr = np.asarray(pwv_list, dtype=np.float64)
     tau0_arr = np.asarray(tau0_list, dtype=np.float64)
@@ -1912,75 +1935,200 @@ if __name__ == "__main__":
     pwv_arr = pwv_arr[m]
     tau0_arr = tau0_arr[m]
 
-    (A, B), cov = np.polyfit(pwv_arr, tau0_arr, deg=1, cov = True)
+    # ---------------------------------
+    # TOD-derived fit
+    # ---------------------------------
+    (maria_b_fit, maria_c_fit), cov = np.polyfit(pwv_arr, tau0_arr, deg=1, cov=True)
+    maria_b_fit_err, maria_c_fit_err = np.sqrt(np.diag(cov))
 
-    std_errors = np.sqrt(np.diag(cov))
+    pwv_fit = np.linspace(pwv_arr.min(), pwv_arr.max(), 100)
+    tau0_fit_tod = maria_b_fit * pwv_fit + maria_c_fit
 
-    maria_b_fit = A
-    maria_c_fit = B
-    maria_b_fit_err = std_errors[0]
-    maria_c_fit_err = std_errors[1]
+    print(
+        f"TOD fit parameters: "
+        f"b={maria_b_fit:.4f} ± {maria_b_fit_err:.4f}, "
+        f"c={maria_c_fit:.4f} ± {maria_c_fit_err:.4f}"
+    )
 
+    # ---------------------------------
+    # Rebuild the selected Maria band
+    # ---------------------------------
+    if selected_band == "220":
+        band = Band(center=220e9, width=56e9, efficiency=eta, NET_CMB=6.8e-6, knee=1.0, gain_error=5e-2)
+    elif selected_band == "280":
+        band = Band(center=280e9, width=60e9, efficiency=eta, NET_CMB=13e-6, knee=1.0, gain_error=5e-2)
+    elif selected_band == "350":
+        band = Band(center=350e9, width=35e9, efficiency=eta, NET_CMB=48e-6, knee=1.0, gain_error=5e-2)
+    elif selected_band == "410":
+        band = Band(center=410e9, width=30e9, efficiency=eta, NET_CMB=182e-6, knee=1.0, gain_error=5e-2)
+    elif selected_band == "850":
+        band = Band(center=850e9, width=97e9, efficiency=eta, NET_CMB=310000e-6, knee=1.0, gain_error=5e-2)
+    else:
+        raise ValueError(f"Invalid selected_band: {selected_band}")
 
-    ccat_table = np.loadtxt(CCAT_DATA, comments = "!") # just to check that the file can be read without error before starting the loop
-
-    nu = ccat_table[:, 0]
+    # ---------------------------------
+    # CCAT table
+    # ---------------------------------
+    ccat_table = np.loadtxt(CCAT_DATA, comments="!")
+    nu = ccat_table[:, 0]   # GHz
     b = ccat_table[:, 1]
     c = ccat_table[:, 2]
 
-    nu_mask = (nu >= freq_target - band_width/2) & (nu <= freq_target + band_width/2)
-
+    nu_mask = (nu >= freq_target - band_width / 2) & (nu <= freq_target + band_width / 2)
     nu_masked = nu[nu_mask]
     b_masked = b[nu_mask]
     c_masked = c[nu_mask]
 
     idx_freq = np.argmin(np.abs(nu_masked - freq_target))
-
     ccat_b_center = b_masked[idx_freq]
     ccat_c_center = c_masked[idx_freq]
 
-    tau0_ccat = ccat_b_center * pwv_arr + ccat_c_center
+    tau0_fit_ccat = ccat_b_center * pwv_fit + ccat_c_center
 
-    pwv_fit = np.linspace(pwv_arr.min(), pwv_arr.max(), 100)
-    tau0_fit = maria_b_fit * pwv_fit + maria_c_fit
+    # ---------------------------------
+    # Transmission-derived fit at band centre
+    # ---------------------------------
+    atm_spec = AtmosphericSpectrum(region="chajnantor", altitude=5600)
 
-    print(f"Linear fit parameters: A={maria_b_fit:.4f} ± {maria_b_fit_err:.4f}, B={maria_c_fit:.4f} ± {maria_c_fit_err:.4f}")
-    print(f"Linear fit: tau_0 = {maria_b_fit:.4f} * PWV + {maria_c_fit:.4f}")
+    nu_band_hz = band.nu.Hz
+    nu_band_ghz = nu_band_hz / 1e9
 
-    fig, axs = plt.subplots(2,2, figsize=(12, 10))
+    band_lo_hz = band.center.Hz - band.width.Hz / 2
+    band_hi_hz = band.center.Hz + band.width.Hz / 2
 
-    # --------------------------------------------------
+    band_mask = (nu_band_hz >= band_lo_hz) & (nu_band_hz <= band_hi_hz)
+
+    nu_band_hz = nu_band_hz[band_mask]
+    nu_band_ghz = nu_band_ghz[band_mask]
+
+    nu0_idx = np.argmin(np.abs(nu_band_hz - band.center.Hz))
+
+    tau0_trans_list = []
+
+    for pwv in pwv_arr:
+        trans = atm_spec.transmission(
+            nu=nu_band_hz,
+            elevation=float(np.radians(el_ref_name)),
+            pwv=float(pwv),
+        )
+        tau0_nu = -np.log(trans) * np.sin(np.radians(el_ref_name))
+        tau0_trans_list.append(tau0_nu[nu0_idx])
+
+    tau0_trans_arr = np.asarray(tau0_trans_list, dtype=float)
+
+    (maria_b_trans, maria_c_trans), cov_trans = np.polyfit(
+        pwv_arr, tau0_trans_arr, deg=1, cov=True
+    )
+    maria_b_trans_err, maria_c_trans_err = np.sqrt(np.diag(cov_trans))
+
+    tau0_fit_trans = maria_b_trans * pwv_fit + maria_c_trans
+
+    print(
+        f"Transmission fit parameters: "
+        f"b={maria_b_trans:.4f} ± {maria_b_trans_err:.4f}, "
+        f"c={maria_c_trans:.4f} ± {maria_c_trans_err:.4f}"
+    )
+
+    # ---------------------------------
+    # Transmission-derived B(nu), C(nu) across full Maria band
+    # ---------------------------------
+    tau_grid = []
+    for pwv in pwv_arr:
+        trans = atm_spec.transmission(
+            nu=nu_band_hz,
+            elevation=float(np.radians(el_ref_name)),
+            pwv=float(pwv),
+        )
+        tau0_nu = -np.log(trans) * np.sin(np.radians(el_ref_name))
+        tau_grid.append(tau0_nu)
+
+    tau0_grid = np.asarray(tau_grid, dtype=float)  # shape: (N_pwv, N_nu)
+
+    B_trans_nu = []
+    C_trans_nu = []
+
+    for j in range(len(nu_band_hz)):
+        y = tau0_grid[:, j]
+        x = pwv_arr
+        Bj, Cj = np.polyfit(x, y, deg=1)
+        B_trans_nu.append(Bj)
+        C_trans_nu.append(Cj)
+
+    B_trans_nu = np.asarray(B_trans_nu)
+    C_trans_nu = np.asarray(C_trans_nu)
+
+    # interpolate CCAT values onto Maria band grid
+    interp_B = interp1d(nu, b, kind="linear", bounds_error=False, fill_value="extrapolate")
+    interp_C = interp1d(nu, c, kind="linear", bounds_error=False, fill_value="extrapolate")
+
+    B_ccat_interp = interp_B(nu_band_ghz)
+    C_ccat_interp = interp_C(nu_band_ghz)
+
+    # ---------------------------------
+    # Final 2x2 figure
+    # ---------------------------------
+    COLOR_TOD = "tab:orange"
+    COLOR_TRANS = "tab:green"
+    COLOR_CCAT = "tab:blue"
+    COLOR_CENTER = "0.4"
+
+    fig, axs = plt.subplots(2, 2, figsize=(13, 10))
+
     # Top-left: tau0 vs PWV
-    # --------------------------------------------------
     ax = axs[0, 0]
-    ax.plot(pwv_arr, tau0_arr, "o", label="Inferred $\\tau_0$ from TOD")
+
+    ax.plot(
+        pwv_arr,
+        tau0_arr,
+        "o",
+        color="black",
+        ms=5,
+        alpha=0.85,
+        label="Maria TOD samples",
+    )
+
     ax.plot(
         pwv_fit,
-        tau0_fit,
-        lw=2,
+        tau0_fit_tod,
+        color=COLOR_TOD,
+        lw=2.2,
+        linestyle="--",
         label=(
-            fr"Maria fit: $\tau_0 = "
+            fr"Maria TOD fit: $\tau_0 = "
             fr"({maria_b_fit:.4f}\pm{maria_b_fit_err:.4f})\,\mathrm{{PWV}} + "
             fr"({maria_c_fit:.4f}\pm{maria_c_fit_err:.4f})$"
         ),
     )
+
     ax.plot(
-        pwv_arr,
-        tau0_ccat,
-        lw=2,
-        linestyle="--",
+        pwv_fit,
+        tau0_fit_trans,
+        color=COLOR_TRANS,
+        lw=2.2,
+        linestyle="-",
+        label=(
+            fr"Maria trans fit: $\tau_0 = "
+            fr"({maria_b_trans:.4f}\pm{maria_b_trans_err:.4f})\,\mathrm{{PWV}} + "
+            fr"({maria_c_trans:.4f}\pm{maria_c_trans_err:.4f})$"
+        ),
+    )
+
+    ax.plot(
+        pwv_fit,
+        tau0_fit_ccat,
+        color=COLOR_CCAT,
+        lw=2.2,
+        linestyle="-",
         label=fr"CCAT table: $\tau_0 = {ccat_b_center:.4f}\,\mathrm{{PWV}} + {ccat_c_center:.4f}$",
     )
+
     ax.set_xlabel("PWV (mm)")
-    ax.set_ylabel("Inferred $\\tau_0$")
+    ax.set_ylabel(r"Zenith optical depth $\tau_0$")
     ax.set_title(f"(a) $\\tau_0$ vs PWV at {band_center:.0f} GHz")
     ax.grid(True)
-    ax.legend(fontsize=9)
+    ax.legend(fontsize=8)
 
-    # --------------------------------------------------
-    # Top-right: Text summary of fit parameters
-    # --------------------------------------------------
-
+    # Top-right: info box
     ax = axs[0, 1]
     ax.axis("off")
 
@@ -1990,9 +2138,12 @@ if __name__ == "__main__":
         f"Bandwidth: {band_width:.0f} GHz\n"
         f"PWV range: {pwv_arr.min():.2f} to {pwv_arr.max():.2f} mm\n"
         f"Median reference elevation: {el_ref_name:.2f} deg\n\n"
-        f"Maria fit from TOD:\n"
+        f"Maria TOD fit:\n"
         f"b = {maria_b_fit:.4f} ± {maria_b_fit_err:.4f}\n"
         f"c = {maria_c_fit:.4f} ± {maria_c_fit_err:.4f}\n\n"
+        f"Maria transmission fit:\n"
+        f"b = {maria_b_trans:.4f} ± {maria_b_trans_err:.4f}\n"
+        f"c = {maria_c_trans:.4f} ± {maria_c_trans_err:.4f}\n\n"
         f"Nearest CCAT table values:\n"
         f"b = {ccat_b_center:.4f}\n"
         f"c = {ccat_c_center:.4f}"
@@ -2005,44 +2156,124 @@ if __name__ == "__main__":
         transform=ax.transAxes,
         va="top",
         ha="left",
-        fontsize=12,
-        bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+        fontsize=11,
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.9),
     )
 
-    # --------------------------------------------------
-    # Bottom-left: B vs nu
-    # --------------------------------------------------
-
+    # Bottom-left: B(nu)
     ax = axs[1, 0]
-    ax.plot(nu_masked, b_masked, label="CCAT b coefficient")
-    ax.axhspan(maria_b_fit - maria_b_fit_err, maria_b_fit + maria_b_fit_err, color="red", alpha=0.3, label="Maria b fit ±1σ")
-    ax.axhline(maria_b_fit, linestyle="--", color="red", label=f"Maria b fit at {band_center:.0f} GHz")
-    ax.axvline(freq_target, linestyle=":", color="gray", label=f"Target frequency: {freq_target:.0f} GHz")
+
+    ax.plot(
+        nu_band_ghz, 
+        B_ccat_interp,
+        color=COLOR_CCAT,
+        lw=2.0,
+        linestyle="-",
+        label="CCAT tabulated $B(\\nu)$",
+    )
+
+    ax.plot(
+        nu_band_ghz,
+        B_trans_nu,
+        color=COLOR_TRANS,
+        lw=2.0,
+        linestyle="-",
+        label="Maria transmission $B(\\nu)$",
+    )
+
+    ax.axhspan(
+        maria_b_fit - maria_b_fit_err,
+        maria_b_fit + maria_b_fit_err,
+        color=COLOR_TOD,
+        alpha=0.22,
+        label="Maria TOD $B$ fit ±1σ",
+    )
+
+    ax.axhline(
+        maria_b_fit,
+        color=COLOR_TOD,
+        lw=2.0,
+        linestyle="--",
+        label="Maria TOD $B$ fit",
+    )
+
+    ax.axvline(
+        band_center,
+        color=COLOR_CENTER,
+        lw=1.6,
+        linestyle=":",
+        label=f"Band centre: {band_center:.0f} GHz",
+    )
+
     ax.set_xlabel("Frequency (GHz)")
-    ax.set_ylabel("b coefficient")
-    ax.set_title(f"(b) CCAT b coefficient vs Frequency around {band_center:.0f} GHz")
-    ax.legend(fontsize=9)
+    ax.set_ylabel("B coefficient")
+    ax.set_title(f"(b) $B(\\nu)$ across the {band_center:.0f} GHz band")
+    ax.legend(fontsize=8)
     ax.grid(True)
 
+    # Bottom-right: C(nu)
     ax = axs[1, 1]
-    ax.plot(nu_masked, c_masked, label="CCAT c coefficient")
-    ax.axhspan(maria_c_fit - maria_c_fit_err, maria_c_fit + maria_c_fit_err, color="red", alpha=0.3, label="Maria c fit ±1σ")
-    ax.axhline(maria_c_fit, linestyle="--", color="red", label=f"Maria c fit at {band_center:.0f} GHz")
-    ax.axvline(freq_target, linestyle=":", color="gray", label=f"Target frequency: {freq_target:.0f} GHz")
-    if np.max(c_masked) > 1.0:
-        ax.set_ylim(0, 1.0) #only this range is relevant for c coefficient comparison (especially for 850 GHz band)
+
+    ax.plot(
+        nu_band_ghz,
+        C_ccat_interp,
+        color=COLOR_CCAT,
+        lw=2.0,
+        linestyle="-",
+        label="CCAT tabulated $C(\\nu)$",
+    )
+
+    ax.plot(
+        nu_band_ghz,
+        C_trans_nu,
+        color=COLOR_TRANS,
+        lw=2.0,
+        linestyle="-",
+        label="Maria transmission $C(\\nu)$",
+    )
+
+    ax.axhspan(
+        maria_c_fit - maria_c_fit_err,
+        maria_c_fit + maria_c_fit_err,
+        color=COLOR_TOD,
+        alpha=0.22,
+        label="Maria TOD $C$ fit ±1σ",
+    )
+
+    ax.axhline(
+        maria_c_fit,
+        color=COLOR_TOD,
+        lw=2.0,
+        linestyle="--",
+        label="Maria TOD $C$ fit",
+    )
+
+    ax.axvline(
+        band_center,
+        color=COLOR_CENTER,
+        lw=1.6,
+        linestyle=":",
+        label=f"Band centre: {band_center:.0f} GHz",
+    )
+
+    c_upper = max(np.nanmax(C_ccat_interp), np.nanmax(C_trans_nu), maria_c_fit + maria_c_fit_err)
+    if c_upper > 1.0:
+        ax.set_ylim(0, 1.0)
     else:
-        ax.set_ylim(0, np.max(c_masked)*1.05)
+        ax.set_ylim(0, 1.05 * c_upper)
+
     ax.set_xlabel("Frequency (GHz)")
-    ax.set_ylabel("c coefficient")
-    ax.set_title(f"(c) CCAT c coefficient vs Frequency around {band_center:.0f} GHz")
-    ax.legend(fontsize=9)
+    ax.set_ylabel("C coefficient")
+    ax.set_title(f"(c) $C(\\nu)$ across the {band_center:.0f} GHz band")
+    ax.legend(fontsize=8)
     ax.grid(True)
 
     plt.tight_layout()
-    savefig(OUTDIR, f"{PREFIX}_tau0_vs_PWV_and_CCAT_coefficients_PWV{pwv_arr.min():.2f}-{pwv_arr.max():.2f}_elref{el_ref_name:.2f}deg.png")
+    savefig(
+        OUTDIR,
+        f"{PREFIX}_tau0_vs_PWV_and_CCAT_coefficients_PWV{pwv_arr.min():.2f}-{pwv_arr.max():.2f}_elref{el_ref_name:.2f}deg.png",
+    )
     plt.close()
-
 
 
 
