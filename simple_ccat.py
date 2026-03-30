@@ -54,17 +54,17 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 
 CUTOUT = CUTOUT_ORIONA
 
-PREFIX = "OrionA_850_GHz"#_280GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized"
+PREFIX = "OrionA_220_GHz"#_280GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized"
 
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 
 # -----------------------------
 #  Simulation Parameters 
 # -----------------------------
-selected_band = "850" #make sure these match
+selected_band = "220" #make sure these match
 
-NU_HZ = 850e9  # Hz
-bandwidth_hz = 97e9  # GHz bandwidth for 850 GHz band
+NU_HZ = 220e9  # Hz
+bandwidth_hz = 56e9  # GHz bandwidth for 220 GHz band
 eta = 0.5 # optical efficiency for this estimate
 
 Polarized = False # whether to include polarization in the simulation
@@ -1555,23 +1555,29 @@ def main(
     # -----------------------------
     # Extracting Tau from transmission
     # -----------------------------
-
-    pwv_list = [0.36, 0.64, 0.92, 1.28] # mm, from Q1 to Q3 zenith PMV values
-
+    pwv_list = [0.36, 0.64, 0.92, 1.28]  # mm, from Q1 to Q3 zenith PWV values
 
     atm_spec = AtmosphericSpectrum(region="chajnantor", altitude=5600)
 
-    #broadcastable 
-    elev = np.radians(np.linspace(30,70,6))[:, None]
-    nu = band.nu.Hz
-    for pwv in pwv_list:
+    elev_deg_list = np.linspace(30, 70, 6)
+    elev_rad_list = np.radians(elev_deg_list)
 
-        plt.figure(figsize=(8,6))
-        tau = atm_spec.transmission(nu=nu, elevation = elev, pwv = pwv )
-        plt.plot(nu / 1e9, tau.T, label=f"PWV={pwv:.2f} mm")
+    nu = band.nu.Hz
+
+    for pwv in pwv_list:
+        plt.figure(figsize=(8, 6))
+
+        for elev_deg, elev_rad in zip(elev_deg_list, elev_rad_list):
+            trans = atm_spec.transmission(
+                nu=nu,
+                elevation=float(elev_rad),
+                pwv=float(pwv),
+            )
+            plt.plot(nu / 1e9, trans, label=f"El={elev_deg:.0f} deg")
+
         plt.xlabel("Frequency (GHz)")
         plt.ylabel("Atmospheric Transmission")
-        plt.title(f"Atmospheric Transmission vs Frequency for Different PWV Values")
+        plt.title(f"Atmospheric Transmission vs Frequency (PWV={pwv:.2f} mm)")
         plt.grid(True)
         plt.legend()
         savefig(OUTDIR, f"{PREFIX}_atmospheric_transmission_vs_frequency_PWV{pwv:.2f}_{selected_band}GHz.png")
