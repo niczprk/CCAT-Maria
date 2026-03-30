@@ -54,7 +54,7 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 
 CUTOUT = CUTOUT_ORIONA
 
-PREFIX = "OrionA_220_Ghz"#_220GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized"
+PREFIX = "OrionA_220_GHz"#_220GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized"
 
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 
@@ -64,7 +64,7 @@ OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 selected_band = "220" #make sure these match
 
 NU_HZ = 220e9  # Hz
-bandwidth_hz = 56e9  # GHz bandwidth for 410 GHz band
+bandwidth_hz = 56e9  # GHz bandwidth for 220 GHz band
 eta = 0.5 # optical efficiency for this estimate
 
 Polarized = False # whether to include polarization in the simulation
@@ -1856,7 +1856,7 @@ if __name__ == "__main__":
 
     mp.set_start_method("spawn", force = True)
 
-    main(atm_plot=True, map_type="skip", temp_mode="inst", ccat_band = selected_band, run_mode="all", tod_diagnostics=True, pwv_mm=0.36)
+    #main(atm_plot=True, map_type="skip", temp_mode="inst", ccat_band = selected_band, run_mode="all", tod_diagnostics=True, pwv_mm=0.36)
 
     # pwv_list = [0.36, 1.28]
     # for pwv in pwv_list:
@@ -1865,7 +1865,7 @@ if __name__ == "__main__":
         
     #main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="280", map_type="Binmapper", tod_diagnostics=True, pwv_mm=0.36)
 
-    raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
+    #raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 
 # -------------------------------------------------------------------------------------------------------------------------------------
 # -------------------------------------------------------------------------------------------------------------------------------------
