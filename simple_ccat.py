@@ -10,6 +10,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from scipy.interpolate import interp1d
+
 import maria
 from maria import Instrument
 from maria.instrument import Band
@@ -52,7 +54,7 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 
 CUTOUT = CUTOUT_ORIONA
 
-PREFIX = "OrionA_220_atmosphere"#_220GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized"
+PREFIX = "OrionA_220_Ghz"#_220GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized"
 
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 
@@ -1694,6 +1696,8 @@ def main(
 
     tau0_fit_ccat = B_ccat * pwv_fit + C_ccat
 
+    tau_fit_tod = 0.0376 * pwv_fit + 0.0109 # from TOD-inferred tau0 vs PWV fit for 220 GHZ
+
     plt.figure(figsize=(8,6))
     # plt.plot(pwv_arr, tau0_trans_arr, "o", label="Maria transmission-derived $\\tau_0$")
     plt.plot(
@@ -1709,13 +1713,95 @@ def main(
         lw=2,
         label=fr"CCAT: $\tau_0 = {B_ccat:.4f}\,\mathrm{{PWV}} + {C_ccat:.4f}$"
     )
+    plt.plot(
+        pwv_fit,
+        tau_fit_tod,
+        "-.",
+        lw=2,
+        label=fr"Maria TOD fit: $\tau_0 = {0.0376:.4f}\,\mathrm{{PWV}} + {0.0109:.4f}$"
+    )
     plt.xlabel("PWV (mm)")
     plt.ylabel("Zenith Optical Depth $\\tau_0$")
     plt.title(f"Transmission-derived $\\tau_0$ vs PWV for {ccat_band} GHz band")
     plt.grid(True)
     plt.legend(fontsize=9)
     savefig(OUTDIR, f"{PREFIX}_transmission_tau0_vs_pwv_{ccat_band}GHz_{mode_tau}.png")
+    # -----------------------------
+    # B and C value fit comparison between Maria transmission-derived tau0 and CCAT table
+    # -----------------------------
 
+    band_lo = band.center.Hz - band.width.Hz / 2
+    band_hi = band.center.Hz + band.width.Hz / 2
+
+    band_mask = (nu >= band_lo) & (nu <= band_hi)
+
+    nu_band = nu[band_mask]
+    nu_ghz_band = nu_band / 1e9
+
+    tau_grid = []
+
+    for pwv in pwv_arr:
+        trans = atm_spec.transmission(nu=nu, elevation=elev_rad_ref, pwv=pwv)
+        tau0_nu = -np.log(trans) * np.sin(elev_rad_ref)
+        tau_grid.append(tau0_nu)
+
+    tau0_grid = np.asarray(tau_grid, dtype=float)   # shape (N_pwv, N_nu)
+    tau0_grid_band = tau0_grid[:, band_mask]        # shape (N_pwv, N_band)
+
+    Maria_B_list = []
+    Maria_C_list = []
+
+    for j in range(len(nu_band)):
+        y = tau0_grid_band[:, j]
+        x = pwv_arr
+        B, C = np.polyfit(x, y, deg=1)
+        Maria_B_list.append(B)
+        Maria_C_list.append(C)
+
+    B_maria = np.array(Maria_B_list)
+    C_maria = np.array(Maria_C_list)
+
+    interp_B = interp1d(nu_tab, b_tab, kind="linear", bounds_error=False, fill_value="extrapolate")
+    interp_C = interp1d(nu_tab, c_tab, kind="linear", bounds_error=False, fill_value="extrapolate")
+
+    B_ccat_interp = interp_B(nu_ghz_band)
+    C_ccat_interp = interp_C(nu_ghz_band)
+
+    plt.figure(figsize=(8,6))
+    plt.plot(nu_ghz_band, B_maria, label="Maria B(ν)")
+    plt.plot(nu_ghz_band, B_ccat_interp, "--", label="CCAT B(ν)")
+    plt.xlabel("Frequency (GHz)")
+    plt.ylabel("B coefficient")
+    plt.legend()
+    plt.grid(True)
+    savefig(OUTDIR, f"{PREFIX}_B_coefficient_comparison_{ccat_band}GHz_{mode_tau}.png")
+
+    plt.figure(figsize=(8,6))
+    plt.plot(nu_ghz_band, B_maria - B_ccat_interp, label="ΔB = Maria - CCAT")
+    plt.axhline(0, color="k", linestyle="--")
+    plt.xlabel("Frequency (GHz)")
+    plt.ylabel("ΔB")
+    plt.legend()
+    plt.grid(True)
+    savefig(OUTDIR, f"{PREFIX}_B_residual_{ccat_band}GHz_{mode_tau}.png")
+
+    plt.figure(figsize=(8,6))
+    plt.plot(nu_ghz_band, C_maria, label="Maria C(ν)")
+    plt.plot(nu_ghz_band, C_ccat_interp, "--", label="CCAT C(ν)")
+    plt.xlabel("Frequency (GHz)")
+    plt.ylabel("C coefficient")
+    plt.legend()
+    plt.grid(True)
+    savefig(OUTDIR, f"{PREFIX}_C_coefficient_comparison_{ccat_band}GHz_{mode_tau}.png")
+
+    plt.figure(figsize=(8,6))
+    plt.plot(nu_ghz_band, C_maria - C_ccat_interp, label="ΔC = Maria - CCAT")
+    plt.axhline(0, color="k", linestyle="--")
+    plt.xlabel("Frequency (GHz)")
+    plt.ylabel("ΔC")
+    plt.legend()
+    plt.grid(True)
+    savefig(OUTDIR, f"{PREFIX}_C_residual_{ccat_band}GHz_{mode_tau}.png")
     # -----------------------------
     # BinMapper Mapmaking
     # -----------------------------
