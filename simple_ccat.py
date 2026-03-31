@@ -1873,7 +1873,30 @@ if __name__ == "__main__":
 
     mp.set_start_method("spawn", force = True)
 
-    main(atm_plot=True, map_type="skip", temp_mode="inst", ccat_band = selected_band, run_mode="all", tod_diagnostics=True, pwv_mm=0.36)
+    jybeam_220_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 220.0, value = 1, beam_fwhm_arcsec= 59.0, N_det = 7938)
+    jybeam_280_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 280.0, value = 1, beam_fwhm_arcsec= 47.0, N_det = 10368)
+    jybeam_350_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 350.0, value = 1, beam_fwhm_arcsec= 37.0, N_det = 20808)
+    jybeam_410_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 410.0, value = 1, beam_fwhm_arcsec= 32.0, N_det = 20808)
+    jybeam_850_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 850.0, value = 1, beam_fwhm_arcsec= 15.0, N_det = 20808)
+    print(f"Array-AveragedConversion factors from Jy/beam to K_RJ for each band (mK):")
+    print(f"220 GHz: {jybeam_220_to_K_RJ*1000:.4f} mK")
+    print(f"280 GHz: {jybeam_280_to_K_RJ*1000:.4f} mK")
+    print(f"350 GHz: {jybeam_350_to_K_RJ*1000:.4f} mK")
+    print(f"410 GHz: {jybeam_410_to_K_RJ*1000:.4f} mK")
+    print(f"850 GHz: {jybeam_850_to_K_RJ*1000:.4f} mK")
+
+    single_jybeam_220_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 220.0, value = 1, beam_fwhm_arcsec= 59.0, N_det = 1)
+    single_jybeam_280_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 280.0, value = 1, beam_fwhm_arcsec= 47.0, N_det = 1)
+    single_jybeam_350_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 350.0, value = 1, beam_fwhm_arcsec= 37.0, N_det = 1)
+    single_jybeam_410_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 410.0, value = 1, beam_fwhm_arcsec= 32.0, N_det = 1)
+    single_jybeam_850_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 850.0, value = 1, beam_fwhm_arcsec= 15.0, N_det = 1)
+    print(f"Single-Detector Conversion factors from Jy/beam to K_RJ for each band (mK):")
+    print(f"220 GHz: {single_jybeam_220_to_K_RJ*1000:.4f} mK")
+    print(f"280 GHz: {single_jybeam_280_to_K_RJ*1000:.4f} mK")
+    print(f"350 GHz: {single_jybeam_350_to_K_RJ*1000:.4f} mK")
+    print(f"410 GHz: {single_jybeam_410_to_K_RJ*1000:.4f} mK")
+    print(f"850 GHz: {single_jybeam_850_to_K_RJ*1000:.4f} mK")
+    #main(atm_plot=True, map_type="skip", temp_mode="inst", ccat_band = selected_band, run_mode="all", tod_diagnostics=True, pwv_mm=0.36)
 
     # pwv_list = [0.36, 1.28]
     # for pwv in pwv_list:
