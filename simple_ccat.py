@@ -54,17 +54,17 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 
 CUTOUT = CUTOUT_ORIONA
 
-PREFIX = "OrionA_220_GHz"#_280GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized"
+PREFIX = "OrionA_280_presentation"#_280GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized"
 
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 
 # -----------------------------
 #  Simulation Parameters 
 # -----------------------------
-selected_band = "220" #make sure these match
+selected_band = "280" #make sure these match
 
-NU_HZ = 220e9  # Hz
-bandwidth_hz = 56e9  # GHz bandwidth for 220 GHz band
+NU_HZ = 280e9  # Hz
+bandwidth_hz = 60e9  # GHz bandwidth for 280 GHz band
 eta = 0.5 # optical efficiency for this estimate
 
 Polarized = False # whether to include polarization in the simulation
