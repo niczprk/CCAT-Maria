@@ -48,14 +48,19 @@ REDUCED_FITS = DATA_DIR / f"{FITS_PREFIX}_20170726_850_DR3_ext_HK_JySr_reduced_f
 
 CCAT_DATA = DATA_DIR / "atm-table-ccat.dat"
 
-CUTOUT_ORIONA = dict(ra_min=83.2, ra_max=84.0, dec_min=-6.0, dec_max=-4.8)
+CUTOUT_ORIONA = dict(
+    ra_min=83.3667,
+    ra_max=83.8667,
+    dec_min=-5.6167,
+    dec_max=-5.1167
+)
 
 CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0)
 
 CUTOUT = CUTOUT_ORIONA
 
 
-PREFIX = "OrionA_280_presentation"#_280GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized
+PREFIX = "OrionA_pw_v_el_relation"#_850GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 
 # -----------------------------
@@ -64,7 +69,7 @@ OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 selected_band = "280" #make sure these match
 
 NU_HZ = 280e9  # Hz
-bandwidth_hz = 60e9  # GHz bandwidth for 280 GHz band
+bandwidth_hz = 60e9  # GHz bandwidth for 850 GHz band
 eta = 0.5 # optical efficiency for this estimate
 
 Polarized = False # whether to include polarization in the simulation
@@ -90,14 +95,15 @@ PWV_MM = 0.36  #  mm, precip water vapour this only affects the main if pwv is N
 
 # 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values for Chajnantor
 
-EL_LIMITS = (30, 70)  # degrees
+EL_LIMITS = (68, 85)  # degrees
 
 T_0 = 278.868 #K, atmospheric ground temp
 
 
 
-START_TIME = "2022-02-10T18:55:00"
+START_TIME = "2022-02-10T23:05:00"
 
+# "2022-02-10T22:45:00" for around 75 degrees ?
 #"2022-02-10T20:30:00" for around 60 degrees 
 #"2022-02-10T18:55:00" for roughly 45 degrees
 #"2022-02-10T18:30:00" for roughly 40 degrees
@@ -106,7 +112,7 @@ START_TIME = "2022-02-10T18:55:00"
 
 TOTAL_DURATION_S = 1800  # seconds
 SIM_DURATION_S = 1800  # seconds
-SAMPLE_RATE_HZ = 15  # Hz
+SAMPLE_RATE_HZ = 50  # Hz
 SCAN_PATTERN = "daisy"
 CHUNK_NUMBER = 0
 
@@ -1219,68 +1225,64 @@ def main(
     savefig(OUTDIR, f"{PREFIX}_tod_pointing_radec_PWV{pwv_mm:.2f}.png")
 
     # # -----------------------------
-    # # Atmosphere vs elevation (TOD averaged) ORIGINAL METHOD
-    # # -----------------------------
+    # # Atmosphere vs elevation Power vs Elevation for single detector
+    # # ------------
+
+    det_idx = 0
+
+    tod0_pw = tod0.to("pW")
+
+    P_single_pW = np.asarray(tod0_pw.signal[det_idx], dtype=np.float64)
+
+    el_single = to_deg_if_rad(np.asarray(tod0.el[det_idx], dtype=np.float64))
 
 
+    # Time axis
+    t = np.asarray(tod0.time)
+    tsec = t - t[0]
 
-    # el0 = np.nanmean(to_deg_if_rad(tod0.el), axis=0)
-    # T_atm0 = np.nanmean(np.asarray(tod0.data["atmosphere"]), axis=0)
+    m = (
+        np.isfinite(tsec)
+        & np.isfinite(el_single)
+        & np.isfinite(P_single_pW)
+    )
 
-    # m = np.isfinite(el0) & np.isfinite(T_atm0) & (T_atm0 > 0.0) #& (T_atm0 < 0.98 * T_0)
+    tsec_v = tsec[m]
+    el_v = el_single[m]
+    P_v = P_single_pW[m]
 
-    # elv = el0[m]
-    # Tv = T_atm0[m]
+    P_v_avg = np.nanmean(P_v)
 
-    # tau0_samples = tau_0_from_atm_temp(
-    #     T_atm = Tv,
-    #     el_deg = elv,
-    #     T_0 = T_0
-    # )
+    P_norm = P_v / P_v_avg
 
-    # tau0_ref = np.median(tau0_samples)
 
-    # el_ref = np.nanmedian(elv)
-    # T_ref = np.nanmedian(Tv)
-    
-    # # tau0_est = tau_0_from_atm_temp(
-    # #     T_atm=T_ref,
-    # #     el_deg=el_ref,
-    # #     T_0=T_0
-    # # )
+    print(f"Detector {det_idx}, PWV={pwv_mm:.2f} mm")
+    print(f"P_avg = {P_v_avg:.4f} pW")
+    print(f"P min/med/max = {np.nanmin(P_v):.4f}, {np.nanmedian(P_v):.4f}, {np.nanmax(P_v):.4f} pW")
 
-    # print(f"Inferred tau_0 from TOD-avg atmosphere: {tau0_ref:.4f} (PWV={pwv_mm:.2f} mm)")
+    # Absolute power loading
+    plt.figure(figsize=(8, 6))
+    plt.scatter(el_v, P_v, s=2, alpha=0.4)
+    plt.xlabel("Elevation (deg)")
+    plt.ylabel("Detector power (pW)")
+    plt.title(f"Detector {det_idx}: Power Loading vs Elevation, PWV={pwv_mm:.2f} mm")
+    plt.grid(True)
+    savefig(
+        OUTDIR,
+        f"{PREFIX}_det{det_idx}_pW_vs_elevation_PWV{pwv_mm:.2f}.png"
+    )
 
-    # dTdel_ref = inst_effective_atm_temp_850GHz(
-    #     mode="inst",
-    #     tau_0=tau0_ref,
-    #     el_deg=el_ref,
-    #     T_0=T_0
-    # )
-
-    # print(f"Expected dT/del at el={el_ref:.2f} deg: {dTdel_ref:.6f} K/deg")
-
-    # # a, b = np.polyfit(elv, Tv, deg=1)
-
-    # # print(f"Atmosphere vs Elevation fit: T_atm = {a:.4f} * el + {b:.4f} [K]")
-
-    # xfit = np.linspace(elv.min(), elv.max(), 100)
-    # yfit = T_ref + dTdel_ref * (xfit - el_ref)
-
-    # step = 10
-    # plt.figure(figsize=(8, 6))
-    # plt.scatter(elv[::step], Tv[::step], s=1, alpha=0.5, label="TOD samples")
-    # plt.plot(xfit, yfit, lw=2, alpha= 0.75, color="red", label=
-    #     fr"Model tangent "
-    #     fr"($\tau_0={tau0_ref:.4f}$, "
-    #     fr"$dT/d\mathrm{{el}}={dTdel_ref:.4f}\,\mathrm{{K/deg}}$)")
-    # plt.xlabel("Elevation (deg)")
-    # plt.ylabel("Atmospheric Temperature (K)")
-    # plt.title(f"Atmospheric Temperature vs Elevation (PWV={pwv_mm:.2f} mm, TOD-avg)")
-    # plt.grid(True)
-    # plt.legend()
-    # savefig(OUTDIR, f"{PREFIX}_atmosphere_vs_el_elref{el_ref:.2f}_tau0_inferred_tangent_PWV{pwv_mm:.2f}.png")
-
+    # Normalized power loading
+    plt.figure(figsize=(8, 6))
+    plt.scatter(el_v, P_norm, s=2, alpha=0.4)
+    plt.xlabel("Elevation (deg)")
+    plt.ylabel(r"$P / \langle P \rangle$")
+    plt.title(f"Detector {det_idx}: Normalized Power vs Elevation, PWV={pwv_mm:.2f} mm")
+    plt.grid(True)
+    savefig(
+        OUTDIR,
+        f"{PREFIX}_det{det_idx}_pW_over_mean_vs_elevation_PWV{pwv_mm:.2f}.png"
+    )
     # -----------------------------
     # Atmosphere vs elevation (TOD averaged) THOMAS METHOD
     # -----------------------------
@@ -1306,11 +1308,6 @@ def main(
     el_ref = np.nanmedian(elv)
     T_ref = np.nanmedian(Tv_sig)
     
-    # tau0_est = tau_0_from_atm_temp(
-    #     T_atm=T_ref,
-    #     el_deg=el_ref,
-    #     T_0=T_0
-    # )
 
     print(f"Inferred tau_0 from TOD-avg atmosphere: {tau0_ref_new:.4f} (PWV={pwv_mm:.2f} mm)")
 
@@ -1404,23 +1401,6 @@ def main(
 
 
 
-
-
-    # plt.figure(figsize=(8,6))
-    # plt.hist(P_std[np.isfinite(P_std)], bins=30, alpha=0.7)
-    # plt.xlabel("Std Dev of Detector Power (pW)")
-    # plt.ylabel("Number of Detectors")
-    # plt.title(f"Distribution of Std Dev of Direct Detector Power (PWV={pwv_mm:.2f} mm $\eta$={eta:.2f} )")
-    # plt.grid(True)
-    # savefig(OUTDIR, f"{PREFIX}_detector_direct_power_eta_{eta:.2f}_std_histogram_PWV{pwv_mm:.2f}.png")
-
-    # plt.figure(figsize=(8,6))
-    # plt.hist(P_ptp[np.isfinite(P_ptp)], bins=30, alpha=0.7)
-    # plt.xlabel("Peak-to-Peak Detector Power (pW)")
-    # plt.ylabel("Number of Detectors")
-    # plt.title(f"Distribution of Peak-to-Peak Direct Detector Power (PWV={pwv_mm:.2f} mm $\eta$={eta:.2f} )")
-    # plt.grid(True)
-    # savefig(OUTDIR, f"{PREFIX}_detector_direct_power_eta_{eta:.2f}_ptp_histogram_PWV{pwv_mm:.2f}.png")
     cal_factor = band.cal("pW -> K_RJ")
     print("Calibration object:", cal_factor)
     print(type(cal_factor))
@@ -1873,39 +1853,13 @@ if __name__ == "__main__":
 
     mp.set_start_method("spawn", force = True)
 
-    # jybeam_220_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 220.0, value = 1, beam_fwhm_arcsec= 59.0, N_det = 7938)
-    # jybeam_280_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 280.0, value = 1, beam_fwhm_arcsec= 47.0, N_det = 10368)
-    # jybeam_350_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 350.0, value = 1, beam_fwhm_arcsec= 37.0, N_det = 20808)
-    # jybeam_410_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 410.0, value = 1, beam_fwhm_arcsec= 32.0, N_det = 20808)
-    # jybeam_850_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 850.0, value = 1, beam_fwhm_arcsec= 15.0, N_det = 20808)
-    # print(f"Array-AveragedConversion factors from Jy/beam to K_RJ for each band (mK):")
-    # print(f"220 GHz: {jybeam_220_to_K_RJ*1000:.4f} mK")
-    # print(f"280 GHz: {jybeam_280_to_K_RJ*1000:.4f} mK")
-    # print(f"350 GHz: {jybeam_350_to_K_RJ*1000:.4f} mK")
-    # print(f"410 GHz: {jybeam_410_to_K_RJ*1000:.4f} mK")
-    # print(f"850 GHz: {jybeam_850_to_K_RJ*1000:.4f} mK")
+    for pwv in [0.36, 0.67, 1.28]:
+        print(f"\n=== Running for PWV={pwv:.2f} mm ===")
+        main(atm_plot=True, map_type="skip", temp_mode="inst", ccat_band = selected_band, run_mode="all", tod_diagnostics=True, pwv_mm=pwv)
 
-    # single_jybeam_220_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 220.0, value = 1, beam_fwhm_arcsec= 59.0, N_det = 1)
-    # single_jybeam_280_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 280.0, value = 1, beam_fwhm_arcsec= 47.0, N_det = 1)
-    # single_jybeam_350_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 350.0, value = 1, beam_fwhm_arcsec= 37.0, N_det = 1)
-    # single_jybeam_410_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 410.0, value = 1, beam_fwhm_arcsec= 32.0, N_det = 1)
-    # single_jybeam_850_to_K_RJ = convert_noise_equivalent("NEFD", "NET",nu_GHz= 850.0, value = 1, beam_fwhm_arcsec= 15.0, N_det = 1)
-    # print(f"Single-Detector Conversion factors from Jy/beam to K_RJ for each band (mK):")
-    # print(f"220 GHz: {single_jybeam_220_to_K_RJ*1000:.4f} mK")
-    # print(f"280 GHz: {single_jybeam_280_to_K_RJ*1000:.4f} mK")
-    # print(f"350 GHz: {single_jybeam_350_to_K_RJ*1000:.4f} mK")
-    # print(f"410 GHz: {single_jybeam_410_to_K_RJ*1000:.4f} mK")
-    # print(f"850 GHz: {single_jybeam_850_to_K_RJ*1000:.4f} mK")
-    main(atm_plot=True, map_type="skip", temp_mode="inst", ccat_band = selected_band, run_mode="all", tod_diagnostics=True, pwv_mm=0.36)
-
-    # pwv_list = [0.36, 1.28]
-    # for pwv in pwv_list:
-    #     print(f"\n=== Running for PWV={pwv:.2f} mm ===")
-    #     main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="850", map_type="skip", tod_diagnostics=True, pwv_mm=pwv)
-        
     #main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="280", map_type="Binmapper", tod_diagnostics=True, pwv_mm=0.36)
 
-    raise SystemExit("Stopping after single run. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
+    raise SystemExit("Stopping. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 
 # -------------------------------------------------------------------------------------------------------------------------------------
 # -------------------------------------------------------------------------------------------------------------------------------------
