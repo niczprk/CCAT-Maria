@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from . import simple_ccat
-from maria import TOD
+import simple_ccat
+from maria.tod import TOD
 
 
 selected_band = "280" #make sure these match
@@ -69,4 +69,17 @@ simple_ccat.tod_analysis(maps = False,
     pwv_mm = PWV_MM,
 )
 
-tod = TOD.from_fits(TOD_OUTDIR / f"{PREFIX}_tods.fits")
+tod = TOD.from_fits(TOD_OUTDIR / f"{PREFIX}_tods.fits", format = "Mustang-2")
+
+print(tod)
+print(tod.shape)
+print(tod.fields)
+
+signal = tod.signal.compute()
+ra = tod.ra
+dec = tod.dec
+time = tod.time
+el = tod.el
+az = tod.az
+
+raise SystemExit("Test Complete")
