@@ -63,6 +63,10 @@ CUTOUT = CUTOUT_ORIONA
 PREFIX = "OrionA_pw_v_el_relation"#_850GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 
+ANALYSIS_OUTDIR = Path(f"outputs/{PREFIX}_analysis_outputs")
+
+TOD_OUTDIR = Path(f"outputs/{PREFIX}_tod_files")
+
 # -----------------------------
 #  Simulation Parameters 
 # -----------------------------
@@ -1817,7 +1821,7 @@ def main(
             units="mK_RJ",
             tods=tods,
         )
-
+        
         output_map = mapper.run()
         output_map.plot(nu_index=[0], cmap="coolwarm")
         savefig(OUTDIR, f"{PREFIX}_output_BinMapper_PWV{pwv_mm:.2f}.png")
@@ -1830,6 +1834,192 @@ def main(
 
     return tau0_ref_new, el_ref
 
+
+# ----------------------------------------------
+# ---------- Main Execution Pipeline -----------
+# ----------------------------------------------
+
+def tod_analysis(
+    maps = False,
+    save_all_plots: bool = False,
+    run_mode: str = "fits",
+    atm_plot: bool = True,
+    temp_mode: str = "inst",
+    ccat_band: str = "280",
+    map_type: str = "BinMapper",
+    pwv_mm: float = PWV_MM,
+) -> None:
+    """
+    run_mode options:
+      - "hdf5": runs simulation with set parameters and saves TOD to HDF5 file, then exits
+      - "fits": runs simulation, saves TOD to FITS file, then exits
+      - I will add options as to whether we want to Map as well as what type of map to make. For now this step is not necessary
+    """
+    ANALYSIS_OUTDIR.mkdir(exist_ok=True)
+
+    # -----------------------------
+    # Instrument
+    # -----------------------------
+    if ccat_band == "220":
+        f220 = Band(
+            center=220e9,
+            width=56e9,
+            efficiency= eta,
+            NET_CMB=6.8e-6,
+            knee=1.0,
+            gain_error=5e-2,
+        )
+        band = f220
+
+    elif ccat_band == "280":
+        f280 = Band(
+            center=280e9,
+            width=60e9,
+            efficiency= eta,
+            NET_CMB=13e-6,
+            knee=1.0,
+            gain_error=5e-2,
+        )
+        band = f280
+
+    elif ccat_band == "350":
+        f350 = Band(
+            center=350e9,
+            width=35e9,
+            efficiency= eta,
+            NET_CMB=48e-6,
+            knee=1.0,
+            gain_error=5e-2,
+        )
+        band = f350
+
+    elif ccat_band == "410":
+        f410 = Band(
+            center=410e9,
+            width=30e9,
+            efficiency= eta,
+            NET_CMB=182e-6,
+            knee=1.0,
+            gain_error=5e-2,
+        )
+        band = f410
+    
+    elif ccat_band == "850":
+        f850 = Band(
+            center=850e9,
+            width=97e9,
+            efficiency= eta,
+            NET_CMB=310000e-6,
+            knee=1.0,
+            gain_error=5e-2,
+        )
+        band = f850
+    
+    else:
+        raise ValueError(f"Invalid ccat_band: {ccat_band}. Choose from '220', '280', '350', '410', '850'.")
+    
+
+    array_cfg = {
+        "shape": "hexagon",
+        "field_of_view": 1.3,
+        "beam_spacing": 8.0,
+        "primary_size": 6.0,
+        "bands": [band],
+        "polarized": Polarized,
+    }
+
+    instrument = maria.get_instrument(array = array_cfg)
+    print(instrument)
+    
+    if save_all_plots:
+        instrument.plot()
+        savefig(ANALYSIS_OUTDIR, f"{PREFIX}_instrument_{ccat_band}GHz.png")
+    
+    site = maria.get_site("cerro_chajnantor", altitude=5600)
+    print(site)
+    
+    if save_all_plots:
+        site.plot()
+        savefig(ANALYSIS_OUTDIR, f"{PREFIX}_site.png")
+
+    input_map = maria.map.load(str(REDUCED_FITS), nu = NU_GHZ)
+    print(input_map)
+    map_jysr = input_map.to("Jy/sr")
+    print(map_jysr)
+    if save_all_plots:
+        map_jysr.plot()
+        savefig(ANALYSIS_OUTDIR, f"{PREFIX}_input_map_{ccat_band}GHz.png")
+
+    planner = Planner(
+        start_time = START_TIME,
+        target = map_jysr,
+        site = site,
+        constraints = {"el": EL_LIMITS}
+    )
+
+    plans = planner.generate_plans(
+        total_duration=TOTAL_DURATION_S,
+        max_chunk_duration=SIM_DURATION_S,
+        scan_pattern=SCAN_PATTERN,
+        sample_rate = SAMPLE_RATE_HZ,
+        scan_options={"radius": map_jysr.width.deg / 3.0},
+    )
+    if save_all_plots:
+        plans[0].plot()
+        savefig(ANALYSIS_OUTDIR, f"{PREFIX}_scan_plan_{ccat_band}GHz.png")
+
+    
+    sim = maria.Simulation(
+        instrument=instrument,
+        plans=plans,
+        site=site,
+        atmosphere="2d",
+        atmosphere_kwargs={"weather": {"pwv": pwv_mm}},
+        # cmb = "generate",
+        # cmb_kwargs = {"source": "planck"},
+        map=input_map,
+    )
+
+    print(sim)
+
+    tods = sim.run()
+    tods[0].plot()
+    plt.savefig(
+        os.path.join(TOD_OUTDIR, f"{PREFIX}_tod_plot_{CHUNK_NUMBER}.png"),
+        dpi=200,
+        bbox_inches="tight",
+    )
+
+    if run_mode == "hdf5":
+        tods.to_hdf5(OUTDIR / f"{PREFIX}_tods.hdf5")
+    
+    elif run_mode == "fits":
+        tods.to_fits(OUTDIR / f"{PREFIX}_tods.fits")
+
+    else:
+        raise ValueError(f"Invalid run_mode: {run_mode}. Choose 'hdf5' or 'fits'.")
+
+    if maps == True and map_type == "BM":
+        mapper = BinMapper(
+            tod_preprocessing={
+                "remove_spline": {"knot_spacing": 60, "remove_el_gradient": True},
+                "remove_modes": {"modes_to_remove": 1},
+            },
+            map_postprocessing={"gaussian_filter": {"sigma": 1}},
+            units="mK_RJ",
+            tods=tods,
+        )
+        
+        output_map = mapper.run()
+        output_map.plot(nu_index=[0], cmap="coolwarm")
+        savefig(ANALYSIS_OUTDIR, f"{PREFIX}_output_BinMapper_PWV{pwv_mm:.2f}.png")
+    elif maps == True and map_type == "ML":
+        raise NotImplementedError("ML mapmaking not implemented yet")
+    
+    else:
+        print("[skip] mapmaking")
+
+    return None
 if __name__ == "__main__":
 
     band_info = { # GHz, Prime-Cam module specs
