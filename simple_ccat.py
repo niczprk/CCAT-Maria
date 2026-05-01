@@ -60,7 +60,7 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 CUTOUT = CUTOUT_ORIONA
 
 
-PREFIX = "OrionA_pw_v_el_relation"#_850GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized
+PREFIX = "OrionA_tod_test"#_850GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 
 ANALYSIS_OUTDIR = Path(f"outputs/{PREFIX}_analysis_outputs")
@@ -1846,7 +1846,7 @@ def tod_analysis(
     atm_plot: bool = True,
     temp_mode: str = "inst",
     ccat_band: str = "280",
-    map_type: str = "BinMapper",
+    map_type: str = "BM",
     pwv_mm: float = PWV_MM,
 ) -> None:
     """
@@ -1855,8 +1855,8 @@ def tod_analysis(
       - "fits": runs simulation, saves TOD to FITS file, then exits
       - I will add options as to whether we want to Map as well as what type of map to make. For now this step is not necessary
     """
-    ANALYSIS_OUTDIR.mkdir(exist_ok=True)
-
+    ANALYSIS_OUTDIR.mkdir(parents=True, exist_ok=True)
+    TOD_OUTDIR.mkdir(parents=True, exist_ok=True)
     # -----------------------------
     # Instrument
     # -----------------------------
@@ -1942,7 +1942,7 @@ def tod_analysis(
         site.plot()
         savefig(ANALYSIS_OUTDIR, f"{PREFIX}_site.png")
 
-    input_map = maria.map.load(str(REDUCED_FITS), nu = NU_GHZ)
+    input_map = maria.map.load(str(REDUCED_FITS), nu = NU_HZ)
     print(input_map)
     map_jysr = input_map.to("Jy/sr")
     print(map_jysr)
@@ -1991,10 +1991,10 @@ def tod_analysis(
     )
 
     if run_mode == "hdf5":
-        tods.to_hdf5(OUTDIR / f"{PREFIX}_tods.hdf5")
+        tods[0].to_hdf5(TOD_OUTDIR / f"{PREFIX}_tods.hdf5")
     
     elif run_mode == "fits":
-        tods.to_fits(OUTDIR / f"{PREFIX}_tods.fits")
+        tods[0].to_fits(TOD_OUTDIR / f"{PREFIX}_tods.fits")
 
     else:
         raise ValueError(f"Invalid run_mode: {run_mode}. Choose 'hdf5' or 'fits'.")
