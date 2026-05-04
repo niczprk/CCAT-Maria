@@ -3,6 +3,12 @@ from pathlib import Path
 import simple_ccat
 from maria.tod import TOD
 
+import numpy as np
+
+import matplotlib
+matplotlib.use("Agg")  # Use a non-interactive backend for plotting
+import matplotlib.pyplot as plt
+
 
 selected_band = "280" #make sure these match
 
@@ -11,21 +17,6 @@ bandwidth_hz = 60e9  # GHz bandwidth for 850 GHz band
 eta = 0.5 # optical efficiency for this estimate
 
 Polarized = False # whether to include polarization in the simulation
-
-if Polarized:
-    p = 0.5 # fractional polarization of the source, for this estimates
-else:
-    p = 1.0
-
-f_res = 800e6  # Resonant frequency in Hz (800 MHz)
-
-Q_r = 40000 # Quality factor taken from Bayguchi thesis
-
-P_0 = 957e-18 # idk but do not question the mighty jordan wheeler
-
-R_0 = -2.448e9 #avg responsivity in W^-1 from Jordan Wheeler
-
-Del_f = 2200 # Hz, 1/10th of the FWHM is the estimated linear regime limit for 350GHz MKID array
 
 NU_GHZ = NU_HZ / 1e9 #GHz
 
@@ -59,7 +50,10 @@ ANALYSIS_OUTDIR = Path(f"outputs/{PREFIX}_analysis_outputs")
 TOD_OUTDIR = Path(f"outputs/{PREFIX}_tod_files")
 
 
-simple_ccat.tod_analysis(maps = False,
+
+
+simple_ccat.tod_analysis(
+    maps = False,
     save_all_plots = False,
     run_mode = "fits",
     atm_plot = True,
@@ -67,19 +61,62 @@ simple_ccat.tod_analysis(maps = False,
     ccat_band = "280",
     map_type = "BM",
     pwv_mm = PWV_MM,
+    start_time = START_TIME,
+    total_duration_s = TOTAL_DURATION_S,
+    sim_duration_s = SIM_DURATION_S,
+    sample_rate_hz = SAMPLE_RATE_HZ,
 )
 
-tod = TOD.from_fits(TOD_OUTDIR / f"{PREFIX}_tods.fits", format = "Mustang-2")
+if __name__ == "__main__":
 
-print(tod)
-print(tod.shape)
-print(tod.fields)
 
-signal = tod.signal.compute()
-ra = tod.ra
-dec = tod.dec
-time = tod.time
-el = tod.el
-az = tod.az
+    tod = TOD.from_fits(TOD_OUTDIR / f"{PREFIX}_tods.fits", format = "Mustang-2")
 
-raise SystemExit("Test Complete")
+    print(tod)
+    print(tod.shape)
+    print(tod.fields)
+
+    print("signal type:", type(tod.signal))
+    print("signal shape:", tod.signal.shape)
+
+    print("ra shape:", np.shape(tod.ra))
+    print("dec shape:", np.shape(tod.dec))
+    print("el shape:", np.shape(tod.el))
+    print("az shape:", np.shape(tod.az))
+    print("time shape:", np.shape(tod.time))
+
+    tod.to("pW").plot()
+    simple_ccat.savefig(ANALYSIS_OUTDIR / f"{PREFIX}_tod_plot.png", f"{PREFIX}_tod_plot.png", dpi=300)
+    plt.close("all")
+
+    P_det = tod.to("pW").signal
+    P = np.asarray(P_det, dtype=np.float64)  # Convert to numpy array for calculations
+
+
+    print("P shape:", P.shape)
+
+    P_mean = np.nanmean(P, axis=1).ravel()
+    P_std  = np.nanstd(P, axis=1).ravel()
+    P_ptp  = (np.nanmax(P, axis=1) - np.nanmin(P, axis=1)).ravel()
+
+    plt.figure(figsize=(8,6))
+    plt.hist(P_mean[np.isfinite(P_mean)], bins=30, alpha=0.7, density=False)
+    plt.xlabel("Mean Detector Power (pW)")
+    plt.ylabel("Number of Detectors")
+    plt.title(f"Distribution of Mean Direct Detector Power (PWV={PWV_MM:.2f} mm $\\eta$={eta:.2f})")
+    plt.grid(True)
+    simple_ccat.savefig(ANALYSIS_OUTDIR, f"{PREFIX}_detector_direct_power_eta_{eta:.2f}_histogram_PWV{PWV_MM:.2f}.png")
+
+
+
+
+
+
+    signal = tod.signal.compute()
+    ra = tod.ra
+    dec = tod.dec
+    time = tod.time
+    el = tod.el
+    az = tod.az
+
+    raise SystemExit("Test Complete")
