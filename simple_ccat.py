@@ -1840,6 +1840,7 @@ def main(
 # ----------------------------------------------
 
 def tod_analysis(
+    tod_diagnostics: bool = True,
     maps = False,
     save_all_plots: bool = False,
     run_mode: str = "fits",
@@ -1848,6 +1849,10 @@ def tod_analysis(
     ccat_band: str = "280",
     map_type: str = "BM",
     pwv_mm: float = PWV_MM,
+    start_time: str = START_TIME,
+    total_duration_s: int = TOTAL_DURATION_S,
+    sim_duration_s: int = SIM_DURATION_S,
+    sample_rate_hz: int = SAMPLE_RATE_HZ,
 ) -> None:
     """
     run_mode options:
@@ -1922,7 +1927,7 @@ def tod_analysis(
     array_cfg = {
         "shape": "hexagon",
         "field_of_view": 1.3,
-        "beam_spacing": 8.0,
+        "beam_spacing": 3.0,
         "primary_size": 6.0,
         "bands": [band],
         "polarized": Polarized,
@@ -1990,10 +1995,108 @@ def tod_analysis(
         bbox_inches="tight",
     )
 
+    if tod_diagnostics:
+
+        tods[0].to("pW").plot()
+    savefig(ANALYSIS_OUTDIR / f"{PREFIX}_tod_plot.png", f"{PREFIX}_tod_plot.png", dpi=300)
+    plt.close("all")
+
+    P_det = tods[0].to("pW").signal
+    P = np.asarray(P_det, dtype=np.float64)  # Convert to numpy array for calculations
+
+
+    print("P shape:", P.shape)
+
+    P_mean = np.nanmean(P, axis=1).ravel()
+    P_std  = np.nanstd(P, axis=1).ravel()
+    P_ptp  = (np.nanmax(P, axis=1) - np.nanmin(P, axis=1)).ravel()
+
+    P_flat = P_mean[np.isfinite(P_mean)]
+
+    # -----------------------------
+    #Detector diagnostics / statistics 
+    # -----------------------------
+
+    from scipy.stats import norm, skew
+
+    mu, sigma = norm.fit(P_flat)
+    print(f"Fitted Gaussian parameters: mu={mu:.2f} pW, sigma={sigma:.2f} pW")
+    frac_width = sigma / mu
+    frac_width_percent = frac_width * 100
+    print(f"Fractional width (sigma/mean): {frac_width:.3f} ({frac_width_percent:.1f}%)")
+
+    median = np.median(P_flat)
+    p5, p16, p84, p95 = np.percentile(P_flat, [5, 16, 84, 95])
+    mi_val = np.min(P_flat)
+    ma_val = np.max(P_flat)
+    ptp_val = ma_val - mi_val
+
+    skewness = skew(P_flat, nan_policy='omit')
+
+    print("\nDetector mean power statistics")
+    print("--------------------------------")
+    print(f"Gaussian mean:          {mu:.6g} pW")
+    print(f"Gaussian sigma:         {sigma:.6g} pW")
+    print(f"Fractional width:       {frac_width:.6g}")
+    print(f"Fractional width:       {frac_width_percent:.3f}%")
+    print(f"Median:                 {median:.6g} pW")
+    print(f"Min / Max:              {mi_val:.6g}, {ma_val:.6g} pW")
+    print(f"Peak-to-peak:           {ptp_val:.6g} pW")
+    print(f"5th / 95th percentile:  {p5:.6g}, {p95:.6g} pW")
+    print(f"16th / 84th percentile: {p16:.6g}, {p84:.6g} pW")
+    print(f"Skewness:               {skewness:.6g}")
+
+    plt.figure(figsize=(8,6))
+
+
+    counts, bins, _ = plt.hist(P_flat, bins=30, alpha=0.7, color='blue', edgecolor='black', label= "Detector Mean Power")
+
+    x = np.linspace(np.nanmin(P_flat), np.nanmax(P_flat), 1000)
+    bin_width = bins[1] - bins[0]
+
+    gaussian_counts = norm.pdf(x,mu,sigma) * len(P_flat) * bin_width
+
+    plt.plot(x, gaussian_counts, color='red', lw=2, label=f"Gaussian Fit\n$\mu$={mu:.2f} pW\n$\sigma$={sigma:.2f} pW")
+    plt.xlabel("Mean Detector Power (pW)")
+    plt.ylabel("Number of Detectors")
+    plt.title(f"Distribution of Mean Detector Power (PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})\nSkewness={skewness:.2f}")
+    plt.grid(True)
+    plt.legend()
+    savefig(ANALYSIS_OUTDIR, f"{PREFIX}_detector_mean_power_histogram_PWV{pwv_mm:.2f}.png")
+    plt.close("all")
+
+    P_std_flat = P_std[np.isfinite(P_std)]
+
+    plt.figure(figsize=(8,6))
+    plt.hist(P_std_flat, bins=30, alpha=0.7)
+    plt.xlabel("Std Dev of Detector Power (pW)")
+    plt.ylabel("Number of Detectors")
+    plt.title(f"Distribution of Std Dev of Detector Power (PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})")
+    plt.grid(True)
+    savefig(ANALYSIS_OUTDIR, f"{PREFIX}_detector_power_std_histogram_PWV{pwv_mm:.2f}.png")
+    plt.close("all")
+
+    frac_rms = P_std / P_mean
+    frac_rms = frac_rms[np.isfinite(frac_rms)]
+
+    plt.figure(figsize=(8, 6))
+    plt.hist(100 * frac_rms, bins=30, alpha=0.7)
+    plt.xlabel(r"Detector RMS / Mean Power (%)")
+    plt.ylabel("Number of Detectors")
+    plt.title(f"Fractional Detector Power Variation (PWV={PWV_MM:.2f} mm)")
+    plt.grid(True)
+
+    savefig(
+        ANALYSIS_OUTDIR,
+        f"{PREFIX}_fractional_detector_rms_eta_{eta:.2f}_PWV{PWV_MM:.2f}.png"
+    )
+    plt.close()
     if run_mode == "hdf5":
+        print(f"Saving TOD to HDF5 file: {TOD_OUTDIR / f'{PREFIX}_tods.hdf5'}")
         tods[0].to_hdf5(TOD_OUTDIR / f"{PREFIX}_tods.hdf5")
     
     elif run_mode == "fits":
+        print(f"Saving TOD to FITS file: {TOD_OUTDIR / f'{PREFIX}_tods.fits'}")
         tods[0].to_fits(TOD_OUTDIR / f"{PREFIX}_tods.fits")
 
     else:
@@ -2022,6 +2125,21 @@ def tod_analysis(
     return None
 if __name__ == "__main__":
 
+    PWV_MM = 1.28  #  mm, precip water vapour this only affects the main if pwv is None
+
+    # 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values for Chajnantor
+
+    EL_LIMITS = (35, 85)  # degrees
+
+    START_TIME = "2022-02-10T18:55:00"
+
+    # "2022-02-10T23:05:00" for around 75 degrees ?
+    #"2022-02-10T20:30:00" for around 60 degrees 
+    #"2022-02-10T18:55:00" for roughly 45 degrees
+    #"2022-02-10T18:30:00" for roughly 40 degrees
+    #"2022-02-10T17:00:00" for roughly 30 degrees
+    
+
     band_info = { # GHz, Prime-Cam module specs
     "220": {"center": 220.0, "width": 56.0},
     "280": {"center": 280.0, "width": 60.0},
@@ -2043,11 +2161,27 @@ if __name__ == "__main__":
 
     mp.set_start_method("spawn", force = True)
 
-    for pwv in [0.36, 0.67, 1.28]:
-        print(f"\n=== Running for PWV={pwv:.2f} mm ===")
-        main(atm_plot=True, map_type="skip", temp_mode="inst", ccat_band = selected_band, run_mode="all", tod_diagnostics=True, pwv_mm=pwv)
+    # for pwv in [0.36, 0.67, 1.28]:
+    #     print(f"\n=== Running for PWV={pwv:.2f} mm ===")
+    #     main(atm_plot=True, map_type="skip", temp_mode="inst", ccat_band = selected_band, run_mode="all", tod_diagnostics=True, pwv_mm=pwv)
 
     #main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="280", map_type="Binmapper", tod_diagnostics=True, pwv_mm=0.36)
+
+    tod_analysis(
+    tod_diagnostics =True,
+    maps = False,
+    save_all_plots = False,
+    run_mode = "fits",
+    atm_plot = True,
+    temp_mode = "inst",
+    ccat_band = "280",
+    map_type = "BM",
+    pwv_mm = PWV_MM,
+    start_time = START_TIME,
+    total_duration_s = TOTAL_DURATION_S,
+    sim_duration_s = SIM_DURATION_S,
+    sample_rate_hz = SAMPLE_RATE_HZ,
+)
 
     raise SystemExit("Stopping. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 
