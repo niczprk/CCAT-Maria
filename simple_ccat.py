@@ -48,16 +48,23 @@ REDUCED_FITS = DATA_DIR / f"{FITS_PREFIX}_20170726_850_DR3_ext_HK_JySr_reduced_f
 
 CCAT_DATA = DATA_DIR / "atm-table-ccat.dat"
 
-CUTOUT_ORIONA = dict(
-    ra_min=83.3667,
-    ra_max=83.8667,
-    dec_min=-5.6167,
-    dec_max=-5.1167
+# CUTOUT_ORIONA = dict(
+#     ra_min=83.3667,
+#     ra_max=83.8667,
+#     dec_min=-5.6167,
+#     dec_max=-5.1167
+# )
+
+EXP_CUTOUT_ORIONA = dict(
+    ra_min=82.8667,
+    ra_max=84.3667,
+    dec_min=-6.1167,
+    dec_max=-4.6167
 )
 
 CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0)
 
-CUTOUT = CUTOUT_ORIONA
+CUTOUT = EXP_CUTOUT_ORIONA
 
 
 PREFIX = "OrionA_tod_test"#_850GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized
@@ -1862,6 +1869,10 @@ def tod_analysis(
     """
     ANALYSIS_OUTDIR.mkdir(parents=True, exist_ok=True)
     TOD_OUTDIR.mkdir(parents=True, exist_ok=True)
+
+    convert_fits_units(RAW_FITS, JYSR_FITS, input_unit="mJy/arcsec^2", output_unit="Jy/sr")
+    clip_fits_nans(JYSR_FITS, FILLED_FITS, fill_value=0.0)
+    clip_fits_area(FILLED_FITS, REDUCED_FITS, **CUTOUT)
     # -----------------------------
     # Instrument
     # -----------------------------
@@ -1949,15 +1960,16 @@ def tod_analysis(
 
     input_map = maria.map.load(str(REDUCED_FITS), nu = NU_HZ)
     print(input_map)
-    map_jysr = input_map.to("Jy/sr")
-    print(map_jysr)
+    reduced_map_jysr = input_map.to("Jy/sr")
+    print(reduced_map_jysr)
+    reduced_map_jysr.data *= 1e-6
     if save_all_plots:
-        map_jysr.plot()
+        reduced_map_jysr.plot()
         savefig(ANALYSIS_OUTDIR, f"{PREFIX}_input_map_{ccat_band}GHz.png")
 
     planner = Planner(
         start_time = START_TIME,
-        target = map_jysr,
+        target = reduced_map_jysr,
         site = site,
         constraints = {"el": EL_LIMITS}
     )
@@ -1967,7 +1979,7 @@ def tod_analysis(
         max_chunk_duration=SIM_DURATION_S,
         scan_pattern=SCAN_PATTERN,
         sample_rate = SAMPLE_RATE_HZ,
-        scan_options={"radius": map_jysr.width.deg / 3.0},
+        scan_options={"radius": reduced_map_jysr.width.deg / 3.0},
     )
     if save_all_plots:
         plans[0].plot()
@@ -1990,7 +2002,7 @@ def tod_analysis(
     tods = sim.run()
     tods[0].plot()
     plt.savefig(
-        os.path.join(TOD_OUTDIR, f"{PREFIX}_tod_plot_{CHUNK_NUMBER}.png"),
+        os.path.join(TOD_OUTDIR, f"{PREFIX}_reduced_expanded_tod_plot_{CHUNK_NUMBER}.png"),
         dpi=200,
         bbox_inches="tight",
     )
@@ -2091,13 +2103,75 @@ def tod_analysis(
         f"{PREFIX}_fractional_detector_rms_eta_{eta:.2f}_PWV{PWV_MM:.2f}.png"
     )
     plt.close()
+
+    P_W = P * 1e-12  # Convert pW to W
+    P_ref = np.nanmean(P_W, axis=1, keepdims=True)
+
+    dP = P_W - P_ref 
+
+    R_P = R_0 / np.sqrt(1+ P_W/P_0)
+
+    df_fwhm = Q_r* R_P * dP
+
+    df_fwhm_flat = df_fwhm[np.isfinite(df_fwhm)]
+
+    mu_df, sigma_df = norm.fit(df_fwhm_flat)
+    print(f"\nFitted Gaussian parameters for df_fwhm: mu={mu_df:.6g} Hz, sigma={sigma_df:.6g} Hz")
+
+    plt.figure(figsize=(8,6))
+
+    counts, bins, _ = plt.hist(df_fwhm_flat, bins=30, alpha=0.7, color='green', edgecolor='black', label="df_fwhm")
+
+    x = np.linspace(np.nanmin(df_fwhm_flat), np.nanmax(df_fwhm_flat), 1000)
+    bin_width = bins[1] - bins[0]
+
+    gaussian_counts_df = norm.pdf(x, mu_df, sigma_df) * len(df_fwhm_flat) * bin_width
+
+    plt.plot(x, gaussian_counts_df, color='red', lw=2, label=f"Gaussian Fit\n$\mu$={mu_df:.2e} Hz\n$\sigma$={sigma_df:.2e} Hz")
+    plt.xlabel(r"$\delta f / \mathrm{FWHM}$")
+    plt.ylabel("Number of Detectors")
+    plt.title(
+        rf"Distribution of $\delta f / \mathrm{{FWHM}}$ "
+        f"(PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})"
+    )
+    plt.grid(True)
+    plt.legend()
+    savefig(ANALYSIS_OUTDIR, f"{PREFIX}_df_fwhm_histogram_PWV{pwv_mm:.2f}.png")
+    plt.close("all")
+
+    # el = tods[0].el
+
+    # bins = np.linspace(np.min(el), np.max(el), 30)
+
+    # digitized = np.digitize(el, bins)
+
+    # el_ce
+
+    # plt.figure(figsize=(8,6))
+    # plt.scatter(el, P_mean, alpha=0.5)
+    # plt.xlabel("Elevation (degrees)")
+    # plt.ylabel("Mean Detector Power (pW)")
+    # plt.title(f"Mean Detector Power vs Elevation (PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})")
+    # plt.grid(True)
+    # savefig(ANALYSIS_OUTDIR, f"{PREFIX}_mean_power_vs_elevation_PWV{pwv_mm:.2f}.png")
+    # plt.close("all")
+
+    # plt.figure(figsize=(8,6))
+    # plt.scatter(el, df_fwhm, alpha=0.5)
+    # plt.xlabel("Elevation (degrees)")
+    # plt.ylabel("df_fwhm")
+    # plt.title(f"df_fwhm vs Elevation (PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})")
+    # plt.grid(True)
+    # savefig(ANALYSIS_OUTDIR, f"{PREFIX}_df_fwhm_vs_elevation_PWV{pwv_mm:.2f}.png")
+    # plt.close("all")
+
     if run_mode == "hdf5":
         print(f"Saving TOD to HDF5 file: {TOD_OUTDIR / f'{PREFIX}_tods.hdf5'}")
         tods[0].to_hdf5(TOD_OUTDIR / f"{PREFIX}_tods.hdf5")
     
     elif run_mode == "fits":
-        print(f"Saving TOD to FITS file: {TOD_OUTDIR / f'{PREFIX}_tods.fits'}")
-        tods[0].to_fits(TOD_OUTDIR / f"{PREFIX}_tods.fits")
+        print(f"Saving TOD to FITS file: {TOD_OUTDIR / f'{PREFIX}_dim_expanded_tods.fits'}")
+        tods[0].to_fits(TOD_OUTDIR / f"{PREFIX}_dim_expanded_tods.fits")
 
     else:
         raise ValueError(f"Invalid run_mode: {run_mode}. Choose 'hdf5' or 'fits'.")
@@ -2125,13 +2199,13 @@ def tod_analysis(
     return None
 if __name__ == "__main__":
 
-    PWV_MM = 1.28  #  mm, precip water vapour this only affects the main if pwv is None
+    PWV_MM = 0.36  #  mm, precip water vapour this only affects the main if pwv is None
 
     # 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values for Chajnantor
 
     EL_LIMITS = (35, 85)  # degrees
 
-    START_TIME = "2022-02-10T18:55:00"
+    START_TIME = "2022-02-10T20:30:00"
 
     # "2022-02-10T23:05:00" for around 75 degrees ?
     #"2022-02-10T20:30:00" for around 60 degrees 
@@ -2161,14 +2235,16 @@ if __name__ == "__main__":
 
     mp.set_start_method("spawn", force = True)
 
-    # for pwv in [0.36, 0.67, 1.28]:
-    #     print(f"\n=== Running for PWV={pwv:.2f} mm ===")
-    #     main(atm_plot=True, map_type="skip", temp_mode="inst", ccat_band = selected_band, run_mode="all", tod_diagnostics=True, pwv_mm=pwv)
-
-    #main(atm_plot=True, run_mode= "all" , temp_mode="inst", ccat_band="280", map_type="Binmapper", tod_diagnostics=True, pwv_mm=0.36)
+    #main(atm_plot=True,
+    #  run_mode= "all" ,
+    #  temp_mode="inst",
+    #  ccat_band="280",
+    #  map_type="Binmapper",
+    #  tod_diagnostics=True,
+    #  pwv_mm=0.36)
 
     tod_analysis(
-    tod_diagnostics =True,
+    tod_diagnostics =False,
     maps = False,
     save_all_plots = False,
     run_mode = "fits",
