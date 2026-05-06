@@ -24,13 +24,13 @@ PWV_MM = 0.36  #  mm, precip water vapour this only affects the main if pwv is N
 
 # 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values for Chajnantor
 
-EL_LIMITS = (68, 85)  # degrees
+EL_LIMITS = (35, 85)  # degrees
 
 T_0 = 278.868 #K, atmospheric ground temp
 
 
 
-START_TIME = "2022-02-10T23:05:00"
+START_TIME = "2022-02-10T20:30:00"
 
 # "2022-02-10T22:45:00" for around 75 degrees ?
 #"2022-02-10T20:30:00" for around 60 degrees 
@@ -99,6 +99,31 @@ if __name__ == "__main__":
     ra_det = np.asarray(tod.ra[:, time_idx], dtype=np.float64)
     dec_det = np.asarray(tod.dec[:, time_idx], dtype=np.float64)
 
+    from scipy.spatial.distance import cdist
+
+    coords = np.column_stack((ra_det, dec_det))
+    distance_matrix = cdist(coords, coords)
+    np.fill_diagonal(distance_matrix, np.inf)  # Ignore self-distance
+
+    nearest_idx = np.argmin(distance_matrix, axis=1)
+    nearest_dist = np.min(distance_matrix, axis=1)
+
+    power_diff = np.abs(P_mean - P_mean[nearest_idx])
+
+    best_idx = np.nanargmax(power_diff)
+
+    det1 = best_idx
+    det2 = nearest_idx[best_idx]
+
+    print("\nNeighbouring detector pair")
+    print("--------------------------")
+    print(f"Detector 1: {det1}")
+    print(f"Detector 2: {det2}")
+    print(f"Separation: {nearest_dist[best_idx]:.6g} deg")
+    print(f"Detector {det1} mean power: {P_mean[det1]:.6g} pW")
+    print(f"Detector {det2} mean power: {P_mean[det2]:.6g} pW")
+    print(f"Difference: {power_diff[best_idx]:.6g} pW")
+
     plt.figure(figsize=(8,6))
 
     sc = plt.scatter(
@@ -110,9 +135,32 @@ if __name__ == "__main__":
         edgecolor="k",
         alpha=0.7
     )
+
+    plt.scatter(
+        ra_det[[det1, det2]],
+        dec_det[[det1, det2]],
+        s=250,
+        facecolors="none",
+        edgecolors="red",
+        linewidths=1.0,
+        zorder=5,
+        label="Selected neighbouring detectors"
+    )
+
+    for det in [det1, det2]:
+        plt.text(
+            ra_det[det],
+            dec_det[det],
+            f" {det}",
+            color="red",
+            fontsize=10,
+            weight="bold",
+            zorder=6
+        )
+
     plt.title(
         f"Detector Locations Colour-Coded by Mean Power\n"
-        f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        f"Highlighted pair: {det1} and {det2}, PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
     )
     plt.xlabel("RA (degrees)")
     plt.ylabel("Dec (degrees)")
@@ -120,18 +168,17 @@ if __name__ == "__main__":
     cbar = plt.colorbar(sc)
     cbar.set_label("Mean Detector Power (pW)")
 
+    plt.gca().invert_xaxis()
     plt.axis("equal")
     plt.grid(True)
+    plt.legend()
 
     simple_ccat.savefig(
         ANALYSIS_OUTDIR,
-        f"{PREFIX}_detector_locations_mean_power_PWV{PWV_MM:.2f}.png"
+        f"{PREFIX}_detector_locations_mean_power_highlight_pair_PWV{PWV_MM:.2f}.png"
     )
 
     plt.close("all")
-    plt.gca().invert_xaxis()  # Invert RA axis for astronomical convention
-    plt.xlabel("RA (degrees)")
-    plt.ylabel("Dec (degrees)")
 
     P_std = np.nanstd(P, axis=1).ravel()
 
@@ -169,139 +216,231 @@ if __name__ == "__main__":
     plt.ylabel("Dec (degrees)")
 
 
-    det_idx = 50
+    # det_idx = det1
+    for det_idx in [det1, det2]:
+        ra_track = np.asarray(tod.ra[det_idx, :], dtype=np.float64)
+        dec_track = np.asarray(tod.dec[det_idx, :], dtype=np.float64)
+        P_track = np.asarray(P[det_idx, :], dtype=np.float64)
 
-    ra_track = np.asarray(tod.ra[det_idx, :], dtype=np.float64)
-    dec_track = np.asarray(tod.dec[det_idx, :], dtype=np.float64)
-    P_track = np.asarray(P[det_idx, :], dtype=np.float64)
+        plt.figure(figsize=(10,6))
+
+        sc = plt.scatter(
+            ra_track,
+            dec_track,
+            c=P_track,
+            cmap="viridis",
+            s=2,
+            alpha=0.7
+        )
+
+        
+
+        plt.gca().invert_xaxis()  # Invert RA axis for astronomical convention
+        plt.xlabel("RA (degrees)")
+        plt.ylabel("Dec (degrees)")
+        plt.title(
+            f"Detector {det_idx} Track Colour-Coded by Power\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        cbar = plt.colorbar(sc)
+        cbar.set_label("Detector Power (pW)")
+
+        plt.axis("equal")
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_track_power_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        time_sec = np.arange(len(P_track)) / SAMPLE_RATE_HZ
+
+        plt.figure(figsize=(10,6))
+
+        plt.plot(
+            time_sec,
+            P_track,
+            lw=0.5,
+            color="black"
+        )
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("Detector Power (pW)")
+
+        plt.title(
+            f"Detector {det_idx} Power vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_power_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+        from scipy.stats import norm, skew
+
+        # Calculate statistics for the power distribution
+
+        P_track_flat = P_track[np.isfinite(P_track)]  # Flatten and remove NaN values
+
+        mu, sigma = norm.fit(P_track_flat)
+
+        frac_width = sigma / mu 
+        frac_width_percent = frac_width * 100
+        median = np.median(P_track_flat)
+        p5, p16, p84, p95 = np.percentile(P_track_flat, [5, 16, 84, 95])
+        mi_val = np.min(P_track_flat)
+        ma_val = np.max(P_track_flat)
+        ptp_val = np.abs(ma_val - mi_val)
+        skewness = skew(P_track_flat)
+
+        print(f"\nDetector {det_idx} power statistics")
+        print("--------------------------------")
+        print(f"Gaussian mean:          {mu:.6g} pW")
+        print(f"Gaussian sigma:         {sigma:.6g} pW")
+        print(f"Fractional width:       {frac_width:.6g}")
+        print(f"Fractional width:       {frac_width_percent:.3f}%")
+        print(f"Median:                 {median:.6g} pW")
+        print(f"Min / Max:              {mi_val:.6g}, {ma_val:.6g} pW")
+        print(f"Peak-to-peak:           {ptp_val:.6g} pW")
+        print(f"5th / 95th percentile:  {p5:.6g}, {p95:.6g} pW")
+        print(f"16th / 84th percentile: {p16:.6g}, {p84:.6g} pW")
+        print(f"Skewness:               {skewness:.6g}")
+
+        plt.figure(figsize=(8,6))
+
+        counts, bins, _ = plt.hist(
+            P_track_flat,
+            bins = 50,
+            alpha = 0.7,
+            edgecolor="k", 
+            label = f"Detector {det_idx} Power Distribution"
+        )
+        
+        x = np.linspace(min(P_track_flat), max(P_track_flat), 1000)
+        bin_width = bins[1] - bins[0]
+        gaussian_counts = norm.pdf(x, mu, sigma) * len(P_track_flat) * bin_width
+        plt.plot(
+            x,
+            gaussian_counts,
+            color="red",
+            lw=2,
+            label=(
+                f"Gaussian Fit\n"
+                rf"$\mu$={mu:.3g} pW" "\n"
+                rf"$\sigma$={sigma:.3g} pW"
+            )
+        )
+
+        plt.xlabel("Detector Power (pW)")
+        plt.ylabel("Number of Samples")
+        plt.title(
+            f"Power Distribution for Detector {det_idx}\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}, Skewness={skewness:.2f}"
+        )
+        plt.grid(True)
+        plt.legend()
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_power_histogram_PWV{PWV_MM:.2f}.png"
+        )
+    
+        plt.close("all")
+
+    P_track_det1 = np.asarray(P[det1, :], dtype=np.float64)
+    P_track_det2 = np.asarray(P[det2, :], dtype=np.float64)
+
+    time_sec = np.arange(len(P_track_det1)) / SAMPLE_RATE_HZ
+
+    power_diff = P_track_det1 - P_track_det2
+    power_abs_diff = np.abs(power_diff)
+
+    # Avoid divide-by-zero issues
+    power_ratio = np.full_like(P_track_det1, np.nan)
+    valid = np.isfinite(P_track_det1) & np.isfinite(P_track_det2) & (P_track_det2 != 0)
+    power_ratio[valid] = P_track_det1[valid] / P_track_det2[valid]
 
     plt.figure(figsize=(10,6))
-
-    sc = plt.scatter(
-        ra_track,
-        dec_track,
-        c=P_track,
-        cmap="viridis",
-        s=2,
-        alpha=0.7
-    )
-
-    
-
-    plt.gca().invert_xaxis()  # Invert RA axis for astronomical convention
-    plt.xlabel("RA (degrees)")
-    plt.ylabel("Dec (degrees)")
+    plt.plot(time_sec, power_abs_diff, lw=0.5, color="black")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Absolute Difference in Detector Power (pW)")
     plt.title(
-        f"Detector {det_idx} Track Colour-Coded by Power\n"
-        f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
-    )
-
-    cbar = plt.colorbar(sc)
-    cbar.set_label("Detector Power (pW)")
-
-    plt.axis("equal")
-    plt.grid(True)
-
-    simple_ccat.savefig(
-        ANALYSIS_OUTDIR,
-        f"{PREFIX}_detector_{det_idx}_track_power_PWV{PWV_MM:.2f}.png"
-    )
-    plt.close("all")
-
-    from scipy.stats import norm, skew
-
-    # Calculate statistics for the power distribution
-
-    P_track_flat = P_track[np.isfinite(P_track)]  # Flatten and remove NaN values
-
-    mu, sigma = norm.fit(P_track_flat)
-
-    frac_width = sigma / mu 
-    frac_width_percent = frac_width * 100
-    median = np.median(P_track_flat)
-    p5, p16, p84, p95 = np.percentile(P_track_flat, [5, 16, 84, 95])
-    mi_val = np.min(P_track_flat)
-    ma_val = np.max(P_track_flat)
-    ptp_val = np.abs(ma_val - mi_val)
-    skewness = skew(P_track_flat)
-
-    print(f"\nDetector {det_idx} power statistics")
-    print("--------------------------------")
-    print(f"Gaussian mean:          {mu:.6g} pW")
-    print(f"Gaussian sigma:         {sigma:.6g} pW")
-    print(f"Fractional width:       {frac_width:.6g}")
-    print(f"Fractional width:       {frac_width_percent:.3f}%")
-    print(f"Median:                 {median:.6g} pW")
-    print(f"Min / Max:              {mi_val:.6g}, {ma_val:.6g} pW")
-    print(f"Peak-to-peak:           {ptp_val:.6g} pW")
-    print(f"5th / 95th percentile:  {p5:.6g}, {p95:.6g} pW")
-    print(f"16th / 84th percentile: {p16:.6g}, {p84:.6g} pW")
-    print(f"Skewness:               {skewness:.6g}")
-
-    plt.figure(figsize=(8,6))
-
-    counts, bins, _ = plt.hist(
-        P_track_flat,
-        bins = 50,
-        alpha = 0.7,
-        edgecolor="k", 
-        label = f"Detector {det_idx} Power Distribution"
-    )
-    
-    x = np.linspace(min(P_track_flat), max(P_track_flat), 1000)
-    bin_width = bins[1] - bins[0]
-    gaussian_counts = norm.pdf(x, mu, sigma) * len(P_track_flat) * bin_width
-    plt.plot(
-        x,
-        gaussian_counts,
-        color="red",
-        lw=2,
-        label=(
-            f"Gaussian Fit\n"
-            rf"$\mu$={mu:.3g} pW" "\n"
-            rf"$\sigma$={sigma:.3g} pW"
-        )
-    )
-
-    plt.xlabel("Detector Power (pW)")
-    plt.ylabel("Number of Samples")
-    plt.title(
-        f"Power Distribution for Detector {det_idx}\n"
-        f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}, Skewness={skewness:.2f}"
-    )
-    plt.grid(True)
-    plt.legend()
-
-    simple_ccat.savefig(
-        ANALYSIS_OUTDIR,
-        f"{PREFIX}_detector_{det_idx}_power_histogram_PWV{PWV_MM:.2f}.png"
-    )
-
-    plt.close("all")
-
-    P_track_std = np.std(P_track_flat[det_idx, :])
-
-    plt.figure(figsize=(8,6))
-    plt.hist(
-        P_track_flat,
-        bins=50,
-        alpha=0.7,
-        edgecolor="k",
-        label=f"Detector {det_idx} Power Distribution\n$\sigma$={P_track_std:.3g} pW"
-    )
-    plt.xlabel("Detector Power (pW)")
-    plt.ylabel("Number of Samples")
-    plt.title(
-        f"Power Distribution for Detector {det_idx}\n"
+        f"Power Difference Between Detectors {det1} and {det2} vs Time\n"
         f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
     )
     plt.grid(True)
-    plt.legend()
+
     simple_ccat.savefig(
         ANALYSIS_OUTDIR,
-        f"{PREFIX}_detector_{det_idx}_power_histogram_std_PWV{PWV_MM:.2f}.png"
-    ) 
+        f"{PREFIX}_detector_{det1}_{det2}_power_difference_vs_time_PWV{PWV_MM:.2f}.png"
+    )
+    plt.close("all")
 
+
+    plt.figure(figsize=(10,6))
+    plt.plot(time_sec, power_ratio, lw=0.5, color="black")
+    plt.xlabel("Time (s)")
+    plt.ylabel(f"Detector Power Ratio {det1}/{det2}")
+    plt.title(
+        f"Detector Power Ratio {det1}/{det2} vs Time\n"
+        f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+    )
+    plt.grid(True)
+
+    simple_ccat.savefig(
+        ANALYSIS_OUTDIR,
+        f"{PREFIX}_detector_{det1}_{det2}_power_ratio_vs_time_PWV{PWV_MM:.2f}.png"
+    )
+    plt.close("all")
+
+    print(f"\nDetector {det1} mean/std: {np.nanmean(P_track_det1):.6g}, {np.nanstd(P_track_det1):.6g} pW")
+    print(f"Detector {det2} mean/std: {np.nanmean(P_track_det2):.6g}, {np.nanstd(P_track_det2):.6g} pW")
+    print(f"Mean absolute difference: {np.nanmean(power_abs_diff):.6g} pW")
+    print(f"Median ratio {det1}/{det2}: {np.nanmedian(power_ratio):.6g}")
+
+    power_diff_centered = power_diff - np.nanmean(power_diff)
+
+    plt.figure(figsize=(8,6))
+    plt.plot(time_sec, power_diff_centered, lw=0.5, color="black")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Mean-subtracted Power Difference (pW)")
+    plt.title(
+        f"Mean-subtracted Power Difference: Detectors {det1} - {det2}\n"
+        f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+    )
+    plt.grid(True)
+
+    simple_ccat.savefig(
+        ANALYSIS_OUTDIR,
+        f"{PREFIX}_detector_{det1}_{det2}_mean_subtracted_power_difference_PWV{PWV_MM:.2f}.png"
+    )
+    plt.close("all")
+
+    scale_factor = np.nanmedian(P_track_det1/P_track_det2)
+    residual = P_track_det1 - scale_factor * P_track_det2
+
+    plt.figure(figsize=(10,6))
+    plt.plot(time_sec, residual, lw=0.5, color="black")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Residual After Scaling (pW)")
+    plt.title(
+        f"Residual After Scaling Detector {det2} by {scale_factor:.3g}\n"
+        f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+    )
+    plt.grid(True)
+
+
+    simple_ccat.savefig(
+        ANALYSIS_OUTDIR,
+        f"{PREFIX}_detector_{det1}_{det2}_residual_after_scaling_PWV{PWV_MM:.2f}.png"
+    )
     plt.close("all")
     # tod.to("pW").plot()
     # simple_ccat.savefig(ANALYSIS_OUTDIR / f"{PREFIX}_tod_plot.png", f"{PREFIX}_tod_plot.png", dpi=300)
