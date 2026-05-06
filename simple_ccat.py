@@ -48,23 +48,23 @@ REDUCED_FITS = DATA_DIR / f"{FITS_PREFIX}_20170726_850_DR3_ext_HK_JySr_reduced_f
 
 CCAT_DATA = DATA_DIR / "atm-table-ccat.dat"
 
-# CUTOUT_ORIONA = dict(
-#     ra_min=83.3667,
-#     ra_max=83.8667,
-#     dec_min=-5.6167,
-#     dec_max=-5.1167
-# )
-
-EXP_CUTOUT_ORIONA = dict(
-    ra_min=82.8667,
-    ra_max=84.3667,
-    dec_min=-6.1167,
-    dec_max=-4.6167
+CUTOUT_ORIONA = dict(
+    ra_min=83.3667,
+    ra_max=83.8667,
+    dec_min=-5.6167,
+    dec_max=-5.1167
 )
+
+# EXP_CUTOUT_ORIONA = dict(
+#     ra_min=82.8667,
+#     ra_max=84.3667,
+#     dec_min=-6.1167,
+#     dec_max=-4.6167
+# )
 
 CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0)
 
-CUTOUT = EXP_CUTOUT_ORIONA
+CUTOUT = CUTOUT_ORIONA
 
 
 PREFIX = "OrionA_tod_test"#_850GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized
@@ -2104,40 +2104,40 @@ def tod_analysis(
     )
     plt.close()
 
-    P_W = P * 1e-12  # Convert pW to W
-    P_ref = np.nanmean(P_W, axis=1, keepdims=True)
+    # P_W = P * 1e-12  # Convert pW to W
+    # P_ref = np.nanmean(P_W, axis=1, keepdims=True)
 
-    dP = P_W - P_ref 
+    # dP = P_W - P_ref 
 
-    R_P = R_0 / np.sqrt(1+ P_W/P_0)
+    # R_P = R_0 / np.sqrt(1+ P_W/P_0)
 
-    df_fwhm = Q_r* R_P * dP
+    # df_fwhm = Q_r* R_P * dP
 
-    df_fwhm_flat = df_fwhm[np.isfinite(df_fwhm)]
+    # df_fwhm_flat = df_fwhm[np.isfinite(df_fwhm)]
 
-    mu_df, sigma_df = norm.fit(df_fwhm_flat)
-    print(f"\nFitted Gaussian parameters for df_fwhm: mu={mu_df:.6g} Hz, sigma={sigma_df:.6g} Hz")
+    # mu_df, sigma_df = norm.fit(df_fwhm_flat)
+    # print(f"\nFitted Gaussian parameters for df_fwhm: mu={mu_df:.6g} Hz, sigma={sigma_df:.6g} Hz")
 
-    plt.figure(figsize=(8,6))
+    # plt.figure(figsize=(8,6))
 
-    counts, bins, _ = plt.hist(df_fwhm_flat, bins=30, alpha=0.7, color='green', edgecolor='black', label="df_fwhm")
+    # counts, bins, _ = plt.hist(df_fwhm_flat, bins=30, alpha=0.7, color='green', edgecolor='black', label="df_fwhm")
 
-    x = np.linspace(np.nanmin(df_fwhm_flat), np.nanmax(df_fwhm_flat), 1000)
-    bin_width = bins[1] - bins[0]
+    # x = np.linspace(np.nanmin(df_fwhm_flat), np.nanmax(df_fwhm_flat), 1000)
+    # bin_width = bins[1] - bins[0]
 
-    gaussian_counts_df = norm.pdf(x, mu_df, sigma_df) * len(df_fwhm_flat) * bin_width
+    # gaussian_counts_df = norm.pdf(x, mu_df, sigma_df) * len(df_fwhm_flat) * bin_width
 
-    plt.plot(x, gaussian_counts_df, color='red', lw=2, label=f"Gaussian Fit\n$\mu$={mu_df:.2e} Hz\n$\sigma$={sigma_df:.2e} Hz")
-    plt.xlabel(r"$\delta f / \mathrm{FWHM}$")
-    plt.ylabel("Number of Detectors")
-    plt.title(
-        rf"Distribution of $\delta f / \mathrm{{FWHM}}$ "
-        f"(PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})"
-    )
-    plt.grid(True)
-    plt.legend()
-    savefig(ANALYSIS_OUTDIR, f"{PREFIX}_df_fwhm_histogram_PWV{pwv_mm:.2f}.png")
-    plt.close("all")
+    # plt.plot(x, gaussian_counts_df, color='red', lw=2, label=f"Gaussian Fit\n$\mu$={mu_df:.2e} Hz\n$\sigma$={sigma_df:.2e} Hz")
+    # plt.xlabel(r"$\delta f / \mathrm{FWHM}$")
+    # plt.ylabel("Number of Detectors")
+    # plt.title(
+    #     rf"Distribution of $\delta f / \mathrm{{FWHM}}$ "
+    #     f"(PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})"
+    # )
+    # plt.grid(True)
+    # plt.legend()
+    # savefig(ANALYSIS_OUTDIR, f"{PREFIX}_df_fwhm_histogram_PWV{pwv_mm:.2f}.png")
+    # plt.close("all")
 
     # el = tods[0].el
 
@@ -2170,8 +2170,8 @@ def tod_analysis(
         tods[0].to_hdf5(TOD_OUTDIR / f"{PREFIX}_tods.hdf5")
     
     elif run_mode == "fits":
-        print(f"Saving TOD to FITS file: {TOD_OUTDIR / f'{PREFIX}_dim_expanded_tods.fits'}")
-        tods[0].to_fits(TOD_OUTDIR / f"{PREFIX}_dim_expanded_tods.fits")
+        print(f"Saving TOD to FITS file: {TOD_OUTDIR / f'{PREFIX}_dim_reduced_tods.fits'}")
+        tods[0].to_fits(TOD_OUTDIR / f"{PREFIX}_dim_reduced_tods.fits")
 
     else:
         raise ValueError(f"Invalid run_mode: {run_mode}. Choose 'hdf5' or 'fits'.")
