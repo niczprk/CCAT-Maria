@@ -28,7 +28,11 @@ EL_LIMITS = (35, 85)  # degrees
 
 T_0 = 278.868 #K, atmospheric ground temp
 
+Q_r = 40000 # Quality factor taken from Bayguchi thesis
 
+P_0 = 957e-18 # idk but do not question the mighty jordan wheeler
+
+R_0 = -2.448e9 #avg responsivity in W^-1 from Jordan Wheeler
 
 START_TIME = "2022-02-10T20:30:00"
 
@@ -99,9 +103,12 @@ if __name__ == "__main__":
     ra_det = np.asarray(tod.ra[:, time_idx], dtype=np.float64)
     dec_det = np.asarray(tod.dec[:, time_idx], dtype=np.float64)
 
+    ra_det_deg = np.rad2deg(ra_det)
+    dec_det_deg = np.rad2deg(dec_det)
+
     from scipy.spatial.distance import cdist
 
-    coords = np.column_stack((ra_det, dec_det))
+    coords = np.column_stack((ra_det_deg, dec_det_deg))
     distance_matrix = cdist(coords, coords)
     np.fill_diagonal(distance_matrix, np.inf)  # Ignore self-distance
 
@@ -127,8 +134,8 @@ if __name__ == "__main__":
     plt.figure(figsize=(8,6))
 
     sc = plt.scatter(
-        ra_det,
-        dec_det,
+        ra_det_deg,
+        dec_det_deg,
         c=P_mean,
         cmap="viridis",
         s=50,
@@ -137,8 +144,8 @@ if __name__ == "__main__":
     )
 
     plt.scatter(
-        ra_det[[det1, det2]],
-        dec_det[[det1, det2]],
+        ra_det_deg[[det1, det2]],
+        dec_det_deg[[det1, det2]],
         s=250,
         facecolors="none",
         edgecolors="red",
@@ -149,8 +156,8 @@ if __name__ == "__main__":
 
     for det in [det1, det2]:
         plt.text(
-            ra_det[det],
-            dec_det[det],
+            ra_det_deg[det],
+            dec_det_deg[det],
             f" {det}",
             color="red",
             fontsize=10,
@@ -180,40 +187,40 @@ if __name__ == "__main__":
 
     plt.close("all")
 
-    P_std = np.nanstd(P, axis=1).ravel()
+    # P_std = np.nanstd(P, axis=1).ravel()
 
-    plt.figure(figsize=(8,6))
+    # plt.figure(figsize=(8,6))
 
-    sc = plt.scatter(
-        ra_det,
-        dec_det,
-        c=P_std,
-        cmap="coolwarm",
-        s=50,
-        edgecolor="k",
-        alpha=0.7
-    )
-    plt.title(
-        f"Detector Locations Colour-Coded by Standard Deviation of Power\n"
-        f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
-    )
-    plt.xlabel("RA (degrees)")
-    plt.ylabel("Dec (degrees)")
+    # sc = plt.scatter(
+    #     ra_det,
+    #     dec_det,
+    #     c=P_std,
+    #     cmap="coolwarm",
+    #     s=50,
+    #     edgecolor="k",
+    #     alpha=0.7
+    # )
+    # plt.title(
+    #     f"Detector Locations Colour-Coded by Standard Deviation of Power\n"
+    #     f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+    # )
+    # plt.xlabel("RA (degrees)")
+    # plt.ylabel("Dec (degrees)")
 
-    cbar = plt.colorbar(sc)
-    cbar.set_label("Standard Deviation of Detector Power (pW)")
-    plt.axis("equal")
-    plt.grid(True)
+    # cbar = plt.colorbar(sc)
+    # cbar.set_label("Standard Deviation of Detector Power (pW)")
+    # plt.axis("equal")
+    # plt.grid(True)
 
-    simple_ccat.savefig(
-        ANALYSIS_OUTDIR,
-        f"{PREFIX}_detector_locations_std_power_PWV{PWV_MM:.2f}.png"
-    )
+    # simple_ccat.savefig(
+    #     ANALYSIS_OUTDIR,
+    #     f"{PREFIX}_detector_locations_std_power_PWV{PWV_MM:.2f}.png"
+    # )
 
-    plt.close("all")
-    plt.gca().invert_xaxis()  # Invert RA axis for astronomical convention
-    plt.xlabel("RA (degrees)")
-    plt.ylabel("Dec (degrees)")
+    # plt.close("all")
+    # plt.gca().invert_xaxis()  # Invert RA axis for astronomical convention
+    # plt.xlabel("RA (degrees)")
+    # plt.ylabel("Dec (degrees)")
 
 
     # det_idx = det1
@@ -222,11 +229,14 @@ if __name__ == "__main__":
         dec_track = np.asarray(tod.dec[det_idx, :], dtype=np.float64)
         P_track = np.asarray(P[det_idx, :], dtype=np.float64)
 
+        ra_track_deg = np.rad2deg(ra_track)
+        dec_track_deg = np.rad2deg(dec_track)
+
         plt.figure(figsize=(10,6))
 
         sc = plt.scatter(
-            ra_track,
-            dec_track,
+            ra_track_deg,
+            dec_track_deg,
             c=P_track,
             cmap="viridis",
             s=2,
@@ -442,6 +452,8 @@ if __name__ == "__main__":
         f"{PREFIX}_detector_{det1}_{det2}_residual_after_scaling_PWV{PWV_MM:.2f}.png"
     )
     plt.close("all")
+
+    
     # tod.to("pW").plot()
     # simple_ccat.savefig(ANALYSIS_OUTDIR / f"{PREFIX}_tod_plot.png", f"{PREFIX}_tod_plot.png", dpi=300)
     # plt.close("all")
@@ -463,6 +475,156 @@ if __name__ == "__main__":
     # plt.title(f"Distribution of Mean Direct Detector Power (PWV={PWV_MM:.2f} mm $\\eta$={eta:.2f})")
     # plt.grid(True)
     # simple_ccat.savefig(ANALYSIS_OUTDIR, f"{PREFIX}_detector_direct_power_eta_{eta:.2f}_histogram_PWV{PWV_MM:.2f}.png")
+    detector_indices = []
+    mean_list = []
+    sigma_list = []
+    two_delta_list = []
+    fractional_width_list = []
+    two_delta_over_mean_list = []
+
+    n_detectors = P.shape[0]
+
+    for det_idx in range(n_detectors):
+        P_track = np.asarray(P[det_idx, :], dtype=np.float64)
+        P_track_flat = P_track[np.isfinite(P_track)]
+
+        if len(P_track_flat) == 0:
+            detector_indices.append(det_idx)
+            mean_list.append(np.nan)
+            sigma_list.append(np.nan)
+            two_delta_list.append(np.nan)
+            fractional_width_list.append(np.nan)
+            two_delta_over_mean_list.append(np.nan)
+            continue
+
+        mu, sigma = norm.fit(P_track_flat)
+
+        two_delta = 2 * sigma
+        fractional_width = sigma / mu if mu != 0 else np.nan
+        two_delta_over_mean = two_delta / mu if mu != 0 else np.nan
+
+        detector_indices.append(det_idx)
+        mean_list.append(mu)
+        sigma_list.append(sigma)
+        two_delta_list.append(two_delta)
+        fractional_width_list.append(fractional_width)
+        two_delta_over_mean_list.append(two_delta_over_mean)
+
+
+    def make_hist(data, xlabel, title, filename):
+        data = np.asarray(data, dtype=np.float64)
+        data = data[np.isfinite(data)]
+
+        plt.figure(figsize=(8, 6))
+        plt.hist(data, bins=30, alpha=0.7, density=False, edgecolor="k")
+        plt.xlabel(xlabel)
+        plt.ylabel("Number of Detectors")
+        plt.title(f"{title}\nPWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}")
+        plt.grid(True)
+
+        simple_ccat.savefig(ANALYSIS_OUTDIR, filename)
+        plt.close("all")
+
+
+    make_hist(
+        mean_list,
+        "Gaussian Mean of Detector Power (pW)",
+        "Distribution of Gaussian Means for Detectors",
+        f"{PREFIX}_detector_gaussian_mean_histogram_PWV{PWV_MM:.2f}.png"
+    )
+
+    make_hist(
+        sigma_list,
+        "Gaussian Sigma of Detector Power (pW)",
+        "Distribution of Gaussian Sigmas for Detectors",
+        f"{PREFIX}_detector_gaussian_sigma_histogram_PWV{PWV_MM:.2f}.png"
+    )
+
+    make_hist(
+        two_delta_list,
+        r"$2\Delta = 2\sigma$ (pW)",
+        r"Distribution of $2\Delta$ for Detectors",
+        f"{PREFIX}_detector_gaussian_two_delta_histogram_PWV{PWV_MM:.2f}.png"
+    )
+
+    make_hist(
+        fractional_width_list,
+        r"Fractional Width $\sigma / \mu$",
+        r"Distribution of Fractional Widths for Detectors",
+        f"{PREFIX}_detector_gaussian_fractional_width_histogram_PWV{PWV_MM:.2f}.png"
+    )
+
+    make_hist(
+        two_delta_over_mean_list,
+        r"$2\Delta / \mu$",
+        r"Distribution of $2\Delta / \mu$ for Detectors",
+        f"{PREFIX}_detector_gaussian_two_delta_over_mean_histogram_PWV{PWV_MM:.2f}.png"
+    )
+    P_mean_array = np.array(mean_list)
+    P_ref = np.nanmean(P_mean_array)
+
+    print(f"\nReference power level (median of Gaussian means): {P_ref:.6g} pW")
+    P_mean_W = P_mean_array * 1e-12  # Convert pW to W
+    P_ref_W = P_ref * 1e-12  # Convert pW to W
+    def R(P):
+        return R_0 / (np.sqrt(1+ P/ P_0))
+        
+    delta_f_over_fwhm_by_detector = []
+
+    for det_idx in range(P.shape[0]):
+        P_track = np.asarray(P[det_idx, :], dtype=np.float64)
+        P_track_W = P_track * 1e-12  # Convert pW to W
+        P_track_flat_W = P_track_W[np.isfinite(P_track_W)]
+
+        delta_track =  Q_r * R(P_track_W) * (P_track_W - P_ref_W)
+        delta_f_over_fwhm_by_detector.append(delta_track)
+
+    det_309 = 309
+    det_339 = 339
+    delta_track = delta_f_over_fwhm_by_detector[det_339]
+
+    time_sec = np.arange(len(delta_track)) / SAMPLE_RATE_HZ
+
+    plt.figure(figsize=(10,6))
+    plt.plot(time_sec, delta_track, lw=0.5, color="black")
+
+    plt.axhline(0, color="red", lw=1, ls="--")
+
+    plt.xlabel("Time (s)")
+    plt.ylabel(r"$\Delta f / \mathrm{FWHM}$")
+    plt.title(
+        f"Estimated Fractional Frequency Shift for Detector {det_339}\n"
+        f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+    )
+    plt.grid(True)
+
+    simple_ccat.savefig(
+        ANALYSIS_OUTDIR,
+        f"{PREFIX}_detector_{det_339}_fractional_frequency_shift_PWV{PWV_MM:.2f}.png"
+    )
+    plt.close("all")
+
+    delta_mean_list = []
+
+    for delta_track in delta_f_over_fwhm_by_detector:
+        delta_mean = np.nanmean(delta_track)
+        delta_mean_list.append(delta_mean)
+
+    plt.figure(figsize=(8,6))
+    plt.hist(delta_mean_list, bins=30, alpha=0.7, edgecolor="k")
+    plt.xlabel(r"Mean $\Delta f / \mathrm{FWHM}$")
+    plt.ylabel("Number of Detectors")
+    plt.title(
+        f"Distribution of Mean Fractional Frequency Shifts for Detectors\n"
+        f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+    )
+    plt.grid(True)
+    simple_ccat.savefig(
+        ANALYSIS_OUTDIR,
+        f"{PREFIX}_detector_mean_fractional_frequency_shift_histogram_PWV{PWV_MM:.2f}.png"
+    )
+
+    plt.close("all")
 
 
 
