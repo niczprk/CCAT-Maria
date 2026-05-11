@@ -475,18 +475,29 @@ if __name__ == "__main__":
     # plt.title(f"Distribution of Mean Direct Detector Power (PWV={PWV_MM:.2f} mm $\\eta$={eta:.2f})")
     # plt.grid(True)
     # simple_ccat.savefig(ANALYSIS_OUTDIR, f"{PREFIX}_detector_direct_power_eta_{eta:.2f}_histogram_PWV{PWV_MM:.2f}.png")
+
+    
     detector_indices = []
     mean_list = []
     sigma_list = []
     two_delta_list = []
     fractional_width_list = []
     two_delta_over_mean_list = []
+    delta_f_over_fwhm_list = []
 
     n_detectors = P.shape[0]
 
     for det_idx in range(n_detectors):
         P_track = np.asarray(P[det_idx, :], dtype=np.float64)
         P_track_flat = P_track[np.isfinite(P_track)]
+
+        P_track_mean = np.nanmean(P_track_flat)
+
+        P_track_W = P_track_flat * 1e-12  # Convert pW to W
+
+        P_track_W_mean = np.nanmean(P_track_W)
+
+
 
         if len(P_track_flat) == 0:
             detector_indices.append(det_idx)
@@ -495,20 +506,28 @@ if __name__ == "__main__":
             two_delta_list.append(np.nan)
             fractional_width_list.append(np.nan)
             two_delta_over_mean_list.append(np.nan)
+            delta_f_over_fwhm_list.append(np.nan)
             continue
 
         mu, sigma = norm.fit(P_track_flat)
 
-        two_delta = 2 * sigma
+        # two_delta = np.max(P_track_flat) - np.min(P_track_flat)
         fractional_width = sigma / mu if mu != 0 else np.nan
-        two_delta_over_mean = two_delta / mu if mu != 0 else np.nan
+
+        delta_f_over_fwhm = (Q_r * R_0 / (np.sqrt(1+P_track_W_mean / P_0)) * P_track_W_mean) * fractional_width 
 
         detector_indices.append(det_idx)
         mean_list.append(mu)
         sigma_list.append(sigma)
-        two_delta_list.append(two_delta)
         fractional_width_list.append(fractional_width)
-        two_delta_over_mean_list.append(two_delta_over_mean)
+        delta_f_over_fwhm_list.append(np.abs(delta_f_over_fwhm))
+
+        # for det_idx in range(n_detectors):
+        #     P_track = np.asarray(P[det_idx, :], dtype=np.float64)
+        #     P_track_flat = P_track[np.isfinite(P_track)]
+
+        #     P_track_W = P_track_flat * 1e-12  # Convert pW to W
+        #     delta_f_over_fwhm_by_detector_list.append(fractional_width_list[det_idx] * Q_r * R_0 / (np.sqrt(1+ P_track_W/ P_0)) *P_track_flat)
 
 
     def make_hist(data, xlabel, title, filename):
@@ -540,12 +559,12 @@ if __name__ == "__main__":
         f"{PREFIX}_detector_gaussian_sigma_histogram_PWV{PWV_MM:.2f}.png"
     )
 
-    make_hist(
-        two_delta_list,
-        r"$2\Delta = 2\sigma$ (pW)",
-        r"Distribution of $2\Delta$ for Detectors",
-        f"{PREFIX}_detector_gaussian_two_delta_histogram_PWV{PWV_MM:.2f}.png"
-    )
+    # make_hist(
+    #     two_delta_list,
+    #     r"$2\Delta = 2\sigma$ (pW)",
+    #     r"Distribution of $2\Delta$ for Detectors",
+    #     f"{PREFIX}_detector_gaussian_two_delta_histogram_PWV{PWV_MM:.2f}.png"
+    # )
 
     make_hist(
         fractional_width_list,
@@ -554,12 +573,28 @@ if __name__ == "__main__":
         f"{PREFIX}_detector_gaussian_fractional_width_histogram_PWV{PWV_MM:.2f}.png"
     )
 
+    # make_hist(
+    #     delta_f_over_fwhm_by_detector_list,
+    #     r"Estimated $\Delta f / \mathrm{FWHM}$",
+    #     r"Distribution of Estimated $\Delta f / \mathrm{FWHM}$ for Detectors",
+    #     f"{PREFIX}_detector_gaussian_delta_f_over_fwhm_histogram_PWV{PWV_MM:.2f}.png"
+    # )
+
+    # make_hist(
+    #     two_delta_over_mean_list,
+    #     r"$2\Delta / \mu$",
+    #     r"Distribution of $2\Delta / \mu$ for Detectors",
+    #     f"{PREFIX}_detector_gaussian_two_delta_over_mean_histogram_PWV{PWV_MM:.2f}.png"
+    # )
+
     make_hist(
-        two_delta_over_mean_list,
-        r"$2\Delta / \mu$",
-        r"Distribution of $2\Delta / \mu$ for Detectors",
-        f"{PREFIX}_detector_gaussian_two_delta_over_mean_histogram_PWV{PWV_MM:.2f}.png"
+        delta_f_over_fwhm_list,
+        r"Estimated $\Delta f / \mathrm{FWHM}$",
+        r"Distribution of Estimated $\Delta f / \mathrm{FWHM}$ for Detectors",
+        f"{PREFIX}_detector_gaussian_delta_f_over_fwhm_histogram_PWV{PWV_MM:.2f}.png"
     )
+
+
     P_mean_array = np.array(mean_list)
     P_ref = np.nanmean(P_mean_array)
 
@@ -626,7 +661,80 @@ if __name__ == "__main__":
 
     plt.close("all")
 
+    for det_idx in [0, 50, 309, 339, 472, 843]:
 
+        det_idx = det_idx 
+
+        P_track_pW = np.asarray(P[det_idx, :], dtype=np.float64)
+        valid = np.isfinite(P_track_pW)
+
+        P_track_pW = P_track_pW[valid]
+        P_track_W = P_track_pW * 1e-12
+
+        P_ref_W = np.nanmean(P_track_W)
+        # or better if skewed:
+        # P_ref_W = np.nanmedian(P_track_W)
+
+        def R(P_W):
+            return R_0 / np.sqrt(1 + P_W / P_0)
+
+        delta_f_over_fwhm = Q_r * R(P_ref_W) * (P_track_W - P_ref_W)
+
+        plt.figure(figsize=(10,6))
+
+        plt.hist(delta_f_over_fwhm, bins=30, alpha=0.7, edgecolor="k")
+
+        plt.axvline(0, color="red", lw=1, ls="--")
+
+        plt.xlabel(r"$\Delta f / \mathrm{FWHM}$")
+        plt.ylabel("Number of Samples")
+        plt.title(
+            f"Distribution of Estimated Fractional Frequency Shifts for Detector {det_idx}\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_fractional_frequency_shift_histogram_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+        two_delta_f_over_fwhm_list = []
+        half_delta_f_over_fwhm_list = []
+
+        for det_idx in range(P.shape[0]):
+            P_track_pW = np.asarray(P[det_idx, :], dtype=np.float64)
+            valid = np.isfinite(P_track_pW)
+
+            P_track_pW = P_track_pW[valid]
+            P_track_W = P_track_pW * 1e-12
+
+            P_ref_W = np.nanmean(P_track_W) #mean power for individual reference
+
+            def R(P_W):
+                return R_0 / np.sqrt(1 + P_W / P_0)
+
+            delta_f_over_fwhm = Q_r * R(P_ref_W) * (P_track_W - P_ref_W)
+
+            two_delta_f_over_fwhm = np.max(delta_f_over_fwhm) - np.min(delta_f_over_fwhm)
+            half_delta_f_over_fwhm = np.abs(two_delta_f_over_fwhm / 2)
+            two_delta_f_over_fwhm_list.append(two_delta_f_over_fwhm)
+            half_delta_f_over_fwhm_list.append(half_delta_f_over_fwhm)
+
+    make_hist(
+        two_delta_f_over_fwhm_list,
+        r"$2\Delta f / \mathrm{FWHM}$",
+        r"Distribution of Peak-to-Peak Fractional Frequency Shifts for Detectors",
+        f"{PREFIX}_detector_two_delta_f_over_fwhm_histogram_PWV{PWV_MM:.2f}.png"
+    )
+
+    make_hist(
+        half_delta_f_over_fwhm_list,
+        r"$\Delta f / \mathrm{FWHM}$",
+        r"Distribution of Half Peak-to-Peak Fractional Frequency Shifts for Detectors",
+        f"{PREFIX}_detector_half_delta_f_over_fwhm_histogram_PWV{PWV_MM:.2f}.png"
+    )
 
 
 
