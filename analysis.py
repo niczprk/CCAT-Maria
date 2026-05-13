@@ -291,6 +291,44 @@ if __name__ == "__main__":
             f"{PREFIX}_detector_{det_idx}_power_vs_time_PWV{PWV_MM:.2f}.png"
         )
 
+        # ============================================================
+        # Plot: Individual detector Az/El track colour-coded by power
+        # ============================================================
+
+        az_track = np.asarray(tod.az[det_idx, :], dtype=np.float64)
+        el_track = np.asarray(tod.el[det_idx, :], dtype=np.float64)
+
+        az_track_deg = np.rad2deg(az_track)
+        el_track_deg = np.rad2deg(el_track)
+
+        plt.figure(figsize=(10, 6))
+
+        sc = plt.scatter(
+            az_track_deg,
+            el_track_deg,
+            c=P_track,
+            cmap="viridis",
+            s=2,
+            alpha=0.7
+        )
+
+        plt.xlabel("Azimuth (degrees)")
+        plt.ylabel("Elevation (degrees)")
+        plt.title(
+            f"Detector {det_idx} Az/El Track Colour-Coded by Power\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        cbar = plt.colorbar(sc)
+        cbar.set_label("Detector Power (pW)")
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_azel_track_power_PWV{PWV_MM:.2f}.png"
+        )
+
         plt.close("all")
 
         from scipy.stats import norm, skew
@@ -702,6 +740,8 @@ if __name__ == "__main__":
 
         two_delta_f_over_fwhm_list = []
         half_delta_f_over_fwhm_list = []
+        def R(P_W):
+            return R_0 / np.sqrt(1 + P_W / P_0)
 
         for det_idx in range(P.shape[0]):
             P_track_pW = np.asarray(P[det_idx, :], dtype=np.float64)
@@ -711,9 +751,6 @@ if __name__ == "__main__":
             P_track_W = P_track_pW * 1e-12
 
             P_ref_W = np.nanmean(P_track_W) #mean power for individual reference
-
-            def R(P_W):
-                return R_0 / np.sqrt(1 + P_W / P_0)
 
             delta_f_over_fwhm = Q_r * R(P_ref_W) * (P_track_W - P_ref_W)
 
@@ -736,6 +773,137 @@ if __name__ == "__main__":
         f"{PREFIX}_detector_half_delta_f_over_fwhm_histogram_PWV{PWV_MM:.2f}.png"
     )
 
+    # ============================================================
+# Plot: Individual detector Az/El track colour-coded by delta f / FWHM
+# Uses each detector's own mean power as the reference
+# ============================================================
+
+for det_idx in [0, 50, 309, 339, 472, 843]:
+
+    P_track_pW = np.asarray(P[det_idx, :], dtype=np.float64)
+    az_track = np.asarray(tod.az[det_idx, :], dtype=np.float64)
+    el_track = np.asarray(tod.el[det_idx, :], dtype=np.float64)
+
+    valid = (
+        np.isfinite(P_track_pW)
+        & np.isfinite(az_track)
+        & np.isfinite(el_track)
+    )
+
+    P_track_pW = P_track_pW[valid]
+    P_track_W = P_track_pW * 1e-12
+
+    az_track_deg = np.rad2deg(az_track[valid])
+    el_track_deg = np.rad2deg(el_track[valid])
+
+    P_ref_W = np.nanmean(P_track_W)
+
+    delta_f_over_fwhm = Q_r * R(P_ref_W) * (P_track_W - P_ref_W)
+
+    plt.figure(figsize=(10, 6))
+
+    sc = plt.scatter(
+        az_track_deg,
+        el_track_deg,
+        c=delta_f_over_fwhm,
+        cmap="viridis",
+        s=2,
+        alpha=0.7
+    )
+
+    plt.axhline(np.nanmean(el_track_deg), color="red", lw=1, ls="--")
+
+    plt.xlabel("Azimuth (degrees)")
+    plt.ylabel("Elevation (degrees)")
+    plt.title(
+        f"Detector {det_idx} Az/El Track Colour-Coded by Delta f / FWHM\n"
+        f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+    )
+
+    cbar = plt.colorbar(sc)
+    cbar.set_label(r"$\Delta f / \mathrm{FWHM}$")
+
+    plt.grid(True)
+
+    simple_ccat.savefig(
+        ANALYSIS_OUTDIR,
+        f"{PREFIX}_detector_{det_idx}_azel_track_delta_f_over_fwhm_PWV{PWV_MM:.2f}.png"
+    )
+
+    plt.close("all")
+
+    # ============================================================
+    # Plot: Individual detector delta f / FWHM vs time
+    # Uses each detector's own mean power as the reference
+    # ============================================================
+
+    time_sec_full = np.arange(P.shape[1]) / SAMPLE_RATE_HZ
+
+    time_sec = time_sec_full[valid]
+
+    plt.figure(figsize=(10, 6))
+
+    plt.plot(
+        time_sec,
+        delta_f_over_fwhm,
+        lw=0.5,
+        color="black"
+    )
+
+    plt.axhline(0, color="red", lw=1, ls="--")
+
+    plt.xlabel("Time (s)")
+    plt.ylabel(r"$\Delta f / \mathrm{FWHM}$")
+    plt.title(
+        f"Detector {det_idx} Delta f / FWHM vs Time\n"
+        f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+    )
+
+    plt.grid(True)
+
+    simple_ccat.savefig(
+        ANALYSIS_OUTDIR,
+        f"{PREFIX}_detector_{det_idx}_delta_f_over_fwhm_vs_time_PWV{PWV_MM:.2f}.png"
+    )
+
+    plt.close("all")
+
+
+    # ============================================================
+    # Plot: Individual detector delta f / FWHM vs elevation
+    # Uses each detector's own mean power as the reference
+    # ============================================================
+
+    el_track = np.asarray(tod.el[det_idx, :], dtype=np.float64)
+    el_track_deg = np.rad2deg(el_track[valid])
+
+    plt.figure(figsize=(10, 6))
+
+    plt.plot(
+        el_track_deg,
+        delta_f_over_fwhm,
+        lw=0.5,
+        color="black"
+    )
+
+    plt.axhline(0, color="red", lw=1, ls="--")
+
+    plt.xlabel("Elevation (degrees)")
+    plt.ylabel(r"$\Delta f / \mathrm{FWHM}$")
+    plt.title(
+        f"Detector {det_idx} Delta f / FWHM vs Elevation\n"
+        f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+    )
+
+    plt.grid(True)
+
+    simple_ccat.savefig(
+        ANALYSIS_OUTDIR,
+        f"{PREFIX}_detector_{det_idx}_delta_f_over_fwhm_vs_elevation_PWV{PWV_MM:.2f}.png"
+    )
+
+    plt.close("all")
+
 
 
 
@@ -746,4 +914,4 @@ if __name__ == "__main__":
     el = tod.el
     az = tod.az
 
-    raise SystemExit("Test Complete")
+raise SystemExit("Test Complete")
