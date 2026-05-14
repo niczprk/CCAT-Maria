@@ -3,6 +3,7 @@ import os, sys
 
 from pathlib import Path
 
+from click import Tuple
 import numpy as np
 import pandas as pd
 
@@ -67,7 +68,7 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 CUTOUT = CUTOUT_ORIONA
 
 
-PREFIX = "OrionA_tod_test"#_850GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized
+PREFIX = "OrionA_45_tod"#_850GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 
 ANALYSIS_OUTDIR = Path(f"outputs/{PREFIX}_analysis_outputs")
@@ -106,13 +107,13 @@ PWV_MM = 0.36  #  mm, precip water vapour this only affects the main if pwv is N
 
 # 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values for Chajnantor
 
-EL_LIMITS = (68, 85)  # degrees
+EL_LIMITS = (45, 55)  # degrees
 
 T_0 = 278.868 #K, atmospheric ground temp
 
 
 
-START_TIME = "2022-02-10T23:05:00"
+START_TIME = "2022-02-10T18:30:00"
 
 # "2022-02-10T22:45:00" for around 75 degrees ?
 #"2022-02-10T20:30:00" for around 60 degrees 
@@ -1847,6 +1848,7 @@ def main(
 # ----------------------------------------------
 
 def tod_analysis(
+    prfx: str = PREFIX,
     tod_diagnostics: bool = True,
     maps = False,
     save_all_plots: bool = False,
@@ -1860,6 +1862,8 @@ def tod_analysis(
     total_duration_s: int = TOTAL_DURATION_S,
     sim_duration_s: int = SIM_DURATION_S,
     sample_rate_hz: int = SAMPLE_RATE_HZ,
+    scan_pattern: str = SCAN_PATTERN,
+    el_limits: Tuple[float, float] = EL_LIMITS,
 ) -> None:
     """
     run_mode options:
@@ -1968,17 +1972,17 @@ def tod_analysis(
         savefig(ANALYSIS_OUTDIR, f"{PREFIX}_input_map_{ccat_band}GHz.png")
 
     planner = Planner(
-        start_time = START_TIME,
+        start_time = start_time,
         target = reduced_map_jysr,
         site = site,
-        constraints = {"el": EL_LIMITS}
+        constraints = {"el": el_limits}
     )
 
     plans = planner.generate_plans(
-        total_duration=TOTAL_DURATION_S,
-        max_chunk_duration=SIM_DURATION_S,
-        scan_pattern=SCAN_PATTERN,
-        sample_rate = SAMPLE_RATE_HZ,
+        total_duration=total_duration_s,
+        max_chunk_duration=sim_duration_s,
+        scan_pattern=scan_pattern,
+        sample_rate = sample_rate_hz,
         scan_options={"radius": reduced_map_jysr.width.deg / 3.0},
     )
     if save_all_plots:
@@ -2007,163 +2011,170 @@ def tod_analysis(
         bbox_inches="tight",
     )
 
+    tod0 = tods[0]
+
+    print("IN MEMORY TOD")
+    print("el min/max:", np.nanmin(np.rad2deg(tod0.el)), np.nanmax(np.rad2deg(tod0.el)))
+    print("az min/max:", np.nanmin(np.rad2deg(tod0.az)), np.nanmax(np.rad2deg(tod0.az)))
+
+
     if tod_diagnostics:
 
         tods[0].to("pW").plot()
-    savefig(ANALYSIS_OUTDIR / f"{PREFIX}_tod_plot.png", f"{PREFIX}_tod_plot.png", dpi=300)
-    plt.close("all")
+        savefig(ANALYSIS_OUTDIR / f"{PREFIX}_tod_plot.png", f"{PREFIX}_tod_plot.png", dpi=300)
+        plt.close("all")
 
-    P_det = tods[0].to("pW").signal
-    P = np.asarray(P_det, dtype=np.float64)  # Convert to numpy array for calculations
-
-
-    print("P shape:", P.shape)
-
-    P_mean = np.nanmean(P, axis=1).ravel()
-    P_std  = np.nanstd(P, axis=1).ravel()
-    P_ptp  = (np.nanmax(P, axis=1) - np.nanmin(P, axis=1)).ravel()
-
-    P_flat = P_mean[np.isfinite(P_mean)]
-
-    # -----------------------------
-    #Detector diagnostics / statistics 
-    # -----------------------------
-
-    from scipy.stats import norm, skew
-
-    mu, sigma = norm.fit(P_flat)
-    print(f"Fitted Gaussian parameters: mu={mu:.2f} pW, sigma={sigma:.2f} pW")
-    frac_width = sigma / mu
-    frac_width_percent = frac_width * 100
-    print(f"Fractional width (sigma/mean): {frac_width:.3f} ({frac_width_percent:.1f}%)")
-
-    median = np.median(P_flat)
-    p5, p16, p84, p95 = np.percentile(P_flat, [5, 16, 84, 95])
-    mi_val = np.min(P_flat)
-    ma_val = np.max(P_flat)
-    ptp_val = ma_val - mi_val
-
-    skewness = skew(P_flat, nan_policy='omit')
-
-    print("\nDetector mean power statistics")
-    print("--------------------------------")
-    print(f"Gaussian mean:          {mu:.6g} pW")
-    print(f"Gaussian sigma:         {sigma:.6g} pW")
-    print(f"Fractional width:       {frac_width:.6g}")
-    print(f"Fractional width:       {frac_width_percent:.3f}%")
-    print(f"Median:                 {median:.6g} pW")
-    print(f"Min / Max:              {mi_val:.6g}, {ma_val:.6g} pW")
-    print(f"Peak-to-peak:           {ptp_val:.6g} pW")
-    print(f"5th / 95th percentile:  {p5:.6g}, {p95:.6g} pW")
-    print(f"16th / 84th percentile: {p16:.6g}, {p84:.6g} pW")
-    print(f"Skewness:               {skewness:.6g}")
-
-    plt.figure(figsize=(8,6))
+        P_det = tods[0].to("pW").signal
+        P = np.asarray(P_det, dtype=np.float64)  # Convert to numpy array for calculations
 
 
-    counts, bins, _ = plt.hist(P_flat, bins=30, alpha=0.7, color='blue', edgecolor='black', label= "Detector Mean Power")
+        print("P shape:", P.shape)
 
-    x = np.linspace(np.nanmin(P_flat), np.nanmax(P_flat), 1000)
-    bin_width = bins[1] - bins[0]
+        P_mean = np.nanmean(P, axis=1).ravel()
+        P_std  = np.nanstd(P, axis=1).ravel()
+        P_ptp  = (np.nanmax(P, axis=1) - np.nanmin(P, axis=1)).ravel()
 
-    gaussian_counts = norm.pdf(x,mu,sigma) * len(P_flat) * bin_width
+        P_flat = P_mean[np.isfinite(P_mean)]
 
-    plt.plot(x, gaussian_counts, color='red', lw=2, label=f"Gaussian Fit\n$\mu$={mu:.2f} pW\n$\sigma$={sigma:.2f} pW")
-    plt.xlabel("Mean Detector Power (pW)")
-    plt.ylabel("Number of Detectors")
-    plt.title(f"Distribution of Mean Detector Power (PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})\nSkewness={skewness:.2f}")
-    plt.grid(True)
-    plt.legend()
-    savefig(ANALYSIS_OUTDIR, f"{PREFIX}_detector_mean_power_histogram_PWV{pwv_mm:.2f}.png")
-    plt.close("all")
+        # -----------------------------
+        #Detector diagnostics / statistics 
+        # -----------------------------
 
-    P_std_flat = P_std[np.isfinite(P_std)]
+        from scipy.stats import norm, skew
 
-    plt.figure(figsize=(8,6))
-    plt.hist(P_std_flat, bins=30, alpha=0.7)
-    plt.xlabel("Std Dev of Detector Power (pW)")
-    plt.ylabel("Number of Detectors")
-    plt.title(f"Distribution of Std Dev of Detector Power (PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})")
-    plt.grid(True)
-    savefig(ANALYSIS_OUTDIR, f"{PREFIX}_detector_power_std_histogram_PWV{pwv_mm:.2f}.png")
-    plt.close("all")
+        mu, sigma = norm.fit(P_flat)
+        print(f"Fitted Gaussian parameters: mu={mu:.2f} pW, sigma={sigma:.2f} pW")
+        frac_width = sigma / mu
+        frac_width_percent = frac_width * 100
+        print(f"Fractional width (sigma/mean): {frac_width:.3f} ({frac_width_percent:.1f}%)")
 
-    frac_rms = P_std / P_mean
-    frac_rms = frac_rms[np.isfinite(frac_rms)]
+        median = np.median(P_flat)
+        p5, p16, p84, p95 = np.percentile(P_flat, [5, 16, 84, 95])
+        mi_val = np.min(P_flat)
+        ma_val = np.max(P_flat)
+        ptp_val = ma_val - mi_val
 
-    plt.figure(figsize=(8, 6))
-    plt.hist(100 * frac_rms, bins=30, alpha=0.7)
-    plt.xlabel(r"Detector RMS / Mean Power (%)")
-    plt.ylabel("Number of Detectors")
-    plt.title(f"Fractional Detector Power Variation (PWV={PWV_MM:.2f} mm)")
-    plt.grid(True)
+        skewness = skew(P_flat, nan_policy='omit')
 
-    savefig(
-        ANALYSIS_OUTDIR,
-        f"{PREFIX}_fractional_detector_rms_eta_{eta:.2f}_PWV{PWV_MM:.2f}.png"
-    )
-    plt.close()
+        print("\nDetector mean power statistics")
+        print("--------------------------------")
+        print(f"Gaussian mean:          {mu:.6g} pW")
+        print(f"Gaussian sigma:         {sigma:.6g} pW")
+        print(f"Fractional width:       {frac_width:.6g}")
+        print(f"Fractional width:       {frac_width_percent:.3f}%")
+        print(f"Median:                 {median:.6g} pW")
+        print(f"Min / Max:              {mi_val:.6g}, {ma_val:.6g} pW")
+        print(f"Peak-to-peak:           {ptp_val:.6g} pW")
+        print(f"5th / 95th percentile:  {p5:.6g}, {p95:.6g} pW")
+        print(f"16th / 84th percentile: {p16:.6g}, {p84:.6g} pW")
+        print(f"Skewness:               {skewness:.6g}")
 
-    # P_W = P * 1e-12  # Convert pW to W
-    # P_ref = np.nanmean(P_W, axis=1, keepdims=True)
+        plt.figure(figsize=(8,6))
 
-    # dP = P_W - P_ref 
 
-    # R_P = R_0 / np.sqrt(1+ P_W/P_0)
+        counts, bins, _ = plt.hist(P_flat, bins=30, alpha=0.7, color='blue', edgecolor='black', label= "Detector Mean Power")
 
-    # df_fwhm = Q_r* R_P * dP
+        x = np.linspace(np.nanmin(P_flat), np.nanmax(P_flat), 1000)
+        bin_width = bins[1] - bins[0]
 
-    # df_fwhm_flat = df_fwhm[np.isfinite(df_fwhm)]
+        gaussian_counts = norm.pdf(x,mu,sigma) * len(P_flat) * bin_width
 
-    # mu_df, sigma_df = norm.fit(df_fwhm_flat)
-    # print(f"\nFitted Gaussian parameters for df_fwhm: mu={mu_df:.6g} Hz, sigma={sigma_df:.6g} Hz")
+        plt.plot(x, gaussian_counts, color='red', lw=2, label=f"Gaussian Fit\n$\mu$={mu:.2f} pW\n$\sigma$={sigma:.2f} pW")
+        plt.xlabel("Mean Detector Power (pW)")
+        plt.ylabel("Number of Detectors")
+        plt.title(f"Distribution of Mean Detector Power (PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})\nSkewness={skewness:.2f}")
+        plt.grid(True)
+        plt.legend()
+        savefig(ANALYSIS_OUTDIR, f"{PREFIX}_detector_mean_power_histogram_PWV{pwv_mm:.2f}.png")
+        plt.close("all")
 
-    # plt.figure(figsize=(8,6))
+        P_std_flat = P_std[np.isfinite(P_std)]
 
-    # counts, bins, _ = plt.hist(df_fwhm_flat, bins=30, alpha=0.7, color='green', edgecolor='black', label="df_fwhm")
+        plt.figure(figsize=(8,6))
+        plt.hist(P_std_flat, bins=30, alpha=0.7)
+        plt.xlabel("Std Dev of Detector Power (pW)")
+        plt.ylabel("Number of Detectors")
+        plt.title(f"Distribution of Std Dev of Detector Power (PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})")
+        plt.grid(True)
+        savefig(ANALYSIS_OUTDIR, f"{PREFIX}_detector_power_std_histogram_PWV{pwv_mm:.2f}.png")
+        plt.close("all")
 
-    # x = np.linspace(np.nanmin(df_fwhm_flat), np.nanmax(df_fwhm_flat), 1000)
-    # bin_width = bins[1] - bins[0]
+        frac_rms = P_std / P_mean
+        frac_rms = frac_rms[np.isfinite(frac_rms)]
 
-    # gaussian_counts_df = norm.pdf(x, mu_df, sigma_df) * len(df_fwhm_flat) * bin_width
+        plt.figure(figsize=(8, 6))
+        plt.hist(100 * frac_rms, bins=30, alpha=0.7)
+        plt.xlabel(r"Detector RMS / Mean Power (%)")
+        plt.ylabel("Number of Detectors")
+        plt.title(f"Fractional Detector Power Variation (PWV={PWV_MM:.2f} mm)")
+        plt.grid(True)
 
-    # plt.plot(x, gaussian_counts_df, color='red', lw=2, label=f"Gaussian Fit\n$\mu$={mu_df:.2e} Hz\n$\sigma$={sigma_df:.2e} Hz")
-    # plt.xlabel(r"$\delta f / \mathrm{FWHM}$")
-    # plt.ylabel("Number of Detectors")
-    # plt.title(
-    #     rf"Distribution of $\delta f / \mathrm{{FWHM}}$ "
-    #     f"(PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})"
-    # )
-    # plt.grid(True)
-    # plt.legend()
-    # savefig(ANALYSIS_OUTDIR, f"{PREFIX}_df_fwhm_histogram_PWV{pwv_mm:.2f}.png")
-    # plt.close("all")
+        savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_fractional_detector_rms_eta_{eta:.2f}_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close()
 
-    # el = tods[0].el
+        # P_W = P * 1e-12  # Convert pW to W
+        # P_ref = np.nanmean(P_W, axis=1, keepdims=True)
 
-    # bins = np.linspace(np.min(el), np.max(el), 30)
+        # dP = P_W - P_ref 
 
-    # digitized = np.digitize(el, bins)
+        # R_P = R_0 / np.sqrt(1+ P_W/P_0)
 
-    # el_ce
+        # df_fwhm = Q_r* R_P * dP
 
-    # plt.figure(figsize=(8,6))
-    # plt.scatter(el, P_mean, alpha=0.5)
-    # plt.xlabel("Elevation (degrees)")
-    # plt.ylabel("Mean Detector Power (pW)")
-    # plt.title(f"Mean Detector Power vs Elevation (PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})")
-    # plt.grid(True)
-    # savefig(ANALYSIS_OUTDIR, f"{PREFIX}_mean_power_vs_elevation_PWV{pwv_mm:.2f}.png")
-    # plt.close("all")
+        # df_fwhm_flat = df_fwhm[np.isfinite(df_fwhm)]
 
-    # plt.figure(figsize=(8,6))
-    # plt.scatter(el, df_fwhm, alpha=0.5)
-    # plt.xlabel("Elevation (degrees)")
-    # plt.ylabel("df_fwhm")
-    # plt.title(f"df_fwhm vs Elevation (PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})")
-    # plt.grid(True)
-    # savefig(ANALYSIS_OUTDIR, f"{PREFIX}_df_fwhm_vs_elevation_PWV{pwv_mm:.2f}.png")
-    # plt.close("all")
+        # mu_df, sigma_df = norm.fit(df_fwhm_flat)
+        # print(f"\nFitted Gaussian parameters for df_fwhm: mu={mu_df:.6g} Hz, sigma={sigma_df:.6g} Hz")
+
+        # plt.figure(figsize=(8,6))
+
+        # counts, bins, _ = plt.hist(df_fwhm_flat, bins=30, alpha=0.7, color='green', edgecolor='black', label="df_fwhm")
+
+        # x = np.linspace(np.nanmin(df_fwhm_flat), np.nanmax(df_fwhm_flat), 1000)
+        # bin_width = bins[1] - bins[0]
+
+        # gaussian_counts_df = norm.pdf(x, mu_df, sigma_df) * len(df_fwhm_flat) * bin_width
+
+        # plt.plot(x, gaussian_counts_df, color='red', lw=2, label=f"Gaussian Fit\n$\mu$={mu_df:.2e} Hz\n$\sigma$={sigma_df:.2e} Hz")
+        # plt.xlabel(r"$\delta f / \mathrm{FWHM}$")
+        # plt.ylabel("Number of Detectors")
+        # plt.title(
+        #     rf"Distribution of $\delta f / \mathrm{{FWHM}}$ "
+        #     f"(PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})"
+        # )
+        # plt.grid(True)
+        # plt.legend()
+        # savefig(ANALYSIS_OUTDIR, f"{PREFIX}_df_fwhm_histogram_PWV{pwv_mm:.2f}.png")
+        # plt.close("all")
+
+        # el = tods[0].el
+
+        # bins = np.linspace(np.min(el), np.max(el), 30)
+
+        # digitized = np.digitize(el, bins)
+
+        # el_centers = 0.5 * (bins[1:] + bins[:-1])
+
+        # plt.figure(figsize=(8,6))
+        # plt.scatter(el, P_mean, alpha=0.5)
+        # plt.xlabel("Elevation (degrees)")
+        # plt.ylabel("Mean Detector Power (pW)")
+        # plt.title(f"Mean Detector Power vs Elevation (PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})")
+        # plt.grid(True)
+        # savefig(ANALYSIS_OUTDIR, f"{PREFIX}_mean_power_vs_elevation_PWV{pwv_mm:.2f}.png")
+        # plt.close("all")
+
+        # plt.figure(figsize=(8,6))
+        # plt.scatter(el, df_fwhm, alpha=0.5)
+        # plt.xlabel("Elevation (degrees)")
+        # plt.ylabel("df_fwhm")
+        # plt.title(f"df_fwhm vs Elevation (PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})")
+        # plt.grid(True)
+        # savefig(ANALYSIS_OUTDIR, f"{PREFIX}_df_fwhm_vs_elevation_PWV{pwv_mm:.2f}.png")
+        # plt.close("all")
 
     if run_mode == "hdf5":
         print(f"Saving TOD to HDF5 file: {TOD_OUTDIR / f'{PREFIX}_tods.hdf5'}")
@@ -2171,7 +2182,7 @@ def tod_analysis(
     
     elif run_mode == "fits":
         print(f"Saving TOD to FITS file: {TOD_OUTDIR / f'{PREFIX}_dim_reduced_tods.fits'}")
-        tods[0].to_fits(TOD_OUTDIR / f"{PREFIX}_dim_reduced_tods.fits")
+        tods[0].to_fits(TOD_OUTDIR / f"{PREFIX}_dim_reduced_tods.fits", format="CCAT")
 
     else:
         raise ValueError(f"Invalid run_mode: {run_mode}. Choose 'hdf5' or 'fits'.")
@@ -2196,7 +2207,7 @@ def tod_analysis(
     else:
         print("[skip] mapmaking")
 
-    return None
+    return tods[0]
 if __name__ == "__main__":
 
     PWV_MM = 0.36  #  mm, precip water vapour this only affects the main if pwv is None
