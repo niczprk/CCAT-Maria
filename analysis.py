@@ -24,7 +24,7 @@ PWV_MM = 0.36  #  mm, precip water vapour this only affects the main if pwv is N
 
 # 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values for Chajnantor
 
-EL_LIMITS = (35, 85)  # degrees
+EL_LIMITS = (45, 55)  # degrees
 
 T_0 = 278.868 #K, atmospheric ground temp
 
@@ -34,7 +34,7 @@ P_0 = 957e-18 # idk but do not question the mighty jordan wheeler
 
 R_0 = -2.448e9 #avg responsivity in W^-1 from Jordan Wheeler
 
-START_TIME = "2022-02-10T20:30:00"
+START_TIME = "2022-02-10T17:00:00"
 
 # "2022-02-10T22:45:00" for around 75 degrees ?
 #"2022-02-10T20:30:00" for around 60 degrees 
@@ -49,7 +49,7 @@ SAMPLE_RATE_HZ = 50  # Hz
 SCAN_PATTERN = "daisy"
 CHUNK_NUMBER = 0
 
-PREFIX = "OrionA_tod_test"
+PREFIX = "OrionA_45_tod"
 ANALYSIS_OUTDIR = Path(f"outputs/{PREFIX}_analysis_outputs")
 TOD_OUTDIR = Path(f"outputs/{PREFIX}_tod_files")
 
@@ -57,6 +57,7 @@ TOD_OUTDIR = Path(f"outputs/{PREFIX}_tod_files")
 
 
 # simple_ccat.tod_analysis(
+#     prfx=PREFIX,
 #     tod_diagnostics=False,
 #     maps = False,
 #     save_all_plots = True,
@@ -70,12 +71,14 @@ TOD_OUTDIR = Path(f"outputs/{PREFIX}_tod_files")
 #     total_duration_s = TOTAL_DURATION_S,
 #     sim_duration_s = SIM_DURATION_S,
 #     sample_rate_hz = SAMPLE_RATE_HZ,
+#     scan_pattern = SCAN_PATTERN,
+#     el_limits=EL_LIMITS,
 # )
 
 if __name__ == "__main__":
 
 
-    tod = TOD.from_fits(TOD_OUTDIR / f"{PREFIX}_dim_expanded_tods.fits", format = "Mustang-2")
+    tod = TOD.from_fits(TOD_OUTDIR / f"{PREFIX}_dim_reduced_tods.fits", format = "CCAT")
 
     print(tod)
     print(tod.shape)
@@ -89,6 +92,10 @@ if __name__ == "__main__":
     print("el shape:", np.shape(tod.el))
     print("az shape:", np.shape(tod.az))
     print("time shape:", np.shape(tod.time))
+
+    print("RELOADED TOD")
+    print("el min/max:", np.nanmin(np.rad2deg(tod.el)), np.nanmax(np.rad2deg(tod.el)))
+    print("az min/max:", np.nanmin(np.rad2deg(tod.az)), np.nanmax(np.rad2deg(tod.az)))
 
     P_det = tod.to("pW").signal
     P = np.asarray(P_det, dtype=np.float64)  # Convert to numpy array for calculations
@@ -773,12 +780,16 @@ if __name__ == "__main__":
         f"{PREFIX}_detector_half_delta_f_over_fwhm_histogram_PWV{PWV_MM:.2f}.png"
     )
 
-    # ============================================================
+# ============================================================
 # Plot: Individual detector Az/El track colour-coded by delta f / FWHM
 # Uses each detector's own mean power as the reference
 # ============================================================
 
-for det_idx in [0, 50, 309, 339, 472, 843]:
+for det_idx in [0, 50, 309, 339, 472, 843]:\
+
+    time_sec_full = np.arange(P.shape[1]) / SAMPLE_RATE_HZ
+
+    time_sec = time_sec_full[valid]
 
     P_track_pW = np.asarray(P[det_idx, :], dtype=np.float64)
     az_track = np.asarray(tod.az[det_idx, :], dtype=np.float64)
@@ -830,6 +841,66 @@ for det_idx in [0, 50, 309, 339, 472, 843]:
         f"{PREFIX}_detector_{det_idx}_azel_track_delta_f_over_fwhm_PWV{PWV_MM:.2f}.png"
     )
 
+    plt.figure(figsize=(10, 6))
+
+    sc = plt.scatter(
+        az_track_deg,
+        el_track_deg,
+        c=time_sec,
+        cmap="viridis",
+        s=2,
+        alpha=0.7
+    )
+
+    plt.axhline(np.nanmean(el_track_deg), color="red", lw=1, ls="--")
+
+    plt.xlabel("Azimuth (degrees)")
+    plt.ylabel("Elevation (degrees)")
+    plt.title(
+        f"Detector {det_idx} Az/El Track Colour-Coded by Time\n"
+        f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+    )
+
+    cbar = plt.colorbar(sc)
+    cbar.set_label(r"Time (s)")
+
+    plt.grid(True)
+
+    simple_ccat.savefig(
+        ANALYSIS_OUTDIR,
+        f"{PREFIX}_detector_{det_idx}_azel_track_time_PWV{PWV_MM:.2f}.png"
+    )
+
+    P_track_pW = np.asarray(P[det_idx, :], dtype=np.float64)
+    P_track_pW = P_track_pW[valid]
+    P_track_W = P_track_pW * 1e-12
+
+    def R(P):
+        return R_0 / (np.sqrt(1+ P/ P_0))
+    
+    Queens_Park_R = Q_r * R(P_track_W) * P_track_W
+    
+    plt.figure(figsize=(10, 6))
+    plt.scatter(
+        P_track_W,
+        Queens_Park_R,
+        s=2,
+        alpha=0.7,
+        color="black"
+    )
+
+    plt.xlabel("Detector Power (W)")
+    plt.ylabel(r"Queens Park Rangers (Hz/W)")
+    plt.title(
+        f"Detector {det_idx} Power vs Queens Park Rangers\n"
+        f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+    )
+
+    plt.grid(True)
+    simple_ccat.savefig(
+        ANALYSIS_OUTDIR,
+        f"{PREFIX}_detector_{det_idx}_power_vs_queens_park_rangers_PWV{PWV_MM:.2f}.png"
+    )
     plt.close("all")
 
     # ============================================================
@@ -877,6 +948,10 @@ for det_idx in [0, 50, 309, 339, 472, 843]:
     el_track = np.asarray(tod.el[det_idx, :], dtype=np.float64)
     el_track_deg = np.rad2deg(el_track[valid])
 
+    time_sec_full = np.arange(P.shape[1]) / SAMPLE_RATE_HZ
+
+    time_sec = time_sec_full[valid]
+
     plt.figure(figsize=(10, 6))
 
     plt.plot(
@@ -901,6 +976,33 @@ for det_idx in [0, 50, 309, 339, 472, 843]:
         ANALYSIS_OUTDIR,
         f"{PREFIX}_detector_{det_idx}_delta_f_over_fwhm_vs_elevation_PWV{PWV_MM:.2f}.png"
     )
+
+
+    plt.figure(figsize=(10, 6))
+
+    plt.plot(
+        el_track_deg,
+        P_track_pW,
+        lw=0.5,
+        color="black"
+    )
+
+    plt.axhline(0, color="red", lw=1, ls="--")
+
+    plt.xlabel("Elevation (degrees)")
+    plt.ylabel(r"Detector Power (W)")
+    plt.title(
+        f"Detector {det_idx} Power vs Elevation\n"
+        f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+    )
+
+    plt.grid(True)
+
+    simple_ccat.savefig(
+        ANALYSIS_OUTDIR,
+        f"{PREFIX}_detector_{det_idx}_power_vs_elevation_PWV{PWV_MM:.2f}.png"
+    )
+
 
     plt.close("all")
 
