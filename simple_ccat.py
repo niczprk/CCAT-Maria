@@ -1998,7 +1998,7 @@ def tod_analysis(
         atmosphere_kwargs={"weather": {"pwv": pwv_mm}},
         # cmb = "generate",
         # cmb_kwargs = {"source": "planck"},
-        map=input_map,
+        map=reduced_map_jysr,
     )
 
     print(sim)
@@ -2036,11 +2036,65 @@ def tod_analysis(
 
         P_flat = P_mean[np.isfinite(P_mean)]
 
+        # all_detector_power = []
+
+        # for det_idx in range(P.shape[0]):
+
+        #     P_track = np.asarray(P[det_idx, :], dtype=np.float64)
+        #     P_track_flat = P_track[np.isfinite(P_track)]
+
+        #     if P_track_flat.size == 0:
+        #         continue
+
+        #     all_detector_power.extend(P_track_flat[::50])  # downsample each detector for plotting
+
+        # all_detector_power = np.asarray(all_detector_power)
+
+        from scipy.stats import norm, skew
+
+        # mu = np.mean(all_detector_power)
+        # sigma = np.std(all_detector_power)
+
+        # print(f"Fitted Gaussian parameters: mu={mu:.2f} pW, sigma={sigma:.2f} pW")
+
+        # plt.figure(figsize=(8,6))
+
+        # counts, bins, _ = plt.hist(
+        #     all_detector_power,
+        #     bins=40,
+        #     density=True,
+        #     alpha=0.7,
+        # )
+
+        # # Gaussian fit
+        # x = np.linspace(bins.min(), bins.max(), 1000)
+        # gaussian = norm.pdf(x, mu, sigma)
+
+        # plt.plot(x, gaussian, linewidth=2)
+
+        # plt.axvline(mu, linestyle="--", linewidth=2, label="Mean")
+        # plt.axvline(mu + sigma, linestyle=":", linewidth=2, label=r"$+1\sigma$")
+        # plt.axvline(mu - sigma, linestyle=":", linewidth=2, label=r"$-1\sigma$")
+
+        # plt.xlabel("Detector Power (pW)")
+        # plt.ylabel("Normalized Counts")
+
+        # plt.title(
+        #     "Distribution of Detector Power Across All Detectors\n"
+        #     f"Mean={mu:.4e} pW, σ={sigma:.4e} pW"
+        # )
+
+        # plt.grid(True)
+        # plt.legend()
+        # plt.tight_layout()
+        # savefig(ANALYSIS_OUTDIR, f"{PREFIX}_initial_detector_power_distribution_PWV{pwv_mm:.2f}.png")
+
+        # plt.close("all")
+
         # -----------------------------
         #Detector diagnostics / statistics 
         # -----------------------------
 
-        from scipy.stats import norm, skew
 
         mu, sigma = norm.fit(P_flat)
         print(f"Fitted Gaussian parameters: mu={mu:.2f} pW, sigma={sigma:.2f} pW")
@@ -2182,7 +2236,7 @@ def tod_analysis(
     
     elif run_mode == "fits":
         print(f"Saving TOD to FITS file: {TOD_OUTDIR / f'{PREFIX}_dim_reduced_tods.fits'}")
-        tods[0].to_fits(TOD_OUTDIR / f"{PREFIX}_dim_reduced_tods.fits", format="CCAT")
+        tods[0].to_fits(TOD_OUTDIR / f"{PREFIX}_dim_reduced_tods.fits", format="Mustang-2")
 
     else:
         raise ValueError(f"Invalid run_mode: {run_mode}. Choose 'hdf5' or 'fits'.")
@@ -2246,29 +2300,29 @@ if __name__ == "__main__":
 
     mp.set_start_method("spawn", force = True)
 
-    #main(atm_plot=True,
-    #  run_mode= "all" ,
-    #  temp_mode="inst",
-    #  ccat_band="280",
-    #  map_type="Binmapper",
-    #  tod_diagnostics=True,
-    #  pwv_mm=0.36)
+    main(atm_plot=True,
+     run_mode= "all" ,
+     temp_mode="inst",
+     ccat_band="280",
+     map_type="Binmapper",
+     tod_diagnostics=True,
+     pwv_mm=0.36)
 
-    tod_analysis(
-    tod_diagnostics =False,
-    maps = False,
-    save_all_plots = False,
-    run_mode = "fits",
-    atm_plot = True,
-    temp_mode = "inst",
-    ccat_band = "280",
-    map_type = "BM",
-    pwv_mm = PWV_MM,
-    start_time = START_TIME,
-    total_duration_s = TOTAL_DURATION_S,
-    sim_duration_s = SIM_DURATION_S,
-    sample_rate_hz = SAMPLE_RATE_HZ,
-)
+    # tod_analysis(
+    # tod_diagnostics =False,
+    # maps = False,
+    # save_all_plots = False,
+    # run_mode = "fits",
+    # atm_plot = True,
+    # temp_mode = "inst",
+    # ccat_band = "280",
+    # map_type = "BM",
+    # pwv_mm = PWV_MM,
+    # start_time = START_TIME,
+    # total_duration_s = TOTAL_DURATION_S,
+    # sim_duration_s = SIM_DURATION_S,
+    # sample_rate_hz = SAMPLE_RATE_HZ,
+# )
 
     raise SystemExit("Stopping. Uncomment the loop below to run multiple PWV values and compare inferred tau_0.")
 

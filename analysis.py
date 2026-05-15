@@ -1,7 +1,9 @@
 from pathlib import Path
 
 import simple_ccat
-from maria.tod import TOD
+from maria import tod
+from maria.instrument import Band
+import maria
 
 import numpy as np
 
@@ -36,6 +38,8 @@ R_0 = -2.448e9 #avg responsivity in W^-1 from Jordan Wheeler
 
 START_TIME = "2022-02-10T17:00:00"
 
+eta = 0.5
+
 # "2022-02-10T22:45:00" for around 75 degrees ?
 #"2022-02-10T20:30:00" for around 60 degrees 
 #"2022-02-10T18:55:00" for roughly 45 degrees
@@ -45,7 +49,7 @@ START_TIME = "2022-02-10T17:00:00"
 
 TOTAL_DURATION_S = 1800  # seconds
 SIM_DURATION_S = 1800  # seconds
-SAMPLE_RATE_HZ = 50  # Hz
+SAMPLE_RATE_HZ = 10  # Hz
 SCAN_PATTERN = "daisy"
 CHUNK_NUMBER = 0
 
@@ -54,31 +58,49 @@ ANALYSIS_OUTDIR = Path(f"outputs/{PREFIX}_analysis_outputs")
 TOD_OUTDIR = Path(f"outputs/{PREFIX}_tod_files")
 
 
+print(dir((maria.tod)))
 
 
-# simple_ccat.tod_analysis(
-#     prfx=PREFIX,
-#     tod_diagnostics=False,
-#     maps = False,
-#     save_all_plots = True,
-#     run_mode = "fits",
-#     atm_plot = True,
-#     temp_mode = "inst",
-#     ccat_band = "280",
-#     map_type = "BM",
-#     pwv_mm = PWV_MM,
-#     start_time = START_TIME,
-#     total_duration_s = TOTAL_DURATION_S,
-#     sim_duration_s = SIM_DURATION_S,
-#     sample_rate_hz = SAMPLE_RATE_HZ,
-#     scan_pattern = SCAN_PATTERN,
-#     el_limits=EL_LIMITS,
-# )
+
 
 if __name__ == "__main__":
 
+    simple_ccat.tod_analysis(
+    prfx=PREFIX,
+    tod_diagnostics=False,
+    maps = False,
+    save_all_plots = True,
+    run_mode = "fits",
+    atm_plot = True,
+    temp_mode = "inst",
+    ccat_band = "280",
+    map_type = "BM",
+    pwv_mm = PWV_MM,
+    start_time = START_TIME,
+    total_duration_s = TOTAL_DURATION_S,
+    sim_duration_s = SIM_DURATION_S,
+    sample_rate_hz = SAMPLE_RATE_HZ,
+    scan_pattern = SCAN_PATTERN,
+    el_limits=EL_LIMITS,
+    )
 
-    tod = TOD.from_fits(TOD_OUTDIR / f"{PREFIX}_dim_reduced_tods.fits", format = "CCAT")
+    site = maria.get_site("cerro_chajnantor", altitude=5600)
+
+    band = Band(
+        name="m2/f093",
+        center = 280e9,
+        width = 60e9,
+        efficiency = eta,
+        NET_CMB = 13e-6,
+        knee = 1.0,
+        gain_error = 5e-2
+    )
+
+
+    # tod = TOD.from_fits(TOD_OUTDIR / f"{PREFIX}_dim_reduced_tods.fits", format = "CCAT")
+
+    tod = maria.tod.load(TOD_OUTDIR / f"{PREFIX}_dim_reduced_tods.fits", site = site, bands = [band])
+    
 
     print(tod)
     print(tod.shape)
@@ -99,6 +121,63 @@ if __name__ == "__main__":
 
     P_det = tod.to("pW").signal
     P = np.asarray(P_det, dtype=np.float64)  # Convert to numpy array for calculations
+
+    reloaded_power_list = []
+
+    for det_idx in range(P.shape[0]):
+
+        P_track = np.asarray(P[det_idx, :], dtype=np.float64)
+        P_track_flat = P_track[np.isfinite(P_track)]
+
+        if P_track_flat.size == 0:
+            continue
+
+        reloaded_power_list.extend(P_track_flat[::50])  # Append all valid power values to the list
+
+    reloaded_power_array = np.asarray(reloaded_power_list)
+
+    from scipy.stats import norm, skew
+
+    mu = np.mean(reloaded_power_array)
+    sigma = np.std(reloaded_power_array)
+
+
+    print(f"Fitted Gaussian parameters: mu={mu:.2f} pW, sigma={sigma:.2f} pW")
+
+    plt.figure(figsize=(8,6))
+
+    counts, bins, _ = plt.hist(
+        reloaded_power_array,
+        bins=40,
+        density=True,
+        alpha=0.7,
+    )
+
+    # Gaussian fit
+    x = np.linspace(bins.min(), bins.max(), 1000)
+    gaussian = norm.pdf(x, mu, sigma)
+
+    plt.plot(x, gaussian, linewidth=2)
+
+    plt.axvline(mu, linestyle="--", linewidth=2, label="Mean")
+    plt.axvline(mu + sigma, linestyle=":", linewidth=2, label=r"$+1\sigma$")
+    plt.axvline(mu - sigma, linestyle=":", linewidth=2, label=r"$-1\sigma$")
+
+    plt.xlabel("Detector Power (pW)")
+    plt.ylabel("Normalized Counts")
+
+    plt.title(
+        "Redistribution of Detector Power Across All Detectors\n"
+        f"Mean={mu:.4e} pW, σ={sigma:.4e} pW"
+    )
+
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    simple_ccat.savefig(ANALYSIS_OUTDIR, f"{PREFIX}_reloaded_detector_power_distribution_PWV{PWV_MM:.2f}.png")  
+    plt.close("all")
+
+    # raise SystemExit("Stopping after power distribution plot")
 
 
     print("P shape:", P.shape)
@@ -636,7 +715,7 @@ if __name__ == "__main__":
         delta_f_over_fwhm_list,
         r"Estimated $\Delta f / \mathrm{FWHM}$",
         r"Distribution of Estimated $\Delta f / \mathrm{FWHM}$ for Detectors",
-        f"{PREFIX}_detector_gaussian_delta_f_over_fwhm_histogram_PWV{PWV_MM:.2f}.png"
+        f"{PREFIX}_bogus_detector_gaussian_delta_f_over_fwhm_histogram_PWV{PWV_MM:.2f}.png"
     )
 
 
@@ -684,27 +763,27 @@ if __name__ == "__main__":
     )
     plt.close("all")
 
-    delta_mean_list = []
+    # delta_mean_list = []
 
-    for delta_track in delta_f_over_fwhm_by_detector:
-        delta_mean = np.nanmean(delta_track)
-        delta_mean_list.append(delta_mean)
+    # for delta_track in delta_f_over_fwhm_by_detector:
+    #     delta_mean = np.nanmean(delta_track)
+    #     delta_mean_list.append(delta_mean)
 
-    plt.figure(figsize=(8,6))
-    plt.hist(delta_mean_list, bins=30, alpha=0.7, edgecolor="k")
-    plt.xlabel(r"Mean $\Delta f / \mathrm{FWHM}$")
-    plt.ylabel("Number of Detectors")
-    plt.title(
-        f"Distribution of Mean Fractional Frequency Shifts for Detectors\n"
-        f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
-    )
-    plt.grid(True)
-    simple_ccat.savefig(
-        ANALYSIS_OUTDIR,
-        f"{PREFIX}_detector_mean_fractional_frequency_shift_histogram_PWV{PWV_MM:.2f}.png"
-    )
+    # plt.figure(figsize=(8,6))
+    # plt.hist(delta_mean_list, bins=30, alpha=0.7, edgecolor="k")
+    # plt.xlabel(r"Mean $\Delta f / \mathrm{FWHM}$")
+    # plt.ylabel("Number of Detectors")
+    # plt.title(
+    #     f"Distribution of Mean Fractional Frequency Shifts for Detectors\n"
+    #     f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+    # )
+    # plt.grid(True)
+    # simple_ccat.savefig(
+    #     ANALYSIS_OUTDIR,
+    #     f"{PREFIX}_detector_mean_fractional_frequency_shift_histogram_PWV{PWV_MM:.2f}.png"
+    # )
 
-    plt.close("all")
+    # plt.close("all")
 
     for det_idx in [0, 50, 309, 339, 472, 843]:
 
@@ -745,27 +824,47 @@ if __name__ == "__main__":
 
         plt.close("all")
 
-        two_delta_f_over_fwhm_list = []
-        half_delta_f_over_fwhm_list = []
-        def R(P_W):
-            return R_0 / np.sqrt(1 + P_W / P_0)
+    two_delta_f_over_fwhm_list = []
+    half_delta_f_over_fwhm_list = []
+    delta_f_over_fwhm_by_detector_list = []
+    def R(P_W):
+        return R_0 / np.sqrt(1 + P_W / P_0)
 
-        for det_idx in range(P.shape[0]):
-            P_track_pW = np.asarray(P[det_idx, :], dtype=np.float64)
-            valid = np.isfinite(P_track_pW)
+    for det_idx in range(P.shape[0]):
+        P_track_pW = np.asarray(P[det_idx, :], dtype=np.float64)
+        valid = np.isfinite(P_track_pW)
 
-            P_track_pW = P_track_pW[valid]
-            P_track_W = P_track_pW * 1e-12
+        P_track_pW = P_track_pW[valid]
+        P_track_W = P_track_pW * 1e-12
 
-            P_ref_W = np.nanmean(P_track_W) #mean power for individual reference
+        P_ref_W = np.nanmean(P_track_W) #mean power for individual reference
 
-            delta_f_over_fwhm = Q_r * R(P_ref_W) * (P_track_W - P_ref_W)
+        delta_f_over_fwhm = Q_r * R(P_ref_W) * (P_track_W - P_ref_W)
 
-            two_delta_f_over_fwhm = np.max(delta_f_over_fwhm) - np.min(delta_f_over_fwhm)
-            half_delta_f_over_fwhm = np.abs(two_delta_f_over_fwhm / 2)
-            two_delta_f_over_fwhm_list.append(two_delta_f_over_fwhm)
-            half_delta_f_over_fwhm_list.append(half_delta_f_over_fwhm)
 
+        delta_f_over_fwhm_by_detector_list.append(delta_f_over_fwhm)
+        two_delta_f_over_fwhm = np.max(delta_f_over_fwhm) - np.min(delta_f_over_fwhm)
+        half_delta_f_over_fwhm = np.abs(two_delta_f_over_fwhm / 2)
+        two_delta_f_over_fwhm_list.append(two_delta_f_over_fwhm)
+        half_delta_f_over_fwhm_list.append(half_delta_f_over_fwhm)
+
+    delta_f_over_fwhm_all = np.concatenate(delta_f_over_fwhm_by_detector_list)
+
+
+    plt.figure(figsize=(8,6))
+    plt.hist(delta_f_over_fwhm_all, bins=50, alpha=0.7, edgecolor="k")
+    plt.xlabel(r"Estimated $\Delta f / \mathrm{FWHM}$")
+    plt.ylabel("Number of Samples")
+    plt.title(
+        f"Distribution of Estimated Fractional Frequency Shifts for All Detectors\n"
+        f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+    )
+    plt.grid(True)
+    simple_ccat.savefig(
+        ANALYSIS_OUTDIR,
+        f"{PREFIX}_all_detectors_fractional_frequency_shift_histogram_PWV{PWV_MM:.2f}.png"
+    )
+    plt.close("all")
     make_hist(
         two_delta_f_over_fwhm_list,
         r"$2\Delta f / \mathrm{FWHM}$",
