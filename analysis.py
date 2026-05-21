@@ -1,4 +1,5 @@
 from pathlib import Path
+from turtle import color
 
 import simple_ccat
 from maria import tod
@@ -49,7 +50,7 @@ eta = 0.5
 
 TOTAL_DURATION_S = 1800  # seconds
 SIM_DURATION_S = 1800  # seconds
-SAMPLE_RATE_HZ = 10  # Hz
+SAMPLE_RATE_HZ = 20  # Hz
 SCAN_PATTERN = "daisy"
 CHUNK_NUMBER = 0
 
@@ -65,24 +66,24 @@ print(dir((maria.tod)))
 
 if __name__ == "__main__":
 
-    simple_ccat.tod_analysis(
-    prfx=PREFIX,
-    tod_diagnostics=False,
-    maps = False,
-    save_all_plots = True,
-    run_mode = "fits",
-    atm_plot = True,
-    temp_mode = "inst",
-    ccat_band = "280",
-    map_type = "BM",
-    pwv_mm = PWV_MM,
-    start_time = START_TIME,
-    total_duration_s = TOTAL_DURATION_S,
-    sim_duration_s = SIM_DURATION_S,
-    sample_rate_hz = SAMPLE_RATE_HZ,
-    scan_pattern = SCAN_PATTERN,
-    el_limits=EL_LIMITS,
-    )
+    # simple_ccat.tod_analysis(
+    # prfx=PREFIX,
+    # tod_diagnostics=False,
+    # maps = False,
+    # save_all_plots = True,
+    # run_mode = "fits",
+    # atm_plot = True,
+    # temp_mode = "inst",
+    # ccat_band = "280",
+    # map_type = "BM",
+    # pwv_mm = PWV_MM,
+    # start_time = START_TIME,
+    # total_duration_s = TOTAL_DURATION_S,
+    # sim_duration_s = SIM_DURATION_S,
+    # sample_rate_hz = SAMPLE_RATE_HZ,
+    # scan_pattern = SCAN_PATTERN,
+    # el_limits=EL_LIMITS,
+    # )
 
     site = maria.get_site("cerro_chajnantor", altitude=5600)
 
@@ -118,6 +119,443 @@ if __name__ == "__main__":
     print("RELOADED TOD")
     print("el min/max:", np.nanmin(np.rad2deg(tod.el)), np.nanmax(np.rad2deg(tod.el)))
     print("az min/max:", np.nanmin(np.rad2deg(tod.az)), np.nanmax(np.rad2deg(tod.az)))
+
+
+        #---------------------------------------------------------
+    #--- Velocity and Acceleration Detector Tracking Plots ---
+    #---------------------------------------------------------
+
+    for det_idx in [604]:
+
+        ra_deg_track = np.rad2deg(tod.ra[det_idx, :])
+        dec_deg_track = np.rad2deg(tod.dec[det_idx, :])
+
+        az_deg_track = np.rad2deg(tod.az[det_idx, :])
+        el_deg_track = np.rad2deg(tod.el[det_idx, :])
+
+        time = np.arange(len(ra_deg_track)) / SAMPLE_RATE_HZ
+
+        dt = 1 / SAMPLE_RATE_HZ\
+        
+        valid = np.isfinite(ra_deg_track) & np.isfinite(dec_deg_track)
+
+        ra_deg_track = ra_deg_track[valid]
+        dec_deg_track = dec_deg_track[valid]
+
+        az_deg_track = az_deg_track[valid]
+        el_deg_track = el_deg_track[valid]
+
+        time = time[valid]
+
+        velocity_ra = np.cos(np.radians(dec_deg_track[1:-1])) * (ra_deg_track[2:] - ra_deg_track[:-2]) / (2 * dt)
+        velocity_dec = (dec_deg_track[2:] - dec_deg_track[:-2]) / (2 * dt)
+
+        acceleration_ra = np.cos(np.radians(dec_deg_track[1:-1])) * (ra_deg_track[2:] - 2 * ra_deg_track[1:-1] + ra_deg_track[:-2]) / (dt ** 2)
+        acceleration_dec = (dec_deg_track[2:] - 2 * dec_deg_track[1:-1] + dec_deg_track[:-2]) / (dt ** 2)
+
+        velocity_az = np.cos(np.radians(el_deg_track[1:-1])) * (az_deg_track[2:] - az_deg_track[:-2]) / (2 * dt)
+        velocity_el = (el_deg_track[2:] - el_deg_track[:-2]) / (2 * dt)
+
+        acceleration_az = np.cos(np.radians(el_deg_track[1:-1])) * (az_deg_track[2:] - 2 * az_deg_track[1:-1] + az_deg_track[:-2]) / (dt ** 2)
+        acceleration_el = (el_deg_track[2:] - 2 * el_deg_track[1:-1] + el_deg_track[:-2]) / (dt ** 2)
+
+        magnitude_velocity_ra_dec = np.sqrt(velocity_ra**2 + velocity_dec**2)
+        magnitude_velocity_az_el = np.sqrt(velocity_az**2 + velocity_el**2)
+
+        magnitude_acceleration_ra_dec = np.sqrt(acceleration_ra**2 + acceleration_dec**2)
+        magnitude_acceleration_az_el = np.sqrt(acceleration_az**2 + acceleration_el**2)
+
+        motor_velocity_az = ((az_deg_track[2:] - az_deg_track[:-2]) / (2 * dt))
+
+        motor_velocity_el = velocity_el
+
+        motor_velocity_total = np.sqrt(motor_velocity_az**2 + motor_velocity_el**2)
+
+
+
+
+        
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], velocity_ra, lw=0.5, color="blue", label="RA Velocity")
+        plt.plot(time[1:-1], velocity_dec, lw=0.5, color="orange", label="Dec Velocity")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Velocity (degrees/s)")
+        plt.title(
+            f"Detector {det_idx} Velocity vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_velocity_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], acceleration_ra, lw=0.5, color="blue", label="RA Acceleration")
+        plt.plot(time[1:-1], acceleration_dec, lw=0.5, color="orange", label="Dec Acceleration")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Acceleration (degrees/s^2)")
+        plt.title(
+            f"Detector {det_idx} Acceleration vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_acceleration_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], velocity_az, lw=0.5, color="green", label="Az Velocity")
+        plt.plot(time[1:-1], velocity_el, lw=0.5, color="red", label="El Velocity")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Velocity (degrees/s)")
+        plt.title(
+            f"Detector {det_idx} Az/El Velocity vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_azel_velocity_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], acceleration_az, lw=0.5, color="green", label="Az Acceleration")
+        plt.plot(time[1:-1], acceleration_el, lw=0.5, color="red", label="El Acceleration")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Acceleration (degrees/s^2)")
+        plt.title(
+            f"Detector {det_idx} Az/El Acceleration vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+             f"{PREFIX}_detector_{det_idx}_azel_acceleration_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], magnitude_velocity_ra_dec, lw=0.5, color="blue", label="RA/Dec Velocity")
+        plt.plot(time[1:-1], magnitude_velocity_az_el, lw=0.5, color="green", label="Az/El Velocity")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Velocity (degrees/s)")
+        plt.title(
+            f"Detector {det_idx} Velocity Magnitude Comparison\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+             f"{PREFIX}_detector_{det_idx}_velocity_magnitude_comparison_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], motor_velocity_az, lw=0.5, color="green", label="Motor Az Velocity")
+        plt.plot(time[1:-1], motor_velocity_el, lw=0.5, color="red", label="Motor El Velocity")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Velocity (degrees/s)")
+        plt.title(
+            f"Detector {det_idx} Motor Velocity vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_motor_velocity_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], magnitude_acceleration_ra_dec, lw=0.5, color="blue", label="RA/Dec Acceleration")
+        plt.plot(time[1:-1], magnitude_acceleration_az_el, lw=0.5, color="green", label="Az/El Acceleration")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Acceleration (degrees/s^2)")
+        plt.title(
+            f"Detector {det_idx} Acceleration Magnitude Comparison\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+             f"{PREFIX}_detector_{det_idx}_acceleration_magnitude_comparison_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        # -------------------------------------------------
+        # RA Velocity
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], velocity_ra, lw=0.5, color="blue")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("RA Velocity (degrees/s)")
+
+        plt.title(
+            f"Detector {det_idx} RA Velocity vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_ra_velocity_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+        # -------------------------------------------------
+        # Dec Velocity
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], velocity_dec, lw=0.5, color="orange")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("Dec Velocity (degrees/s)")
+
+        plt.title(
+            f"Detector {det_idx} Dec Velocity vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_dec_velocity_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+        # -------------------------------------------------
+        # RA Acceleration
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], acceleration_ra, lw=0.5, color="blue")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("RA Acceleration (degrees/s$^2$)")
+
+        plt.title(
+            f"Detector {det_idx} RA Acceleration vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_ra_acceleration_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+        # -------------------------------------------------
+        # Dec Acceleration
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], acceleration_dec, lw=0.5, color="orange")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("Dec Acceleration (degrees/s$^2$)")
+
+        plt.title(
+            f"Detector {det_idx} Dec Acceleration vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_dec_acceleration_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+        # -------------------------------------------------
+        # Projected Az Velocity
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], velocity_az, lw=0.5, color="green")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("Projected Az Velocity (degrees/s)")
+
+        plt.title(
+            f"Detector {det_idx} Projected Az Velocity vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_projected_az_velocity_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+        # -------------------------------------------------
+        # Elevation Velocity
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], velocity_el, lw=0.5, color="red")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("Elevation Velocity (degrees/s)")
+
+        plt.title(
+            f"Detector {det_idx} Elevation Velocity vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_el_velocity_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+        # -------------------------------------------------
+        # Projected Az Acceleration
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], acceleration_az, lw=0.5, color="green")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("Projected Az Acceleration (degrees/s$^2$)")
+
+        plt.title(
+            f"Detector {det_idx} Projected Az Acceleration vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_projected_az_acceleration_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+        # -------------------------------------------------
+        # Elevation Acceleration
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], acceleration_el, lw=0.5, color="red")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("Elevation Acceleration (degrees/s$^2$)")
+
+        plt.title(
+            f"Detector {det_idx} Elevation Acceleration vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_el_acceleration_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+        # -------------------------------------------------
+        # RA/Dec Velocity Magnitude
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], magnitude_velocity_ra_dec, lw=0.5, color="blue")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("RA/Dec Velocity Magnitude (degrees/s)")
+
+        plt.title(
+            f"Detector {det_idx} RA/Dec Velocity Magnitude vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_radec_velocity_magnitude_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+        # -------------------------------------------------
+        # Az/El Velocity Magnitude
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], magnitude_velocity_az_el, lw=0.5, color="green")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("Az/El Velocity Magnitude (degrees/s)")
+
+        plt.title(
+            f"Detector {det_idx} Az/El Velocity Magnitude vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_azel_velocity_magnitude_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+    # raise SystemExit("Stopping after velocity and acceleration plots")
 
     P_det = tod.to("pW").signal
     P = np.asarray(P_det, dtype=np.float64)  # Convert to numpy array for calculations
@@ -1105,6 +1543,475 @@ for det_idx in [0, 50, 309, 339, 472, 843]:\
 
     plt.close("all")
 
+        #---------------------------------------------------------
+    #--- Velocity and Acceleration Detector Tracking Plots ---
+    #---------------------------------------------------------
+
+    for det_idx in [604]:
+
+        P_track_pW = np.asarray(P[det_idx, :], dtype=np.float64)
+
+        ra_deg_track = np.rad2deg(tod.ra[det_idx, :])
+        dec_deg_track = np.rad2deg(tod.dec[det_idx, :])
+
+        az_deg_track = np.rad2deg(tod.az[det_idx, :])
+        el_deg_track = np.rad2deg(tod.el[det_idx, :])
+
+        time = np.arange(len(ra_deg_track)) / SAMPLE_RATE_HZ
+
+        dt = 1 / SAMPLE_RATE_HZ\
+        
+        valid = (
+            np.isfinite(P_track_pW)
+            & np.isfinite(ra_deg_track)
+            & np.isfinite(dec_deg_track)
+            & np.isfinite(az_deg_track)
+            & np.isfinite(el_deg_track)
+        )
+
+        P_track_pW = P_track_pW[valid]
+
+        ra_deg_track = ra_deg_track[valid]
+        dec_deg_track = dec_deg_track[valid]
+
+        az_deg_track = az_deg_track[valid]
+        el_deg_track = el_deg_track[valid]
+
+        time = time[valid]
+
+        velocity_ra = np.cos(np.radians(dec_deg_track[1:-1])) * (ra_deg_track[2:] - ra_deg_track[:-2]) / (2 * dt)
+        velocity_dec = (dec_deg_track[2:] - dec_deg_track[:-2]) / (2 * dt)
+
+        acceleration_ra = np.cos(np.radians(dec_deg_track[1:-1])) * (ra_deg_track[2:] - 2 * ra_deg_track[1:-1] + ra_deg_track[:-2]) / (dt ** 2)
+        acceleration_dec = (dec_deg_track[2:] - 2 * dec_deg_track[1:-1] + dec_deg_track[:-2]) / (dt ** 2)
+
+        velocity_az = np.cos(np.radians(el_deg_track[1:-1])) * (az_deg_track[2:] - az_deg_track[:-2]) / (2 * dt)
+        velocity_el = (el_deg_track[2:] - el_deg_track[:-2]) / (2 * dt)
+
+        acceleration_az = np.cos(np.radians(el_deg_track[1:-1])) * (az_deg_track[2:] - 2 * az_deg_track[1:-1] + az_deg_track[:-2]) / (dt ** 2)
+        acceleration_el = (el_deg_track[2:] - 2 * el_deg_track[1:-1] + el_deg_track[:-2]) / (dt ** 2)
+
+        magnitude_velocity_ra_dec = np.sqrt(velocity_ra**2 + velocity_dec**2)
+        magnitude_velocity_az_el = np.sqrt(velocity_az**2 + velocity_el**2)
+
+        magnitude_acceleration_ra_dec = np.sqrt(acceleration_ra**2 + acceleration_dec**2)
+        magnitude_acceleration_az_el = np.sqrt(acceleration_az**2 + acceleration_el**2)
+
+        motor_velocity_az = ((az_deg_track[2:] - az_deg_track[:-2]) / (2 * dt))
+
+        motor_velocity_el = velocity_el
+
+        motor_velocity_total = np.sqrt(motor_velocity_az**2 + motor_velocity_el**2)
+
+        P_mid_pW = P_track_pW[1:-1]
+
+
+        
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], velocity_ra, lw=0.5, color="blue", label="RA Velocity")
+        plt.plot(time[1:-1], velocity_dec, lw=0.5, color="orange", label="Dec Velocity")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Velocity (degrees/s)")
+        plt.title(
+            f"Detector {det_idx} Velocity vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_velocity_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], acceleration_ra, lw=0.5, color="blue", label="RA Acceleration")
+        plt.plot(time[1:-1], acceleration_dec, lw=0.5, color="orange", label="Dec Acceleration")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Acceleration (degrees/s^2)")
+        plt.title(
+            f"Detector {det_idx} Acceleration vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_acceleration_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], velocity_az, lw=0.5, color="green", label="Az Velocity")
+        plt.plot(time[1:-1], velocity_el, lw=0.5, color="red", label="El Velocity")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Velocity (degrees/s)")
+        plt.title(
+            f"Detector {det_idx} Az/El Velocity vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_azel_velocity_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], acceleration_az, lw=0.5, color="green", label="Az Acceleration")
+        plt.plot(time[1:-1], acceleration_el, lw=0.5, color="red", label="El Acceleration")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Acceleration (degrees/s^2)")
+        plt.title(
+            f"Detector {det_idx} Az/El Acceleration vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+             f"{PREFIX}_detector_{det_idx}_azel_acceleration_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], magnitude_velocity_ra_dec, lw=0.5, color="blue", label="RA/Dec Velocity")
+        plt.plot(time[1:-1], magnitude_velocity_az_el, lw=0.5, color="green", label="Az/El Velocity")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Velocity (degrees/s)")
+        plt.title(
+            f"Detector {det_idx} Velocity Magnitude Comparison\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+             f"{PREFIX}_detector_{det_idx}_velocity_magnitude_comparison_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], motor_velocity_az, lw=0.5, color="green", label="Motor Az Velocity")
+        plt.plot(time[1:-1], motor_velocity_el, lw=0.5, color="red", label="Motor El Velocity")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Velocity (degrees/s)")
+        plt.title(
+            f"Detector {det_idx} Motor Velocity vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_motor_velocity_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], magnitude_acceleration_ra_dec, lw=0.5, color="blue", label="RA/Dec Acceleration")
+        plt.plot(time[1:-1], magnitude_acceleration_az_el, lw=0.5, color="green", label="Az/El Acceleration")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Acceleration (degrees/s^2)")
+        plt.title(
+            f"Detector {det_idx} Acceleration Magnitude Comparison\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+             f"{PREFIX}_detector_{det_idx}_acceleration_magnitude_comparison_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        # -------------------------------------------------
+        # RA Velocity
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], velocity_ra, lw=0.5, color="blue")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("RA Velocity (degrees/s)")
+
+        plt.title(
+            f"Detector {det_idx} RA Velocity vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_ra_velocity_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+        # -------------------------------------------------
+        # Dec Velocity
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], velocity_dec, lw=0.5, color="orange")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("Dec Velocity (degrees/s)")
+
+        plt.title(
+            f"Detector {det_idx} Dec Velocity vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_dec_velocity_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+        # -------------------------------------------------
+        # RA Acceleration
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], acceleration_ra, lw=0.5, color="blue")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("RA Acceleration (degrees/s$^2$)")
+
+        plt.title(
+            f"Detector {det_idx} RA Acceleration vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_ra_acceleration_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+        # -------------------------------------------------
+        # Dec Acceleration
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], acceleration_dec, lw=0.5, color="orange")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("Dec Acceleration (degrees/s$^2$)")
+
+        plt.title(
+            f"Detector {det_idx} Dec Acceleration vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_dec_acceleration_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+        # -------------------------------------------------
+        # Projected Az Velocity
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], velocity_az, lw=0.5, color="green")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("Projected Az Velocity (degrees/s)")
+
+        plt.title(
+            f"Detector {det_idx} Projected Az Velocity vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_projected_az_velocity_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+        # -------------------------------------------------
+        # Elevation Velocity
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], velocity_el, lw=0.5, color="red")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("Elevation Velocity (degrees/s)")
+
+        plt.title(
+            f"Detector {det_idx} Elevation Velocity vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_el_velocity_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+        # -------------------------------------------------
+        # Projected Az Acceleration
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], acceleration_az, lw=0.5, color="green")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("Projected Az Acceleration (degrees/s$^2$)")
+
+        plt.title(
+            f"Detector {det_idx} Projected Az Acceleration vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_projected_az_acceleration_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+        # -------------------------------------------------
+        # Elevation Acceleration
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], acceleration_el, lw=0.5, color="red")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("Elevation Acceleration (degrees/s$^2$)")
+
+        plt.title(
+            f"Detector {det_idx} Elevation Acceleration vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_el_acceleration_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+        # -------------------------------------------------
+        # RA/Dec Velocity Magnitude
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], magnitude_velocity_ra_dec, lw=0.5, color="blue")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("RA/Dec Velocity Magnitude (degrees/s)")
+
+        plt.title(
+            f"Detector {det_idx} RA/Dec Velocity Magnitude vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_radec_velocity_magnitude_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+        # -------------------------------------------------
+        # Az/El Velocity Magnitude
+        # -------------------------------------------------
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], magnitude_velocity_az_el, lw=0.5, color="green")
+
+        plt.xlabel("Time (s)")
+        plt.ylabel("Az/El Velocity Magnitude (degrees/s)")
+
+        plt.title(
+            f"Detector {det_idx} Az/El Velocity Magnitude vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+
+        plt.grid(True)
+
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_azel_velocity_magnitude_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+
+        plt.close("all")
+
+
+    # raise SystemExit("Stopping after velocity and acceleration plots")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(velocity_el, P_mid_pW, lw=0.5, color="black")
+        plt.xlabel("Detector Power (pW)")
+        plt.ylabel("Velocity (deg/s)")
+        plt.title(f"Detector {det_idx} Velocity vs Power\nPWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}")
+        plt.grid(True)
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_velocity_vs_power_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(velocity_az, P_mid_pW, lw=0.5, color="black")
+        plt.xlabel("Detector Power (pW)")
+        plt.ylabel("Velocity (deg/s)")
+        plt.title(f"Detector {det_idx} Velocity vs Power\nPWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}")
+        plt.grid(True)
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_velocity_az_vs_power_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
 
 
 
