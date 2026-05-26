@@ -68,7 +68,7 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 CUTOUT = CUTOUT_ORIONA
 
 
-PREFIX = "OrionA_45_tod"#_850GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized
+PREFIX = "OrionA_65_tod"#_850GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 
 ANALYSIS_OUTDIR = Path(f"outputs/{PREFIX}_analysis_outputs")
@@ -1848,7 +1848,7 @@ def main(
 # ----------------------------------------------
 
 def tod_analysis(
-    prfx: str = PREFIX,
+    PREFIX: str = PREFIX,
     tod_diagnostics: bool = True,
     maps = False,
     save_all_plots: bool = False,

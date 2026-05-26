@@ -27,7 +27,7 @@ PWV_MM = 0.36  #  mm, precip water vapour this only affects the main if pwv is N
 
 # 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values for Chajnantor
 
-EL_LIMITS = (45, 55)  # degrees
+EL_LIMITS = (65, 75)  # degrees
 
 T_0 = 278.868 #K, atmospheric ground temp
 
@@ -54,7 +54,7 @@ SAMPLE_RATE_HZ = 20  # Hz
 SCAN_PATTERN = "daisy"
 CHUNK_NUMBER = 0
 
-PREFIX = "OrionA_45_tod"
+PREFIX = "OrionA_65_tod"
 ANALYSIS_OUTDIR = Path(f"outputs/{PREFIX}_analysis_outputs")
 TOD_OUTDIR = Path(f"outputs/{PREFIX}_tod_files")
 
@@ -66,24 +66,43 @@ print(dir((maria.tod)))
 
 if __name__ == "__main__":
 
-    # simple_ccat.tod_analysis(
-    # prfx=PREFIX,
-    # tod_diagnostics=False,
-    # maps = False,
-    # save_all_plots = True,
-    # run_mode = "fits",
-    # atm_plot = True,
-    # temp_mode = "inst",
-    # ccat_band = "280",
-    # map_type = "BM",
-    # pwv_mm = PWV_MM,
-    # start_time = START_TIME,
-    # total_duration_s = TOTAL_DURATION_S,
-    # sim_duration_s = SIM_DURATION_S,
-    # sample_rate_hz = SAMPLE_RATE_HZ,
-    # scan_pattern = SCAN_PATTERN,
-    # el_limits=EL_LIMITS,
-    # )
+    simple_ccat.tod_analysis(
+    PREFIX=PREFIX,
+    tod_diagnostics=False,
+    maps = False,
+    save_all_plots = True,
+    run_mode = "fits",
+    atm_plot = True,
+    temp_mode = "inst",
+    ccat_band = "280",
+    map_type = "BM",
+    pwv_mm = PWV_MM,
+    start_time = START_TIME,
+    total_duration_s = TOTAL_DURATION_S,
+    sim_duration_s = SIM_DURATION_S,
+    sample_rate_hz = SAMPLE_RATE_HZ,
+    scan_pattern = SCAN_PATTERN,
+    el_limits=EL_LIMITS,
+    )
+
+    fits_path = TOD_OUTDIR / f"{PREFIX}_dim_reduced_tods.fits"
+
+    print("\nChecking FITS output")
+    print("--------------------")
+    print("Expected path:", fits_path)
+    print("Exists:", fits_path.exists())
+
+    if TOD_OUTDIR.exists():
+        print("Files in directory:")
+        for f in TOD_OUTDIR.iterdir():
+            print("  ", f)
+    else:
+        print("TOD directory does not exist")
+
+        if not fits_path.exists():
+            print("FITS file does not exist. Check if the simulation ran successfully and saved the output.")
+            raise FileNotFoundError(f"Expected FITS file not found at {fits_path}")
+        
 
     site = maria.get_site("cerro_chajnantor", altitude=5600)
 
