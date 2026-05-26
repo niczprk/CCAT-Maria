@@ -109,6 +109,8 @@ PWV_MM = 0.36  #  mm, precip water vapour this only affects the main if pwv is N
 
 EL_LIMITS = (45, 55)  # degrees
 
+SPEED = 0.1 #deg
+
 T_0 = 278.868 #K, atmospheric ground temp
 
 
@@ -1864,6 +1866,7 @@ def tod_analysis(
     sample_rate_hz: int = SAMPLE_RATE_HZ,
     scan_pattern: str = SCAN_PATTERN,
     el_limits: Tuple[float, float] = EL_LIMITS,
+    speed: float = SPEED,
 ) -> None:
     """
     run_mode options:
@@ -1983,7 +1986,7 @@ def tod_analysis(
         max_chunk_duration=sim_duration_s,
         scan_pattern=scan_pattern,
         sample_rate = sample_rate_hz,
-        scan_options={"radius": reduced_map_jysr.width.deg / 3.0},
+        scan_options={"radius": reduced_map_jysr.width.deg / 3.0, "speed": speed},
     )
     if save_all_plots:
         plans[0].plot()

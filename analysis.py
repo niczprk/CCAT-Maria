@@ -28,6 +28,7 @@ PWV_MM = 0.36  #  mm, precip water vapour this only affects the main if pwv is N
 # 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values for Chajnantor
 
 EL_LIMITS = (65, 75)  # degrees
+SPEED  = 0.2 # deg/s, this is a guess for now but should be in the right ballpark for a daisy scan at 30-40 deg elevation with a 3 degree radius
 
 T_0 = 278.868 #K, atmospheric ground temp
 
@@ -82,7 +83,8 @@ if __name__ == "__main__":
     sim_duration_s = SIM_DURATION_S,
     sample_rate_hz = SAMPLE_RATE_HZ,
     scan_pattern = SCAN_PATTERN,
-    el_limits=EL_LIMITS,
+    el_limits = EL_LIMITS,
+    speed = SPEED
     )
 
     fits_path = TOD_OUTDIR / f"{PREFIX}_dim_reduced_tods.fits"
