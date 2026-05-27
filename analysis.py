@@ -172,6 +172,10 @@ if __name__ == "__main__":
         motor_velocity_total = np.sqrt(motor_velocity_az**2 + motor_velocity_el**2)
 
 
+        mag_ratio_vel = magnitude_velocity_az_el / magnitude_velocity_ra_dec
+
+        mag_ratio_acc = magnitude_acceleration_az_el / magnitude_acceleration_ra_dec
+
 
 
         
@@ -194,6 +198,24 @@ if __name__ == "__main__":
         plt.close("all")
 
         plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], velocity_ra, lw=0.5, color="green", label="RA Velocity")
+        plt.plot(time[1:-1], velocity_dec, lw=0.5, color="blue", label="Dec Velocity")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Velocity (degrees/s)")
+        plt.title(
+            f"Zoomed In Detector {det_idx} RA/Dec Velocity vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.xlim(100, 200)  # Zoom in on the 100-200 second range
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_zoomed_detector_{det_idx}_ra_dec_velocity_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
         plt.plot(time[1:-1], acceleration_ra, lw=0.5, color="blue", label="RA Acceleration")
         plt.plot(time[1:-1], acceleration_dec, lw=0.5, color="orange", label="Dec Acceleration")
         plt.xlabel("Time (s)")
@@ -207,6 +229,24 @@ if __name__ == "__main__":
         simple_ccat.savefig(
             ANALYSIS_OUTDIR,
             f"{PREFIX}_detector_{det_idx}_acceleration_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], acceleration_ra, lw=0.5, color="green", label="RA Acceleration")
+        plt.plot(time[1:-1], acceleration_dec, lw=0.5, color="blue", label="Dec Acceleration")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Acceleration (degrees/s^2)")
+        plt.title(
+            f"Zoomed In Detector {det_idx} RA/Dec Acceleration vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.xlim(100, 200)  # Zoom in on the 100-200 second range
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_zoomed_detector_{det_idx}_ra_dec_acceleration_vs_time_PWV{PWV_MM:.2f}.png"
         )
         plt.close("all")
 
@@ -228,6 +268,24 @@ if __name__ == "__main__":
         plt.close("all")
 
         plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], velocity_az, lw=0.5, color="green", label="Az Velocity")
+        plt.plot(time[1:-1], velocity_el, lw=0.5, color="red", label="El Velocity")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Velocity (degrees/s)")
+        plt.title(
+            f"Zoomed In Detector {det_idx} Az/El Velocity vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.xlim(100, 200)  # Zoom in on the 100-200 second range
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_zoomed_detector_{det_idx}_azel_velocity_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
         plt.plot(time[1:-1], acceleration_az, lw=0.5, color="green", label="Az Acceleration")
         plt.plot(time[1:-1], acceleration_el, lw=0.5, color="red", label="El Acceleration")
         plt.xlabel("Time (s)")
@@ -241,6 +299,24 @@ if __name__ == "__main__":
         simple_ccat.savefig(
             ANALYSIS_OUTDIR,
              f"{PREFIX}_detector_{det_idx}_azel_acceleration_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+    
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], acceleration_az, lw=0.5, color="green", label="Az Acceleration")
+        plt.plot(time[1:-1], acceleration_el, lw=0.5, color="red", label="El Acceleration")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Acceleration (degrees/s^2)")
+        plt.title(
+            f"Zoomed In Detector {det_idx} Az/El Acceleration vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.xlim(100, 200)  # Zoom in on the 100-200 second range
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_zoomed_detector_{det_idx}_azel_acceleration_vs_time_PWV{PWV_MM:.2f}.png"
         )
         plt.close("all")
 
@@ -262,6 +338,90 @@ if __name__ == "__main__":
         plt.close("all")
 
         plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], magnitude_velocity_ra_dec, lw=0.5, color="blue", label="RA/Dec Velocity")
+        plt.plot(time[1:-1], magnitude_velocity_az_el, lw=0.5, color="green", label="Az/El Velocity")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Velocity (degrees/s)")
+        plt.title(
+            f"Zoomed In Detector {det_idx} RA/Dec Velocity Magnitude vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.xlim(100, 200)  # Zoom in on the 100-200 second range
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_zoomed_detector_{det_idx}_ra_dec_velocity_magnitude_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], mag_ratio_vel, lw=0.5, color="purple", label="Az/El Velocity / RA/Dec Velocity")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Velocity Ratio")
+        plt.title(
+            f"Detector {det_idx} Velocity Ratio Comparison\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_velocity_ratio_comparison_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], mag_ratio_vel, lw=0.5, color="purple", label="Az/El Velocity / RA/Dec Velocity")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Velocity Ratio")
+        plt.title(
+            f"Zoomed In Detector {det_idx} Velocity Ratio Comparison\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.xlim(100, 200)  # Zoom in on the 100-200 second range
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_zoomed_detector_{det_idx}_velocity_ratio_comparison_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], mag_ratio_acc, lw=0.5, color="purple", label="Az/El Acceleration / RA/Dec Acceleration")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Acceleration Ratio")
+        plt.title(
+            f"Detector {det_idx} Acceleration Ratio Comparison\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_detector_{det_idx}_acceleration_ratio_comparison_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], mag_ratio_acc, lw=0.5, color="purple", label="Az/El Acceleration / RA/Dec Acceleration")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Acceleration Ratio")
+        plt.title(
+            f"Zoomed In Detector {det_idx} Acceleration Ratio Comparison\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.xlim(100, 200)  # Zoom in on the 100-200 second range
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_zoomed_detector_{det_idx}_acceleration_ratio_comparison_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
         plt.plot(time[1:-1], motor_velocity_az, lw=0.5, color="green", label="Motor Az Velocity")
         plt.plot(time[1:-1], motor_velocity_el, lw=0.5, color="red", label="Motor El Velocity")
         plt.xlabel("Time (s)")
@@ -275,6 +435,24 @@ if __name__ == "__main__":
         simple_ccat.savefig(
             ANALYSIS_OUTDIR,
             f"{PREFIX}_detector_{det_idx}_motor_velocity_vs_time_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], motor_velocity_az, lw=0.5, color="green", label="Motor Az Velocity")
+        plt.plot(time[1:-1], motor_velocity_el, lw=0.5, color="red", label="Motor El Velocity")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Velocity (degrees/s)")
+        plt.title(
+            f"Zoomed In Detector {det_idx} Motor Velocity vs Time\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.xlim(100, 200)  # Zoom in on the 100-200 second range
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_zoomed_detector_{det_idx}_motor_velocity_vs_time_PWV{PWV_MM:.2f}.png"
         )
         plt.close("all")
 
@@ -295,6 +473,23 @@ if __name__ == "__main__":
         )
         plt.close("all")
 
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], magnitude_acceleration_ra_dec, lw=0.5, color="blue", label="RA/Dec Acceleration")
+        plt.plot(time[1:-1], magnitude_acceleration_az_el, lw=0.5, color="green", label="Az/El Acceleration")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Acceleration (degrees/s^2)")
+        plt.title(
+            f"Zoomed In Detector {det_idx} Acceleration Magnitude Comparison\n"
+            f"PWV={PWV_MM:.2f} mm, $\\eta$={eta:.2f}"
+        )
+        plt.grid(True)
+        plt.xlim(100, 200)  # Zoom in on the 100-200 second range
+        plt.legend()
+        simple_ccat.savefig(
+            ANALYSIS_OUTDIR,
+            f"{PREFIX}_zoomed_detector_{det_idx}_acceleration_magnitude_comparison_PWV{PWV_MM:.2f}.png"
+        )
+        plt.close("all")
         # -------------------------------------------------
         # RA Velocity
         # -------------------------------------------------
@@ -555,7 +750,7 @@ if __name__ == "__main__":
         plt.close("all")
 
 
-    # raise SystemExit("Stopping after velocity and acceleration plots")
+    raise SystemExit("Stopping after velocity and acceleration plots")
 
     P_det = tod.to("pW").signal
     P = np.asarray(P_det, dtype=np.float64)  # Convert to numpy array for calculations
