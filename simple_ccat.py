@@ -68,7 +68,7 @@ CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0
 CUTOUT = CUTOUT_ORIONA
 
 
-PREFIX = "OrionA_45_tod"#_850GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized
+PREFIX = "OrionA_65_tod"#_850GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 
 ANALYSIS_OUTDIR = Path(f"outputs/{PREFIX}_analysis_outputs")
@@ -108,6 +108,8 @@ PWV_MM = 0.36  #  mm, precip water vapour this only affects the main if pwv is N
 # 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values for Chajnantor
 
 EL_LIMITS = (45, 55)  # degrees
+
+SPEED = 0.1 #deg
 
 T_0 = 278.868 #K, atmospheric ground temp
 
@@ -1848,7 +1850,7 @@ def main(
 # ----------------------------------------------
 
 def tod_analysis(
-    prfx: str = PREFIX,
+    PREFIX: str = PREFIX,
     tod_diagnostics: bool = True,
     maps = False,
     save_all_plots: bool = False,
@@ -1864,6 +1866,7 @@ def tod_analysis(
     sample_rate_hz: int = SAMPLE_RATE_HZ,
     scan_pattern: str = SCAN_PATTERN,
     el_limits: Tuple[float, float] = EL_LIMITS,
+    speed: float = SPEED,
 ) -> None:
     """
     run_mode options:
@@ -1983,7 +1986,7 @@ def tod_analysis(
         max_chunk_duration=sim_duration_s,
         scan_pattern=scan_pattern,
         sample_rate = sample_rate_hz,
-        scan_options={"radius": reduced_map_jysr.width.deg / 3.0},
+        scan_options={"radius": reduced_map_jysr.width.deg / 3.0, "speed": speed},
     )
     if save_all_plots:
         plans[0].plot()
