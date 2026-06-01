@@ -67,25 +67,261 @@ print(dir((maria.tod)))
 
 if __name__ == "__main__":
 
-    simple_ccat.tod_analysis(
-    PREFIX=PREFIX,
-    tod_diagnostics=False,
-    maps = False,
-    save_all_plots = True,
-    run_mode = "fits",
-    atm_plot = True,
-    temp_mode = "inst",
-    ccat_band = "280",
-    map_type = "BM",
-    pwv_mm = PWV_MM,
-    start_time = START_TIME,
-    total_duration_s = TOTAL_DURATION_S,
-    sim_duration_s = SIM_DURATION_S,
-    sample_rate_hz = SAMPLE_RATE_HZ,
-    scan_pattern = SCAN_PATTERN,
-    el_limits = EL_LIMITS,
-    speed = SPEED
+    # simple_ccat.tod_analysis(
+    # PREFIX=PREFIX,
+    # tod_diagnostics=False,
+    # maps = False,
+    # save_all_plots = True,
+    # run_mode = "fits",
+    # atm_plot = True,
+    # temp_mode = "inst",
+    # ccat_band = "280",
+    # map_type = "BM",
+    # pwv_mm = PWV_MM,
+    # start_time = START_TIME,
+    # total_duration_s = TOTAL_DURATION_S,
+    # sim_duration_s = SIM_DURATION_S,
+    # sample_rate_hz = SAMPLE_RATE_HZ,
+    # scan_pattern = SCAN_PATTERN,
+    # el_limits = EL_LIMITS,
+    # speed = SPEED
+    # )
+
+    # -------------------------------------------------
+    # Variable Speed Analysis
+    # -------------------------------------------------
+    speed_list = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0]
+
+    start_time_dict = {
+        "30deg": "2022-02-10T17:00:00",
+        "40deg": "2022-02-10T18:30:00",
+        "45deg": "2022-02-10T18:55:00",
+        "60deg": "2022-02-10T20:30:00",
+        "75deg": "2022-02-10T22:45:00",
+    }
+
+    motion_results = []
+
+    site = maria.get_site("cerro_chajnantor", altitude=5600)
+
+    band = Band(
+        name="m2/f093",
+        center=280e9,
+        width=60e9,
+        efficiency=eta,
+        NET_CMB=13e-6,
+        knee=1.0,
+        gain_error=5e-2,
     )
+
+    for elev_label, start_time in start_time_dict.items():
+
+        for spd in speed_list:
+
+            run_prefix = f"OrionA_{elev_label}_speed_{spd:.1f}".replace(".", "p")
+
+            run_analysis_outdir = Path(f"outputs/{run_prefix}_analysis_outputs")
+            run_tod_outdir = Path(f"outputs/{run_prefix}_tod_files")
+
+            print("\nRunning simulation")
+            print("------------------")
+            print("Elevation label:", elev_label)
+            print("Start time:", start_time)
+            print("Speed:", spd)
+            print("Prefix:", run_prefix)
+
+            simple_ccat.tod_analysis(
+                PREFIX=run_prefix,
+                tod_diagnostics=False,
+                maps=False,
+                save_all_plots=False,
+                run_mode="fits",
+                atm_plot=False,
+                temp_mode="inst",
+                ccat_band="280",
+                map_type="BM",
+                pwv_mm=PWV_MM,
+                start_time=start_time,
+                total_duration_s=TOTAL_DURATION_S,
+                sim_duration_s=SIM_DURATION_S,
+                sample_rate_hz=SAMPLE_RATE_HZ,
+                scan_pattern=SCAN_PATTERN,
+                el_limits=EL_LIMITS,
+                speed=spd,
+            )
+
+            fits_path = run_tod_outdir / f"{run_prefix}_dim_reduced_tods.fits"
+
+            if not fits_path.exists():
+                print(f"Missing FITS file for {run_prefix}")
+                continue
+
+            tod = maria.tod.load(fits_path, site=site, bands=[band])
+
+            global_max_az_vel = 0.0
+            global_max_el_vel = 0.0
+            global_max_az_acc = 0.0
+            global_max_el_acc = 0.0
+
+            mean_el_list = []
+
+            for det_idx in [604]:
+
+                az_deg_track = np.rad2deg(tod.az[det_idx, :])
+                el_deg_track = np.rad2deg(tod.el[det_idx, :])
+
+                time = np.arange(len(az_deg_track)) / SAMPLE_RATE_HZ
+                dt = 1 / SAMPLE_RATE_HZ
+
+                valid = np.isfinite(az_deg_track) & np.isfinite(el_deg_track)
+
+                az_deg_track = az_deg_track[valid]
+                el_deg_track = el_deg_track[valid]
+
+                if len(az_deg_track) < 3:
+                    continue
+
+                mean_el_list.append(np.nanmean(el_deg_track))
+
+                # Projected angular velocity on sky
+                projected_velocity_az = (
+                    np.cos(np.radians(el_deg_track[1:-1]))
+                    * (az_deg_track[2:] - az_deg_track[:-2])
+                    / (2 * dt)
+                )
+
+                velocity_el = (
+                    (el_deg_track[2:] - el_deg_track[:-2])
+                    / (2 * dt)
+                )
+
+                projected_acceleration_az = (
+                    np.cos(np.radians(el_deg_track[1:-1]))
+                    * (az_deg_track[2:] - 2 * az_deg_track[1:-1] + az_deg_track[:-2])
+                    / (dt ** 2)
+                )
+
+                acceleration_el = (
+                    (el_deg_track[2:] - 2 * el_deg_track[1:-1] + el_deg_track[:-2])
+                    / (dt ** 2)
+                )
+
+                # Actual azimuth motor motion, without cos(el)
+                motor_velocity_az = (
+                    (az_deg_track[2:] - az_deg_track[:-2])
+                    / (2 * dt)
+                )
+
+                motor_acceleration_az = (
+                    (az_deg_track[2:] - 2 * az_deg_track[1:-1] + az_deg_track[:-2])
+                    / (dt ** 2)
+                )
+
+                global_max_az_vel = max(
+                    global_max_az_vel,
+                    np.nanmax(np.abs(motor_velocity_az))
+                )
+
+                global_max_el_vel = max(
+                    global_max_el_vel,
+                    np.nanmax(np.abs(velocity_el))
+                )
+
+                global_max_az_acc = max(
+                    global_max_az_acc,
+                    np.nanmax(np.abs(motor_acceleration_az))
+                )
+
+                global_max_el_acc = max(
+                    global_max_el_acc,
+                    np.nanmax(np.abs(acceleration_el))
+                )
+
+            mean_elevation = np.nanmean(mean_el_list)
+
+            az_speed_limit = 3.0
+            el_speed_limit = 1.5
+            az_acc_limit = 6.0
+            el_acc_limit = 1.5
+
+            passes_limits = (
+                global_max_az_vel < az_speed_limit
+                and global_max_el_vel < el_speed_limit
+                and global_max_az_acc < az_acc_limit
+                and global_max_el_acc < el_acc_limit
+            )
+
+            motion_results.append({
+                "elevation_label": elev_label,
+                "start_time": start_time,
+                "mean_elevation_deg": mean_elevation,
+                "input_speed_deg_s": spd,
+                "max_az_velocity_deg_s": global_max_az_vel,
+                "max_el_velocity_deg_s": global_max_el_vel,
+                "max_az_acceleration_deg_s2": global_max_az_acc,
+                "max_el_acceleration_deg_s2": global_max_el_acc,
+                "passes_limits": passes_limits,
+            })
+
+            print("\nMotion summary")
+            print("--------------")
+            print(f"Mean elevation: {mean_elevation:.2f} deg")
+            print(f"Input speed: {spd:.2f} deg/s")
+            print(f"Max AZ velocity: {global_max_az_vel:.3f} deg/s")
+            print(f"Max EL velocity: {global_max_el_vel:.3f} deg/s")
+            print(f"Max AZ acceleration: {global_max_az_acc:.3f} deg/s^2")
+            print(f"Max EL acceleration: {global_max_el_acc:.3f} deg/s^2")
+            print(f"Passes limits: {passes_limits}")
+
+
+    import csv 
+
+    if len(motion_results) == 0:
+        print("No motion results to save, skipping CSV output")
+        raise RuntimeError("No motion results to save, exiting")
+
+    csv_path = Path("outputs/maria_speed_elevation_motion_limits.csv")
+
+    with open(csv_path, mode="w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=motion_results[0].keys())
+        writer.writeheader()
+        for row in motion_results:
+            writer.writerow(row)
+
+    print(f"\nMotion results saved to {csv_path}")
+
+    import pandas as pd
+
+
+    df = pd.DataFrame(motion_results)
+
+    plt.figure(figsize=(8, 6))
+
+    for elev_label in df["elevation_label"].unique():
+        sub = df[df["elevation_label"] == elev_label]
+        plt.plot(
+            sub["input_speed_deg_s"],
+            sub["max_az_acceleration_deg_s2"],
+            marker="o",
+            label=elev_label,
+        )
+
+    plt.axhline(6.0, color="black", linestyle="--", label="CCAT max AZ accel")
+
+    plt.xlabel("Maria input speed (deg/s)")
+    plt.ylabel("Maximum AZ acceleration (deg/s$^2$)")
+    plt.title("Maximum AZ Acceleration vs Maria Input Speed")
+    plt.grid(True)
+    plt.legend()
+
+    simple_ccat.savefig(
+        Path("outputs"),
+        "maria_max_az_acceleration_vs_speed_by_elevation.png"
+    )
+
+    plt.close("all")
+
+    raise SystemExit("Finished motion limit analysis, exiting before TOD plotting")
 
     fits_path = TOD_OUTDIR / f"{PREFIX}_dim_reduced_tods.fits"
 
@@ -537,6 +773,8 @@ if __name__ == "__main__":
         plt.close("all")
 
 
+
+
         # -------------------------------------------------
         # Dec Velocity
         # -------------------------------------------------
@@ -769,6 +1007,7 @@ if __name__ == "__main__":
         )
 
         plt.close("all")
+
 
 
     raise SystemExit("Stopping after velocity and acceleration plots")
