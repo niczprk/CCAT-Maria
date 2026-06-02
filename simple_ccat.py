@@ -1874,8 +1874,11 @@ def tod_analysis(
       - "fits": runs simulation, saves TOD to FITS file, then exits
       - I will add options as to whether we want to Map as well as what type of map to make. For now this step is not necessary
     """
-    ANALYSIS_OUTDIR.mkdir(parents=True, exist_ok=True)
-    TOD_OUTDIR.mkdir(parents=True, exist_ok=True)
+    analysis_outdir = Path(f"outputs/{PREFIX}_analysis_outputs")
+    analysis_outdir.mkdir(parents=True, exist_ok=True)
+
+    tod_outdir = Path(f"outputs/{PREFIX}_tods")
+    tod_outdir.mkdir(parents=True, exist_ok=True)
 
     convert_fits_units(RAW_FITS, JYSR_FITS, input_unit="mJy/arcsec^2", output_unit="Jy/sr")
     clip_fits_nans(JYSR_FITS, FILLED_FITS, fill_value=0.0)
@@ -1956,14 +1959,14 @@ def tod_analysis(
     
     if save_all_plots:
         instrument.plot()
-        savefig(ANALYSIS_OUTDIR, f"{PREFIX}_instrument_{ccat_band}GHz.png")
+        savefig(analysis_outdir, f"{PREFIX}_instrument_{ccat_band}GHz.png")
     
     site = maria.get_site("cerro_chajnantor", altitude=5600)
     print(site)
     
     if save_all_plots:
         site.plot()
-        savefig(ANALYSIS_OUTDIR, f"{PREFIX}_site.png")
+        savefig(analysis_outdir, f"{PREFIX}_site.png")
 
     input_map = maria.map.load(str(REDUCED_FITS), nu = NU_HZ)
     print(input_map)
@@ -1972,7 +1975,7 @@ def tod_analysis(
     reduced_map_jysr.data *= 1e-6
     if save_all_plots:
         reduced_map_jysr.plot()
-        savefig(ANALYSIS_OUTDIR, f"{PREFIX}_input_map_{ccat_band}GHz.png")
+        savefig(analysis_outdir, f"{PREFIX}_input_map_{ccat_band}GHz.png")
 
     planner = Planner(
         start_time = start_time,
@@ -1990,7 +1993,7 @@ def tod_analysis(
     )
     if save_all_plots:
         plans[0].plot()
-        savefig(ANALYSIS_OUTDIR, f"{PREFIX}_scan_plan_{ccat_band}GHz.png")
+        savefig(analysis_outdir, f"{PREFIX}_scan_plan_{ccat_band}GHz.png")
 
     
     sim = maria.Simulation(
@@ -2009,7 +2012,7 @@ def tod_analysis(
     tods = sim.run()
     tods[0].plot()
     plt.savefig(
-        os.path.join(TOD_OUTDIR, f"{PREFIX}_reduced_expanded_tod_plot_{CHUNK_NUMBER}.png"),
+        os.path.join(tod_outdir, f"{PREFIX}_reduced_expanded_tod_plot_{CHUNK_NUMBER}.png"),
         dpi=200,
         bbox_inches="tight",
     )
@@ -2024,7 +2027,7 @@ def tod_analysis(
     if tod_diagnostics:
 
         tods[0].to("pW").plot()
-        savefig(ANALYSIS_OUTDIR / f"{PREFIX}_tod_plot.png", f"{PREFIX}_tod_plot.png", dpi=300)
+        savefig(analysis_outdir / f"{PREFIX}_tod_plot.png", f"{PREFIX}_tod_plot.png", dpi=300)
         plt.close("all")
 
         P_det = tods[0].to("pW").signal
@@ -2142,7 +2145,7 @@ def tod_analysis(
         plt.title(f"Distribution of Mean Detector Power (PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})\nSkewness={skewness:.2f}")
         plt.grid(True)
         plt.legend()
-        savefig(ANALYSIS_OUTDIR, f"{PREFIX}_detector_mean_power_histogram_PWV{pwv_mm:.2f}.png")
+        savefig(analysis_outdir, f"{PREFIX}_detector_mean_power_histogram_PWV{pwv_mm:.2f}.png")
         plt.close("all")
 
         P_std_flat = P_std[np.isfinite(P_std)]
@@ -2153,7 +2156,7 @@ def tod_analysis(
         plt.ylabel("Number of Detectors")
         plt.title(f"Distribution of Std Dev of Detector Power (PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})")
         plt.grid(True)
-        savefig(ANALYSIS_OUTDIR, f"{PREFIX}_detector_power_std_histogram_PWV{pwv_mm:.2f}.png")
+        savefig(analysis_outdir, f"{PREFIX}_detector_power_std_histogram_PWV{pwv_mm:.2f}.png")
         plt.close("all")
 
         frac_rms = P_std / P_mean
@@ -2167,7 +2170,7 @@ def tod_analysis(
         plt.grid(True)
 
         savefig(
-            ANALYSIS_OUTDIR,
+            analysis_outdir,
             f"{PREFIX}_fractional_detector_rms_eta_{eta:.2f}_PWV{PWV_MM:.2f}.png"
         )
         plt.close()
@@ -2204,7 +2207,7 @@ def tod_analysis(
         # )
         # plt.grid(True)
         # plt.legend()
-        # savefig(ANALYSIS_OUTDIR, f"{PREFIX}_df_fwhm_histogram_PWV{pwv_mm:.2f}.png")
+        # savefig(analysis_outdir, f"{PREFIX}_df_fwhm_histogram_PWV{pwv_mm:.2f}.png")
         # plt.close("all")
 
         # el = tods[0].el
@@ -2221,7 +2224,7 @@ def tod_analysis(
         # plt.ylabel("Mean Detector Power (pW)")
         # plt.title(f"Mean Detector Power vs Elevation (PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})")
         # plt.grid(True)
-        # savefig(ANALYSIS_OUTDIR, f"{PREFIX}_mean_power_vs_elevation_PWV{pwv_mm:.2f}.png")
+        # savefig(analysis_outdir, f"{PREFIX}_mean_power_vs_elevation_PWV{pwv_mm:.2f}.png")
         # plt.close("all")
 
         # plt.figure(figsize=(8,6))
@@ -2230,16 +2233,16 @@ def tod_analysis(
         # plt.ylabel("df_fwhm")
         # plt.title(f"df_fwhm vs Elevation (PWV={pwv_mm:.2f} mm, $\eta$={eta:.2f})")
         # plt.grid(True)
-        # savefig(ANALYSIS_OUTDIR, f"{PREFIX}_df_fwhm_vs_elevation_PWV{pwv_mm:.2f}.png")
+        # savefig(analysis_outdir, f"{PREFIX}_df_fwhm_vs_elevation_PWV{pwv_mm:.2f}.png")
         # plt.close("all")
 
     if run_mode == "hdf5":
-        print(f"Saving TOD to HDF5 file: {TOD_OUTDIR / f'{PREFIX}_tods.hdf5'}")
-        tods[0].to_hdf5(TOD_OUTDIR / f"{PREFIX}_tods.hdf5")
+        print(f"Saving TOD to HDF5 file: {tod_outdir / f'{PREFIX}_tods.hdf5'}")
+        tods[0].to_hdf5(tod_outdir / f"{PREFIX}_tods.hdf5")
     
     elif run_mode == "fits":
-        print(f"Saving TOD to FITS file: {TOD_OUTDIR / f'{PREFIX}_dim_reduced_tods.fits'}")
-        tods[0].to_fits(TOD_OUTDIR / f"{PREFIX}_dim_reduced_tods.fits", format="Mustang-2")
+        print(f"Saving TOD to FITS file: {tod_outdir / f'{PREFIX}_dim_reduced_tods.fits'}")
+        tods[0].to_fits(tod_outdir / f"{PREFIX}_dim_reduced_tods.fits", format="Mustang-2")
 
     else:
         raise ValueError(f"Invalid run_mode: {run_mode}. Choose 'hdf5' or 'fits'.")
@@ -2257,7 +2260,7 @@ def tod_analysis(
         
         output_map = mapper.run()
         output_map.plot(nu_index=[0], cmap="coolwarm")
-        savefig(ANALYSIS_OUTDIR, f"{PREFIX}_output_BinMapper_PWV{pwv_mm:.2f}.png")
+        savefig(analysis_outdir, f"{PREFIX}_output_BinMapper_PWV{pwv_mm:.2f}.png")
     elif maps == True and map_type == "ML":
         raise NotImplementedError("ML mapmaking not implemented yet")
     
