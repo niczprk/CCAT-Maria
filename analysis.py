@@ -27,7 +27,7 @@ PWV_MM = 0.36  #  mm, precip water vapour this only affects the main if pwv is N
 
 # 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values for Chajnantor
 
-EL_LIMITS = (45, 55)  # degrees
+EL_LIMITS = (65, 75)  # degrees
 ELEV_LABEL = f"{EL_LIMITS[0]}-{EL_LIMITS[1]}"
 SPEED  = 0.2 # deg/s, this is a guess for now but should be in the right ballpark for a daisy scan at 30-40 deg elevation with a 3 degree radius
 
