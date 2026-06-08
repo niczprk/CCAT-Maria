@@ -6,6 +6,7 @@ from maria import tod
 from maria.instrument import Band
 import maria
 
+import pandas as pd
 import numpy as np
 
 import matplotlib
@@ -68,25 +69,139 @@ print(dir((maria.tod)))
 
 if __name__ == "__main__":
 
-    simple_ccat.tod_analysis(
-    PREFIX=PREFIX,
-    tod_diagnostics=False,
-    maps = False,
-    save_all_plots = True,
-    run_mode = "fits",
-    atm_plot = True,
-    temp_mode = "inst",
-    ccat_band = "280",
-    map_type = "BM",
-    pwv_mm = PWV_MM,
-    start_time = START_TIME,
-    total_duration_s = TOTAL_DURATION_S,
-    sim_duration_s = SIM_DURATION_S,
-    sample_rate_hz = SAMPLE_RATE_HZ,
-    scan_pattern = SCAN_PATTERN,
-    el_limits = EL_LIMITS,
-    speed = SPEED
-    )
+    # -------------------------------------------------
+    # Paths
+    # -------------------------------------------------
+
+    csv_dir = Path("outputs/OrionA_speed_tests/speed_csv")
+
+    csv_files = [
+        csv_dir / "maria_speed_elevation_motion_limits_35-45.csv",
+        csv_dir / "maria_speed_elevation_motion_limits_45-55.csv",
+        csv_dir / "maria_speed_elevation_motion_limits_55-65.csv",
+        csv_dir / "maria_speed_elevation_motion_limits_65-75.csv",
+    ]
+
+    combined_csv_path = csv_dir / "maria_speed_elevation_motion_limits_combined.csv"
+
+    plot_outdir = Path("outputs/OrionA_speed_tests/combined_plots")
+    plot_outdir.mkdir(parents=True, exist_ok=True)
+
+    # -------------------------------------------------
+    # Combine CSVs
+    # -------------------------------------------------
+
+    dfs = []
+
+    for csv_file in csv_files:
+        df = pd.read_csv(csv_file)
+
+        # In case elevation_label is missing or inconsistent
+        if "elevation_label" not in df.columns:
+            label = csv_file.stem.split("_")[-1]
+            df["elevation_label"] = label
+
+        dfs.append(df)
+
+    combined_df = pd.concat(dfs, ignore_index=True)
+
+    combined_df.to_csv(combined_csv_path, index=False)
+
+    print(f"Saved combined CSV to: {combined_csv_path}")
+    print(f"Total rows: {len(combined_df)}")
+
+    # -------------------------------------------------
+    # Overlaid plots
+    # -------------------------------------------------
+
+    quantities = {
+        "max_az_velocity_deg_s": {
+            "label": "Maximum AZ Velocity",
+            "unit": "deg/s",
+            "limit": 3.0,
+            "filename": "combined_max_az_velocity_vs_input_speed.png",
+        },
+        "max_el_velocity_deg_s": {
+            "label": "Maximum EL Velocity",
+            "unit": "deg/s",
+            "limit": 1.5,
+            "filename": "combined_max_el_velocity_vs_input_speed.png",
+        },
+        "max_az_acceleration_deg_s2": {
+            "label": "Maximum AZ Acceleration",
+            "unit": "deg/s²",
+            "limit": 6.0,
+            "filename": "combined_max_az_acceleration_vs_input_speed.png",
+        },
+        "max_el_acceleration_deg_s2": {
+            "label": "Maximum EL Acceleration",
+            "unit": "deg/s²",
+            "limit": 1.5,
+            "filename": "combined_max_el_acceleration_vs_input_speed.png",
+        },
+    }
+
+    for column, info in quantities.items():
+
+        plt.figure(figsize=(8, 6))
+
+        for elevation_label, group in combined_df.groupby("elevation_label"):
+            group = group.sort_values("input_speed_deg_s")
+
+            plt.plot(
+                group["input_speed_deg_s"],
+                group[column],
+                marker="o",
+                linewidth=2,
+                alpha=0.8,
+                label=elevation_label,
+            )
+
+        plt.axhline(
+            info["limit"],
+            color="black",
+            linestyle="--",
+            linewidth=1.5,
+            label="Motion limit",
+        )
+
+        plt.xlabel("Maria input speed (deg/s)")
+        plt.ylabel(f"{info['label']} ({info['unit']})")
+        plt.title(f"{info['label']} vs Maria Input Speed")
+        plt.grid(True, alpha=0.3)
+        plt.legend(title="Elevation range")
+
+        plt.savefig(
+            plot_outdir / info["filename"],
+            dpi=300,
+            bbox_inches="tight",
+        )
+
+        plt.close()
+
+    print(f"Saved combined plots to: {plot_outdir}") 
+
+    raise SystemExit("all done.")
+
+    # simple_ccat.tod_analysis(
+    # PREFIX=PREFIX,
+    # tod_diagnostics=False,
+    # maps = False,
+    # save_all_plots = True,
+    # run_mode = "fits",
+    # atm_plot = True,
+    # temp_mode = "inst",
+    # ccat_band = "280",
+    # map_type = "BM",
+    # pwv_mm = PWV_MM,
+    # start_time = START_TIME,
+    # total_duration_s = TOTAL_DURATION_S,
+    # sim_duration_s = SIM_DURATION_S,
+    # sample_rate_hz = SAMPLE_RATE_HZ,
+    # scan_pattern = SCAN_PATTERN,
+    # el_limits = EL_LIMITS,
+    # speed = SPEED
+    # )
 
     # -------------------------------------------------
     # Variable Speed Analysis
@@ -163,6 +278,8 @@ if __name__ == "__main__":
         global_max_el_vel = 0.0
         global_max_az_acc = 0.0
         global_max_el_acc = 0.0
+        # global_max_az_jerk = 0.0
+        # global_max_el_jerk = 0.0
 
         mean_el_list = []
 
@@ -175,7 +292,6 @@ if __name__ == "__main__":
             dt = 1 / SAMPLE_RATE_HZ
 
             valid = np.isfinite(az_deg_track) & np.isfinite(el_deg_track)
-
             az_deg_track = az_deg_track[valid]
             el_deg_track = el_deg_track[valid]
 
@@ -207,6 +323,11 @@ if __name__ == "__main__":
                 / (dt ** 2)
             )
 
+            jerk_el = (
+                (el_deg_track[4:] - 2 * el_deg_track[3:-1] + 2 * el_deg_track[1:-3] + el_deg_track[:-4])
+                / (2*dt**3)
+            )
+
             # Actual azimuth motor motion, without cos(el)
             motor_velocity_az = (
                 (az_deg_track[2:] - az_deg_track[:-2])
@@ -217,6 +338,11 @@ if __name__ == "__main__":
                 (az_deg_track[2:] - 2 * az_deg_track[1:-1] + az_deg_track[:-2])
                 / (dt ** 2)
             )
+
+            # motor_jerk_az = (
+            #     ((az_deg_track[4:] - 2*az_deg_track[3:-1] + 2*az_deg_track[1:-3] - az_deg_track[:-4])
+            #     / (2 * dt**3) )
+            # )
 
             global_max_az_vel = max(
                 global_max_az_vel,
@@ -237,6 +363,16 @@ if __name__ == "__main__":
                 global_max_el_acc,
                 np.nanmax(np.abs(acceleration_el))
             )
+
+            global_max_az_jerk = max(
+                global_max_az_jerk,
+                np.nanmax(np.abs(motor_jerk_az))
+            )
+
+            # gloabl_max_el_jerk = max(
+            #     global_max_el_jerk,
+            #     np.nanmax(np.abs(jerk_el))
+            # )
 
         mean_elevation = np.nanmean(mean_el_list)
 
@@ -409,7 +545,34 @@ if __name__ == "__main__":
         ANALYSIS_OUTDIR / f"{PREFIX}_el_velocity_vs_input_speed.png"
     )
     plt.close("all")
+
+    csv_path_35 = Path("outputs/OrionA_speed_tests/speed_csv/maria_speed_elevation_motion_limits_35-45")
+
+    csv_path_45 = Path("outputs/OrionA_speed_tests/speed_csv/maria_speed_elevation_motion_limits_45-55")
+    
+    csv_path_55 = Path("outputs/OrionA_speed_tests/speed_csv/maria_speed_elevation_motion_limits_55-65")
+
+    csv_path_65 = Path("outputs/OrionA_speed_tests/speed_csv/maria_speed_elevation_motion_limits_65-75")
+
+    dfs = [
+        pd.read_csv(csv_path_35),
+        pd.read_csv(csv_path_45),
+        pd.read_csv(csv_path_55),
+        pd.read_csv(csv_path_65)
+    ]
+
+    combined_df = pd.concat(dfs, ignore_index=True)
+
+    output_path = Path("outputs/OrionA_speed_tests/speed_csv/maria_speed_elevation_motion_limits_combined.csv")
+
+    print(f"Saved cmobined CSV to: {output_path}")
+    print(f"Total rows: {len(combined_df)}")
+
     raise SystemExit("Finished motion limit analysis, exiting before TOD plotting")
+
+
+
+
 
     fits_path = TOD_OUTDIR / f"{PREFIX}_dim_reduced_tods.fits"
 
