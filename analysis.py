@@ -460,6 +460,129 @@ if __name__ == "__main__":
 
                 motor_speed_total = np.sqrt(motor_velocity_az**2 + motor_velocity_el**2)
 
+                time_mid = time[1:-1]
+
+                time_mid = time[1:-1]
+
+                # -------------------------------------------------
+                # RA/Dec speed magnitude vs Maria input speed
+                # -------------------------------------------------
+
+                plt.figure(figsize=(10, 6))
+
+                plt.plot(
+                    time_mid,
+                    radec_speed_total,
+                    lw=0.8,
+                    color="blue",
+                    label=r"$\sqrt{v_\mathrm{RA}^2 + v_\mathrm{Dec}^2}$"
+                )
+
+                plt.axhline(
+                    spd,
+                    color="black",
+                    linestyle="--",
+                    linewidth=1.2,
+                    label="Maria input speed"
+                )
+
+                plt.xlabel("Time (s)")
+                plt.ylabel("Speed magnitude (deg/s)")
+                plt.title(
+                    f"RA/Dec Speed Magnitude vs Maria Input Speed\n"
+                    f"Pong, Detector {det_idx}, Speed={spd:.2f} deg/s, Elev={ELEV_LABEL}"
+                )
+
+                plt.grid(True)
+                plt.legend()
+
+                simple_ccat.savefig(
+                    ANALYSIS_OUTDIR,
+                    f"{run_prefix}_detector_{det_idx}_radec_speed_magnitude_vs_input_speed.png"
+                )
+
+                plt.close("all")
+
+
+                # -------------------------------------------------
+                # Projected Az/El speed magnitude vs Maria input speed
+                # -------------------------------------------------
+
+                plt.figure(figsize=(10, 6))
+
+                plt.plot(
+                    time_mid,
+                    projected_speed_total,
+                    lw=0.8,
+                    color="green",
+                    label=r"$\sqrt{v_\mathrm{Az,proj}^2 + v_\mathrm{El}^2}$"
+                )
+
+                plt.axhline(
+                    spd,
+                    color="black",
+                    linestyle="--",
+                    linewidth=1.2,
+                    label="Maria input speed"
+                )
+
+                plt.xlabel("Time (s)")
+                plt.ylabel("Speed magnitude (deg/s)")
+                plt.title(
+                    f"Projected Az/El Speed Magnitude vs Maria Input Speed\n"
+                    f"Pong, Detector {det_idx}, Speed={spd:.2f} deg/s, Elev={ELEV_LABEL}"
+                )
+
+                plt.grid(True)
+                plt.legend()
+
+                simple_ccat.savefig(
+                    ANALYSIS_OUTDIR,
+                    f"{run_prefix}_detector_{det_idx}_projected_azel_speed_magnitude_vs_input_speed.png"
+                )
+
+                plt.close("all")
+
+
+                # -------------------------------------------------
+                # Motor Az/El speed magnitude vs Maria input speed
+                # -------------------------------------------------
+
+                plt.figure(figsize=(10, 6))
+
+                plt.plot(
+                    time_mid,
+                    motor_speed_total,
+                    lw=0.8,
+                    color="purple",
+                    label=r"$\sqrt{v_\mathrm{Az,motor}^2 + v_\mathrm{El,motor}^2}$"
+                )
+
+                plt.axhline(
+                    spd,
+                    color="black",
+                    linestyle="--",
+                    linewidth=1.2,
+                    label="Maria input speed"
+                )
+
+                plt.xlabel("Time (s)")
+                plt.ylabel("Speed magnitude (deg/s)")
+                plt.title(
+                    f"Motor Speed Magnitude vs Maria Input Speed\n"
+                    f"Pong, Detector {det_idx}, Speed={spd:.2f} deg/s, Elev={ELEV_LABEL}"
+                )
+
+                plt.grid(True)
+                plt.legend()
+
+                simple_ccat.savefig(
+                    ANALYSIS_OUTDIR,
+                    f"{run_prefix}_detector_{det_idx}_motor_speed_magnitude_vs_input_speed.png"
+                )
+
+                plt.close("all")
+
 
                 # motor_jerk_az = (
                 #     ((az_deg_track[4:] - 2*az_deg_track[3:-1] + 2*az_deg_track[1:-3] - az_deg_track[:-4])
@@ -553,27 +676,143 @@ if __name__ == "__main__":
     # ========================================================================
 
     import csv 
-
-    if len(motion_results) == 0:
-        print("No motion results to save, skipping CSV output")
-        raise RuntimeError("No motion results to save, exiting")
-
-    csv_path = Path("outputs/maria_speed_elevation_motion_limits.csv")
-
-    with open(csv_path, mode="w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=motion_results[0].keys())
-        writer.writeheader()
-        for row in motion_results:
-            writer.writerow(row)
-
-    print(f"\nMotion results saved to {csv_path}")
-
     import pandas as pd
 
+    if len(motion_results) == 0:
+                print(f"No motion results for elevation range {ELEV_LABEL}")
+                raise SystemExit("No results to save, exiting.")
+
+    csv_path = SPEED_CSV_DIR / f"maria_pong_speed_elevation_motion_limits_{ELEV_LABEL}.csv"
 
     df = pd.DataFrame(motion_results)
+    df.to_csv(csv_path, index=False)
 
-    ANALYSIS_OUTDIR.mkdir(parents=True, exist_ok=True)
+    print(f"\nSaved Pong motion results to {csv_path}")
+
+    csv_files = sorted(
+        SPEED_CSV_DIR.glob("maria_pong_speed_elevation_motion_limits_*.csv")
+    )
+
+    dfs = []
+
+    for csv_file in csv_files:
+        df = pd.read_csv(csv_file)
+
+        if "elevation_label" not in df.columns:
+            label = csv_file.stem.split("_")[-1]
+            df["elevation_label"] = label
+
+        dfs.append(df)
+
+    if len(dfs) == 0:
+        raise RuntimeError("No CSV files found for combined analysis")
+    
+    combined_df = pd.concat(dfs, ignore_index=True)
+
+    combined_csv_path = SPEED_CSV_DIR / "maria_pong_speed_elevation_motion_limits_combined.csv"
+    combined_df.to_csv(combined_csv_path, index=False)
+
+    print(f"Saved combined CSV to: {combined_csv_path}")
+
+    quantities = {
+            "max_motor_az_velocity_deg_s": {
+                "label": "Maximum Motor AZ Velocity",
+                "unit": "deg/s",
+                "limit": 3.0,
+                "filename": "pong_combined_max_motor_az_velocity_vs_input_speed.png",
+            },
+            "max_motor_el_velocity_deg_s": {
+                "label": "Maximum Motor EL Velocity",
+                "unit": "deg/s",
+                "limit": 1.5,
+                "filename": "pong_combined_max_motor_el_velocity_vs_input_speed.png",
+            },
+            "max_motor_az_acceleration_deg_s2": {
+                "label": "Maximum Motor AZ Acceleration",
+                "unit": "deg/s²",
+                "limit": 6.0,
+                "filename": "pong_combined_max_motor_az_acceleration_vs_input_speed.png",
+            },
+            "max_motor_el_acceleration_deg_s2": {
+                "label": "Maximum Motor EL Acceleration",
+                "unit": "deg/s²",
+                "limit": 1.5,
+                "filename": "pong_combined_max_motor_el_acceleration_vs_input_speed.png",
+            },
+            "max_projected_az_velocity_deg_s": {
+                "label": "Maximum Projected AZ Velocity",
+                "unit": "deg/s",
+                "limit": None,
+                "filename": "pong_combined_max_projected_az_velocity_vs_input_speed.png",
+            },
+            "max_projected_az_acceleration_deg_s2": {
+                "label": "Maximum Projected AZ Acceleration",
+                "unit": "deg/s²",
+                "limit": None,
+                "filename": "pong_combined_max_projected_az_acceleration_vs_input_speed.png",
+            },
+            "max_radec_speed_deg_s": {
+                "label": "Maximum RA/Dec Speed Magnitude",
+                "unit": "deg/s",
+                "limit": None,
+                "filename": "pong_combined_max_radec_speed_magnitude_vs_input_speed.png",
+            },
+            "max_projected_azel_speed_deg_s": {
+                "label": "Maximum Projected Az/El Speed Magnitude",
+                "unit": "deg/s",
+                "limit": None,
+                "filename": "pong_combined_max_projected_azel_speed_magnitude_vs_input_speed.png",
+            },
+            "max_motor_speed_deg_s": {
+                "label": "Maximum Motor Speed Magnitude",
+                "unit": "deg/s",
+                "limit": None,
+                "filename": "pong_combined_max_motor_speed_magnitude_vs_input_speed.png",
+            },
+    }
+
+    for column, info in quantities.items():
+
+            plt.figure(figsize=(8, 6))
+
+            for elevation_label, group in combined_df.groupby("elevation_label"):
+                group = group.sort_values("input_speed_deg_s")
+
+                plt.plot(
+                    group["input_speed_deg_s"],
+                    group[column],
+                    marker="o",
+                    linewidth=2,
+                    alpha=0.8,
+                    label=elevation_label,
+                )
+
+            if info["limit"] is not None:
+                plt.axhline(
+                    info["limit"],
+                    color="black",
+                    linestyle="--",
+                    linewidth=1.5,
+                    label="Motion limit",
+                )
+
+            plt.xlabel("Maria input speed (deg/s)")
+            plt.ylabel(f"{info['label']} ({info['unit']})")
+            plt.title(f"{info['label']} vs Maria Input Speed")
+            plt.grid(True, alpha=0.3)
+            plt.legend(title="Elevation range")
+
+            plt.savefig(
+                COMBINED_PLOT_DIR / info["filename"],
+                dpi=300,
+                bbox_inches="tight",
+            )
+
+            plt.close("all")
+
+    print(f"Saved combined Pong plots to: {COMBINED_PLOT_DIR}")
+
+    raise SystemExit("Finished motion limit analysis, exiting before TOD plotting")
 
     # ========================================================================
     # Single-elevation diagnostic plots
