@@ -1,3 +1,17 @@
+# =============================================================================
+# MARIA / CCAT Motion and Detector Analysis Script
+# =============================================================================
+# Organization-only version.
+#
+# This file keeps the original code intact and mainly adds clearer section
+# headings so it is easier to navigate. I have not intentionally removed,
+# rewritten, or refactored the working code blocks.
+# =============================================================================
+
+# ========================================================================
+# Imports and external dependencies
+# ========================================================================
+
 from pathlib import Path
 from turtle import color
 
@@ -14,6 +28,10 @@ matplotlib.use("Agg")  # Use a non-interactive backend for plotting
 import matplotlib.pyplot as plt
 
 
+# ========================================================================
+# User-controlled configuration and physical constants
+# ========================================================================
+
 selected_band = "280" #make sure these match
 
 NU_HZ = 280e9  # Hz
@@ -29,7 +47,22 @@ PWV_MM = 0.36  #  mm, precip water vapour this only affects the main if pwv is N
 # 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values for Chajnantor
 
 EL_LIMITS = (65, 75)  # degrees
+
+ELEVATION_RANGES = [
+    (35, 45),
+    (45, 55),
+    (55, 65),
+    (65, 75)
+]
 ELEV_LABEL = f"{EL_LIMITS[0]}-{EL_LIMITS[1]}"
+
+RUN_SPEED_GRID = True
+COMBINE_EXISTING_CSVS = False
+SPEED_CSV_DIR = Path("outputs/OrionA_pong_speed_tests/speed_csv")
+COMBINED_PLOT_DIR = Path("outputs/OrionA_pong_speed_tests/combined_plots")
+SPEED_CSV_DIR.mkdir(parents=True, exist_ok=True)
+COMBINED_PLOT_DIR.mkdir(parents=True, exist_ok=True)
+
 SPEED  = 0.2 # deg/s, this is a guess for now but should be in the right ballpark for a daisy scan at 30-40 deg elevation with a 3 degree radius
 
 T_0 = 278.868 #K, atmospheric ground temp
@@ -54,12 +87,12 @@ eta = 0.5
 TOTAL_DURATION_S = 1800  # seconds
 SIM_DURATION_S = 1800  # seconds
 SAMPLE_RATE_HZ = 20  # Hz
-SCAN_PATTERN = "daisy"
+SCAN_PATTERN = "Pong"
 CHUNK_NUMBER = 0
 
 PREFIX = f"OrionA_{ELEV_LABEL}_vel_el"
-ANALYSIS_OUTDIR = Path(f"outputs/{PREFIX}_analysis_outputs")
-TOD_OUTDIR = Path(f"outputs/{PREFIX}_tod")
+ANALYSIS_OUTDIR = Path(f"outputs/{PREFIX}_pong_analysis_outputs")
+TOD_OUTDIR = Path(f"outputs/{PREFIX}_pong_tod")
 
 
 print(dir((maria.tod)))
@@ -67,121 +100,133 @@ print(dir((maria.tod)))
 
 
 
+# ========================================================================
+# Main execution block
+# ========================================================================
+
 if __name__ == "__main__":
+
+    # ========================================================================
+    # Part 1: combine existing speed-test CSV files
+    # ========================================================================
 
     # -------------------------------------------------
     # Paths
     # -------------------------------------------------
 
-    csv_dir = Path("outputs/OrionA_speed_tests/speed_csv")
+    # csv_dir = Path("outputs/OrionA_speed_tests/speed_csv")
 
-    csv_files = [
-        csv_dir / "maria_speed_elevation_motion_limits_35-45.csv",
-        csv_dir / "maria_speed_elevation_motion_limits_45-55.csv",
-        csv_dir / "maria_speed_elevation_motion_limits_55-65.csv",
-        csv_dir / "maria_speed_elevation_motion_limits_65-75.csv",
-    ]
+    # csv_files = [
+    #     csv_dir / "maria_speed_elevation_motion_limits_35-45.csv",
+    #     csv_dir / "maria_speed_elevation_motion_limits_45-55.csv",
+    #     csv_dir / "maria_speed_elevation_motion_limits_55-65.csv",
+    #     csv_dir / "maria_speed_elevation_motion_limits_65-75.csv",
+    # ]
 
-    combined_csv_path = csv_dir / "maria_speed_elevation_motion_limits_combined.csv"
+    # combined_csv_path = csv_dir / "maria_speed_elevation_motion_limits_combined.csv"
 
-    plot_outdir = Path("outputs/OrionA_speed_tests/combined_plots")
-    plot_outdir.mkdir(parents=True, exist_ok=True)
+    # plot_outdir = Path("outputs/OrionA_speed_tests/combined_plots")
+    # plot_outdir.mkdir(parents=True, exist_ok=True)
 
-    # -------------------------------------------------
-    # Combine CSVs
-    # -------------------------------------------------
+    # # -------------------------------------------------
+    # # Combine CSVs
+    # # -------------------------------------------------
 
-    dfs = []
+    # dfs = []
 
-    for csv_file in csv_files:
-        df = pd.read_csv(csv_file)
+    # for csv_file in csv_files:
+    #     df = pd.read_csv(csv_file)
 
-        # In case elevation_label is missing or inconsistent
-        if "elevation_label" not in df.columns:
-            label = csv_file.stem.split("_")[-1]
-            df["elevation_label"] = label
+    #     # In case elevation_label is missing or inconsistent
+    #     if "elevation_label" not in df.columns:
+    #         label = csv_file.stem.split("_")[-1]
+    #         df["elevation_label"] = label
 
-        dfs.append(df)
+    #     dfs.append(df)
 
-    combined_df = pd.concat(dfs, ignore_index=True)
+    # combined_df = pd.concat(dfs, ignore_index=True)
 
-    combined_df.to_csv(combined_csv_path, index=False)
+    # combined_df.to_csv(combined_csv_path, index=False)
 
-    print(f"Saved combined CSV to: {combined_csv_path}")
-    print(f"Total rows: {len(combined_df)}")
+    # print(f"Saved combined CSV to: {combined_csv_path}")
+    # print(f"Total rows: {len(combined_df)}")
 
-    # -------------------------------------------------
-    # Overlaid plots
-    # -------------------------------------------------
+    # # ========================================================================
+    # # Part 2: make combined velocity/acceleration summary plots
+    # # ========================================================================
 
-    quantities = {
-        "max_az_velocity_deg_s": {
-            "label": "Maximum AZ Velocity",
-            "unit": "deg/s",
-            "limit": 3.0,
-            "filename": "combined_max_az_velocity_vs_input_speed.png",
-        },
-        "max_el_velocity_deg_s": {
-            "label": "Maximum EL Velocity",
-            "unit": "deg/s",
-            "limit": 1.5,
-            "filename": "combined_max_el_velocity_vs_input_speed.png",
-        },
-        "max_az_acceleration_deg_s2": {
-            "label": "Maximum AZ Acceleration",
-            "unit": "deg/s²",
-            "limit": 6.0,
-            "filename": "combined_max_az_acceleration_vs_input_speed.png",
-        },
-        "max_el_acceleration_deg_s2": {
-            "label": "Maximum EL Acceleration",
-            "unit": "deg/s²",
-            "limit": 1.5,
-            "filename": "combined_max_el_acceleration_vs_input_speed.png",
-        },
-    }
+    # # -------------------------------------------------
+    # # Overlaid plots
+    # # -------------------------------------------------
 
-    for column, info in quantities.items():
+    # quantities = {
+    #     "max_az_velocity_deg_s": {
+    #         "label": "Maximum AZ Velocity",
+    #         "unit": "deg/s",
+    #         "limit": 3.0,
+    #         "filename": "combined_max_az_velocity_vs_input_speed.png",
+    #     },
+    #     "max_el_velocity_deg_s": {
+    #         "label": "Maximum EL Velocity",
+    #         "unit": "deg/s",
+    #         "limit": 1.5,
+    #         "filename": "combined_max_el_velocity_vs_input_speed.png",
+    #     },
+    #     "max_az_acceleration_deg_s2": {
+    #         "label": "Maximum AZ Acceleration",
+    #         "unit": "deg/s²",
+    #         "limit": 6.0,
+    #         "filename": "combined_max_az_acceleration_vs_input_speed.png",
+    #     },
+    #     "max_el_acceleration_deg_s2": {
+    #         "label": "Maximum EL Acceleration",
+    #         "unit": "deg/s²",
+    #         "limit": 1.5,
+    #         "filename": "combined_max_el_acceleration_vs_input_speed.png",
+    #     },
+    # }
 
-        plt.figure(figsize=(8, 6))
+    # for column, info in quantities.items():
 
-        for elevation_label, group in combined_df.groupby("elevation_label"):
-            group = group.sort_values("input_speed_deg_s")
+    #     plt.figure(figsize=(8, 6))
 
-            plt.plot(
-                group["input_speed_deg_s"],
-                group[column],
-                marker="o",
-                linewidth=2,
-                alpha=0.8,
-                label=elevation_label,
-            )
+    #     for elevation_label, group in combined_df.groupby("elevation_label"):
+    #         group = group.sort_values("input_speed_deg_s")
 
-        plt.axhline(
-            info["limit"],
-            color="black",
-            linestyle="--",
-            linewidth=1.5,
-            label="Motion limit",
-        )
+    #         plt.plot(
+    #             group["input_speed_deg_s"],
+    #             group[column],
+    #             marker="o",
+    #             linewidth=2,
+    #             alpha=0.8,
+    #             label=elevation_label,
+    #         )
 
-        plt.xlabel("Maria input speed (deg/s)")
-        plt.ylabel(f"{info['label']} ({info['unit']})")
-        plt.title(f"{info['label']} vs Maria Input Speed")
-        plt.grid(True, alpha=0.3)
-        plt.legend(title="Elevation range")
+    #     plt.axhline(
+    #         info["limit"],
+    #         color="black",
+    #         linestyle="--",
+    #         linewidth=1.5,
+    #         label="Motion limit",
+    #     )
 
-        plt.savefig(
-            plot_outdir / info["filename"],
-            dpi=300,
-            bbox_inches="tight",
-        )
+    #     plt.xlabel("Maria input speed (deg/s)")
+    #     plt.ylabel(f"{info['label']} ({info['unit']})")
+    #     plt.title(f"{info['label']} vs Maria Input Speed")
+    #     plt.grid(True, alpha=0.3)
+    #     plt.legend(title="Elevation range")
 
-        plt.close()
+    #     plt.savefig(
+    #         plot_outdir / info["filename"],
+    #         dpi=300,
+    #         bbox_inches="tight",
+    #     )
 
-    print(f"Saved combined plots to: {plot_outdir}") 
+    #     plt.close()
 
-    raise SystemExit("all done.")
+    # print(f"Saved combined plots to: {plot_outdir}") 
+
+    # raise SystemExit("all done.")
 
     # simple_ccat.tod_analysis(
     # PREFIX=PREFIX,
@@ -202,6 +247,10 @@ if __name__ == "__main__":
     # el_limits = EL_LIMITS,
     # speed = SPEED
     # )
+
+    # ========================================================================
+    # Part 3: run/load TODs and evaluate motion limits over speed grid
+    # ========================================================================
 
     # -------------------------------------------------
     # Variable Speed Analysis
@@ -232,184 +281,276 @@ if __name__ == "__main__":
 
     # for elev_label, start_time in start_time_dict.items():
 
-    for spd in speed_list:
+    # ========================================================================
+    # Loop over MARIA input scan speeds
+    # ========================================================================
+    for EL_LIMITS in ELEVATION_RANGES:
 
-        run_prefix = f"OrionA_{ELEV_LABEL}_speed_{spd:.1f}".replace(".", "p")
+        ELEV_LABEL = f"{EL_LIMITS[0]}-{EL_LIMITS[1]}"
 
-        run_analysis_outdir = Path(f"outputs/{run_prefix}_analysis_outputs")
-        run_tod_outdir = Path(f"outputs/{run_prefix}_tods")
+        print(f"\nStarting analysis for elevation range: {ELEV_LABEL} degrees")
+        print("===============================================")
+        PREFIX = f"OrionA_{ELEV_LABEL}_pong"
+        ANALYSIS_OUTDIR = Path(f"outputs/{PREFIX}_analysis_outputs")
+        ANALYSIS_OUTDIR.mkdir(parents=True, exist_ok=True)
 
-        print("\nRunning simulation")
-        print("------------------")
-        print("Elevation label:", ELEV_LABEL)
-        print("Start time:", START_TIME)
-        print("Speed:", spd)
-        print("Prefix:", run_prefix)
+        motion_results = []  # Reset motion results for this elevation range
 
-        simple_ccat.tod_analysis(
-            PREFIX=run_prefix,
-            tod_diagnostics=False,
-            maps=False,
-            save_all_plots=False,
-            run_mode="fits",
-            atm_plot=False,
-            temp_mode="inst",
-            ccat_band="280",
-            map_type="BM",
-            pwv_mm=PWV_MM,
-            start_time=START_TIME,
-            total_duration_s=TOTAL_DURATION_S,
-            sim_duration_s=SIM_DURATION_S,
-            sample_rate_hz=SAMPLE_RATE_HZ,
-            scan_pattern=SCAN_PATTERN,
-            el_limits=EL_LIMITS,
-            speed=spd,
-        )
+        for spd in speed_list:
 
-        fits_path = run_tod_outdir / f"{run_prefix}_dim_reduced_tods.fits"
+            run_prefix = f"OrionA_{ELEV_LABEL}_speed_{spd:.1f}".replace(".", "p")
 
-        if not fits_path.exists():
-            print(f"Missing FITS file for {run_prefix}")
-            continue
+            run_analysis_outdir = Path(f"outputs/{run_prefix}_analysis_outputs")
+            run_tod_outdir = Path(f"outputs/{run_prefix}_tods")
 
-        tod = maria.tod.load(fits_path, site=site, bands=[band])
+            print("\nRunning simulation")
+            print("------------------")
+            print("Elevation label:", ELEV_LABEL)
+            print("Start time:", START_TIME)
+            print("Speed:", spd)
+            print("Prefix:", run_prefix)
 
-        global_max_az_vel = 0.0
-        global_max_el_vel = 0.0
-        global_max_az_acc = 0.0
-        global_max_el_acc = 0.0
-        # global_max_az_jerk = 0.0
-        # global_max_el_jerk = 0.0
+            # ========================================================================
+            # Generate/load TOD for this speed
+            # ========================================================================
 
-        mean_el_list = []
+            simple_ccat.tod_analysis(
+                PREFIX=run_prefix,
+                tod_diagnostics=False,
+                maps=False,
+                save_all_plots=False,
+                run_mode="fits",
+                atm_plot=False,
+                temp_mode="inst",
+                ccat_band="280",
+                map_type="BM",
+                pwv_mm=PWV_MM,
+                start_time=START_TIME,
+                total_duration_s=TOTAL_DURATION_S,
+                sim_duration_s=SIM_DURATION_S,
+                sample_rate_hz=SAMPLE_RATE_HZ,
+                scan_pattern=SCAN_PATTERN,
+                el_limits=EL_LIMITS,
+                speed=spd,
+            )
 
-        for det_idx in [604]:
+            fits_path = run_tod_outdir / f"{run_prefix}_dim_reduced_tods.fits"
 
-            az_deg_track = np.rad2deg(tod.az[det_idx, :])
-            el_deg_track = np.rad2deg(tod.el[det_idx, :])
-
-            time = np.arange(len(az_deg_track)) / SAMPLE_RATE_HZ
-            dt = 1 / SAMPLE_RATE_HZ
-
-            valid = np.isfinite(az_deg_track) & np.isfinite(el_deg_track)
-            az_deg_track = az_deg_track[valid]
-            el_deg_track = el_deg_track[valid]
-
-            if len(az_deg_track) < 3:
+            if not fits_path.exists():
+                print(f"Missing FITS file for {run_prefix}")
                 continue
 
-            mean_el_list.append(np.nanmean(el_deg_track))
+            # ========================================================================
+            # Load FITS TOD and initialize max motion metrics
+            # ========================================================================
 
-            # Projected angular velocity on sky
-            projected_velocity_az = (
-                np.cos(np.radians(el_deg_track[1:-1]))
-                * (az_deg_track[2:] - az_deg_track[:-2])
-                / (2 * dt)
+            tod = maria.tod.load(fits_path, site=site, bands=[band])
+
+            global_max_az_vel = 0.0
+            global_max_el_vel = 0.0
+            global_max_az_acc = 0.0
+            global_max_el_acc = 0.0
+            # global_max_az_jerk = 0.0
+            # global_max_el_jerk = 0.0
+
+            mean_el_list = []
+
+            # ========================================================================
+            # Evaluate detector trajectory derivatives
+            # ========================================================================
+
+            for det_idx in [604]:
+
+                az_deg_track = np.rad2deg(tod.az[det_idx, :])
+                el_deg_track = np.rad2deg(tod.el[det_idx, :])
+
+                ra_deg_track = np.rad2deg(tod.ra[det_idx, :])
+                dec_deg_track = np.rad2deg(tod.dec[det_idx, :])
+
+                time = np.arange(len(az_deg_track)) / SAMPLE_RATE_HZ
+                dt = 1 / SAMPLE_RATE_HZ
+
+                valid = np.isfinite(az_deg_track) & np.isfinite(el_deg_track) & np.isfinite(ra_deg_track) & np.isfinite(dec_deg_track)
+                az_deg_track = az_deg_track[valid]
+                el_deg_track = el_deg_track[valid]
+                ra_deg_track = ra_deg_track[valid]
+                dec_deg_track = dec_deg_track[valid]
+
+                if len(az_deg_track) < 3:
+                    continue
+
+                mean_el_list.append(np.nanmean(el_deg_track))
+
+                # Projected angular velocity on sky
+
+                velocity_ra = (
+                    np.cos(np.radians(dec_deg_track[1:-1]))
+                    * (ra_deg_track[2:] - ra_deg_track[:-2])
+                    / (2 * dt)
+                )
+
+                velocity_dec = (
+                    (dec_deg_track[2:] - dec_deg_track[:-2])
+                    / (2 * dt)
+                )
+
+                acceleration_ra = (
+                    np.cos(np.radians(dec_deg_track[1:-1]))
+                    * (ra_deg_track[2:] - 2 * ra_deg_track[1:-1] + ra_deg_track[:-2])
+                    / (dt ** 2)
+                )
+
+                acceleration_dec = (
+                    (dec_deg_track[2:] - 2 * dec_deg_track[1:-1] + dec_deg_track[:-2])
+                    / (dt ** 2)
+                )
+
+                projected_velocity_az = (
+                    np.cos(np.radians(el_deg_track[1:-1]))
+                    * (az_deg_track[2:] - az_deg_track[:-2])
+                    / (2 * dt)
+                )
+
+                velocity_el = (
+                    (el_deg_track[2:] - el_deg_track[:-2])
+                    / (2 * dt)
+                )
+
+                projected_acceleration_az = (
+                    np.cos(np.radians(el_deg_track[1:-1]))
+                    * (az_deg_track[2:] - 2 * az_deg_track[1:-1] + az_deg_track[:-2])
+                    / (dt ** 2)
+                )
+
+                acceleration_el = (
+                    (el_deg_track[2:] - 2 * el_deg_track[1:-1] + el_deg_track[:-2])
+                    / (dt ** 2)
+                )
+
+                radec_speed_total = np.sqrt(velocity_ra**2 + velocity_dec**2)
+
+                radec_velocity_sum = velocity_ra + velocity_dec
+
+                azel_projected_velocity_sum = projected_velocity_az + velocity_el
+
+                projected_speed_total = np.sqrt(projected_velocity_az**2 + velocity_el**2)
+
+
+                # jerk_el = (
+                #     (el_deg_track[4:] - 2 * el_deg_track[3:-1] + 2 * el_deg_track[1:-3] - el_deg_track[:-4])
+                #     / (2*dt**3)
+                # )
+
+                # Actual azimuth motor motion, without cos(el)
+                motor_velocity_az = (
+                    (az_deg_track[2:] - az_deg_track[:-2])
+                    / (2 * dt)
+                )
+
+                motor_acceleration_az = (
+                    (az_deg_track[2:] - 2 * az_deg_track[1:-1] + az_deg_track[:-2])
+                    / (dt ** 2)
+                )
+
+                motor_velocity_el = velocity_el
+
+                motor_acceleration_el = acceleration_el
+
+                motor_velocity_sum = motor_velocity_az + motor_velocity_el
+
+                motor_speed_total = np.sqrt(motor_velocity_az**2 + motor_velocity_el**2)
+
+
+                # motor_jerk_az = (
+                #     ((az_deg_track[4:] - 2*az_deg_track[3:-1] + 2*az_deg_track[1:-3] - az_deg_track[:-4])
+                #     / (2 * dt**3) )
+                # )
+
+                global_max_az_vel = max(
+                    global_max_az_vel,
+                    np.nanmax(np.abs(motor_velocity_az))
+                )
+
+                global_max_el_vel = max(
+                    global_max_el_vel,
+                    np.nanmax(np.abs(velocity_el))
+                )
+
+                global_max_az_acc = max(
+                    global_max_az_acc,
+                    np.nanmax(np.abs(motor_acceleration_az))
+                )
+
+                global_max_el_acc = max(
+                    global_max_el_acc,
+                    np.nanmax(np.abs(acceleration_el))
+                )
+
+                # global_max_az_jerk = max(
+                #     global_max_az_jerk,
+                #     np.nanmax(np.abs(motor_jerk_az))
+                # )
+
+                # gloabl_max_el_jerk = max(
+                #     global_max_el_jerk,
+                #     np.nanmax(np.abs(jerk_el))
+                # )
+
+            mean_elevation = np.nanmean(mean_el_list)
+
+            az_speed_limit = 3.0
+            el_speed_limit = 1.5
+            az_acc_limit = 6.0
+            el_acc_limit = 1.5
+
+            passes_limits = (
+                global_max_az_vel < az_speed_limit
+                and global_max_el_vel < el_speed_limit
+                and global_max_az_acc < az_acc_limit
+                and global_max_el_acc < el_acc_limit
             )
 
-            velocity_el = (
-                (el_deg_track[2:] - el_deg_track[:-2])
-                / (2 * dt)
-            )
+            # ========================================================================
+            # Store motion summary for this speed
+            # ========================================================================
 
-            projected_acceleration_az = (
-                np.cos(np.radians(el_deg_track[1:-1]))
-                * (az_deg_track[2:] - 2 * az_deg_track[1:-1] + az_deg_track[:-2])
-                / (dt ** 2)
-            )
+            motion_results.append({
+                "elevation_label": ELEV_LABEL,
+                "start_time": START_TIME,
+                "mean_elevation_deg": mean_elevation,
+                "input_speed_deg_s": spd,
 
-            acceleration_el = (
-                (el_deg_track[2:] - 2 * el_deg_track[1:-1] + el_deg_track[:-2])
-                / (dt ** 2)
-            )
+                "max_projected_az_velocity_deg_s": np.nanmax(np.abs(projected_velocity_az)),
+                "max_el_velocity_deg_s": global_max_el_vel,
+                "max_projected_az_acceleration_deg_s2": np.nanmax(np.abs(projected_acceleration_az)),
+                "max_el_acceleration_deg_s2": global_max_el_acc,
 
-            jerk_el = (
-                (el_deg_track[4:] - 2 * el_deg_track[3:-1] + 2 * el_deg_track[1:-3] + el_deg_track[:-4])
-                / (2*dt**3)
-            )
+                "max_motor_az_velocity_deg_s": global_max_az_vel,
+                "max_motor_el_velocity_deg_s": global_max_el_vel,
+                "max_motor_az_acceleration_deg_s2": global_max_az_acc,
+                "max_motor_el_acceleration_deg_s2": global_max_el_acc,
 
-            # Actual azimuth motor motion, without cos(el)
-            motor_velocity_az = (
-                (az_deg_track[2:] - az_deg_track[:-2])
-                / (2 * dt)
-            )
+                "max_radec_speed_deg_s": np.nanmax(np.abs(radec_speed_total)),
+                "max_projected_azel_speed_deg_s": np.nanmax(np.abs(projected_speed_total)),
+                "max_motor_speed_deg_s": np.nanmax(np.abs(motor_speed_total)),
 
-            motor_acceleration_az = (
-                (az_deg_track[2:] - 2 * az_deg_track[1:-1] + az_deg_track[:-2])
-                / (dt ** 2)
-            )
+                "passes_limits": passes_limits,
+            })
 
-            # motor_jerk_az = (
-            #     ((az_deg_track[4:] - 2*az_deg_track[3:-1] + 2*az_deg_track[1:-3] - az_deg_track[:-4])
-            #     / (2 * dt**3) )
-            # )
+            print("\nMotion summary")
+            print("--------------")
+            print(f"Mean elevation: {mean_elevation:.2f} deg")
+            print(f"Input speed: {spd:.2f} deg/s")
+            print(f"Max AZ velocity: {global_max_az_vel:.3f} deg/s")
+            print(f"Max EL velocity: {global_max_el_vel:.3f} deg/s")
+            print(f"Max AZ acceleration: {global_max_az_acc:.3f} deg/s^2")
+            print(f"Max EL acceleration: {global_max_el_acc:.3f} deg/s^2")
+            print(f"Passes limits: {passes_limits}")
 
-            global_max_az_vel = max(
-                global_max_az_vel,
-                np.nanmax(np.abs(motor_velocity_az))
-            )
 
-            global_max_el_vel = max(
-                global_max_el_vel,
-                np.nanmax(np.abs(velocity_el))
-            )
-
-            global_max_az_acc = max(
-                global_max_az_acc,
-                np.nanmax(np.abs(motor_acceleration_az))
-            )
-
-            global_max_el_acc = max(
-                global_max_el_acc,
-                np.nanmax(np.abs(acceleration_el))
-            )
-
-            global_max_az_jerk = max(
-                global_max_az_jerk,
-                np.nanmax(np.abs(motor_jerk_az))
-            )
-
-            # gloabl_max_el_jerk = max(
-            #     global_max_el_jerk,
-            #     np.nanmax(np.abs(jerk_el))
-            # )
-
-        mean_elevation = np.nanmean(mean_el_list)
-
-        az_speed_limit = 3.0
-        el_speed_limit = 1.5
-        az_acc_limit = 6.0
-        el_acc_limit = 1.5
-
-        passes_limits = (
-            global_max_az_vel < az_speed_limit
-            and global_max_el_vel < el_speed_limit
-            and global_max_az_acc < az_acc_limit
-            and global_max_el_acc < el_acc_limit
-        )
-
-        motion_results.append({
-            "elevation_label": ELEV_LABEL,
-            "start_time": START_TIME,
-            "mean_elevation_deg": mean_elevation,
-            "input_speed_deg_s": spd,
-            "max_az_velocity_deg_s": global_max_az_vel,
-            "max_el_velocity_deg_s": global_max_el_vel,
-            "max_az_acceleration_deg_s2": global_max_az_acc,
-            "max_el_acceleration_deg_s2": global_max_el_acc,
-            "passes_limits": passes_limits,
-        })
-
-        print("\nMotion summary")
-        print("--------------")
-        print(f"Mean elevation: {mean_elevation:.2f} deg")
-        print(f"Input speed: {spd:.2f} deg/s")
-        print(f"Max AZ velocity: {global_max_az_vel:.3f} deg/s")
-        print(f"Max EL velocity: {global_max_el_vel:.3f} deg/s")
-        print(f"Max AZ acceleration: {global_max_az_acc:.3f} deg/s^2")
-        print(f"Max EL acceleration: {global_max_el_acc:.3f} deg/s^2")
-        print(f"Passes limits: {passes_limits}")
-
+    # ========================================================================
+    # Save single-elevation speed analysis table
+    # ========================================================================
 
     import csv 
 
@@ -433,6 +574,10 @@ if __name__ == "__main__":
     df = pd.DataFrame(motion_results)
 
     ANALYSIS_OUTDIR.mkdir(parents=True, exist_ok=True)
+
+    # ========================================================================
+    # Single-elevation diagnostic plots
+    # ========================================================================
 
     plt.figure(figsize=(8, 6))
 
@@ -546,6 +691,10 @@ if __name__ == "__main__":
     )
     plt.close("all")
 
+    # ========================================================================
+    # Second combined CSV block from original script
+    # ========================================================================
+
     csv_path_35 = Path("outputs/OrionA_speed_tests/speed_csv/maria_speed_elevation_motion_limits_35-45")
 
     csv_path_45 = Path("outputs/OrionA_speed_tests/speed_csv/maria_speed_elevation_motion_limits_45-55")
@@ -568,11 +717,13 @@ if __name__ == "__main__":
     print(f"Saved cmobined CSV to: {output_path}")
     print(f"Total rows: {len(combined_df)}")
 
+    combined_df.to_csv(output_path, index=False)
     raise SystemExit("Finished motion limit analysis, exiting before TOD plotting")
 
 
-
-
+    # ========================================================================
+    # Part 4: detailed TOD checks and detector trajectory plots
+    # ========================================================================
 
     fits_path = TOD_OUTDIR / f"{PREFIX}_dim_reduced_tods.fits"
 
@@ -628,6 +779,10 @@ if __name__ == "__main__":
     print("el min/max:", np.nanmin(np.rad2deg(tod.el)), np.nanmax(np.rad2deg(tod.el)))
     print("az min/max:", np.nanmin(np.rad2deg(tod.az)), np.nanmax(np.rad2deg(tod.az)))
 
+
+    # ========================================================================
+    # Detailed RA/Dec and Az/El velocity/acceleration plots
+    # ========================================================================
 
     #---------------------------------------------------------
     #--- Velocity and Acceleration Detector Tracking Plots ---
@@ -1261,7 +1416,10 @@ if __name__ == "__main__":
 
 
 
-    raise SystemExit("Stopping after velocity and acceleration plots")
+
+    # ========================================================================
+    # Part 5: detector power distribution and spatial power comparisons
+    # ========================================================================
 
     P_det = tod.to("pW").signal
     P = np.asarray(P_det, dtype=np.float64)  # Convert to numpy array for calculations
@@ -1321,7 +1479,6 @@ if __name__ == "__main__":
     simple_ccat.savefig(ANALYSIS_OUTDIR, f"{PREFIX}_reloaded_detector_power_distribution_PWV{PWV_MM:.2f}.png")  
     plt.close("all")
 
-    # raise SystemExit("Stopping after power distribution plot")
 
 
     print("P shape:", P.shape)
@@ -1454,6 +1611,10 @@ if __name__ == "__main__":
 
 
     # det_idx = det1
+    # ========================================================================
+    # Detailed power plots for selected neighbouring detector pair
+    # ========================================================================
+
     for det_idx in [det1, det2]:
         ra_track = np.asarray(tod.ra[det_idx, :], dtype=np.float64)
         dec_track = np.asarray(tod.dec[det_idx, :], dtype=np.float64)
@@ -1745,6 +1906,10 @@ if __name__ == "__main__":
     # simple_ccat.savefig(ANALYSIS_OUTDIR, f"{PREFIX}_detector_direct_power_eta_{eta:.2f}_histogram_PWV{PWV_MM:.2f}.png")
 
     
+    # ========================================================================
+    # Part 6: detector-by-detector power statistics and frequency response
+    # ========================================================================
+
     detector_indices = []
     mean_list = []
     sigma_list = []
@@ -1797,6 +1962,10 @@ if __name__ == "__main__":
         #     P_track_W = P_track_flat * 1e-12  # Convert pW to W
         #     delta_f_over_fwhm_by_detector_list.append(fractional_width_list[det_idx] * Q_r * R_0 / (np.sqrt(1+ P_track_W/ P_0)) *P_track_flat)
 
+
+    # ========================================================================
+    # Reusable histogram helper for detector distributions
+    # ========================================================================
 
     def make_hist(data, xlabel, title, filename):
         data = np.asarray(data, dtype=np.float64)
@@ -1929,6 +2098,10 @@ if __name__ == "__main__":
 
     # plt.close("all")
 
+    # ========================================================================
+    # Individual detector fractional-frequency-shift histograms
+    # ========================================================================
+
     for det_idx in [0, 50, 309, 339, 472, 843]:
 
         det_idx = det_idx 
@@ -1967,6 +2140,10 @@ if __name__ == "__main__":
         )
 
         plt.close("all")
+
+    # ========================================================================
+    # All-detector fractional-frequency-shift distributions
+    # ========================================================================
 
     two_delta_f_over_fwhm_list = []
     half_delta_f_over_fwhm_list = []
@@ -2022,6 +2199,10 @@ if __name__ == "__main__":
         r"Distribution of Half Peak-to-Peak Fractional Frequency Shifts for Detectors",
         f"{PREFIX}_detector_half_delta_f_over_fwhm_histogram_PWV{PWV_MM:.2f}.png"
     )
+
+# ========================================================================
+# Part 7: Az/El tracks colour-coded by frequency response
+# ========================================================================
 
 # ============================================================
 # Plot: Individual detector Az/El track colour-coded by delta f / FWHM
@@ -2146,6 +2327,10 @@ for det_idx in [0, 50, 309, 339, 472, 843]:\
     )
     plt.close("all")
 
+    # ========================================================================
+    # Individual detector time/elevation response plots
+    # ========================================================================
+
     # ============================================================
     # Plot: Individual detector delta f / FWHM vs time
     # Uses each detector's own mean power as the reference
@@ -2248,6 +2433,10 @@ for det_idx in [0, 50, 309, 339, 472, 843]:\
 
 
     plt.close("all")
+
+    # ========================================================================
+    # Part 8: velocity/acceleration plots with detector power overlay
+    # ========================================================================
 
         #---------------------------------------------------------
     #--- Velocity and Acceleration Detector Tracking Plots ---
@@ -2693,7 +2882,6 @@ for det_idx in [0, 50, 309, 339, 472, 843]:\
         plt.close("all")
 
 
-    # raise SystemExit("Stopping after velocity and acceleration plots")
 
         plt.figure(figsize=(10, 6))
         plt.plot(velocity_el, P_mid_pW, lw=0.5, color="black")
