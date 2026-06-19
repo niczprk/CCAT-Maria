@@ -56,12 +56,7 @@ ELEVATION_RANGES = [
 ]
 ELEV_LABEL = f"{EL_LIMITS[0]}-{EL_LIMITS[1]}"
 
-RUN_SPEED_GRID = True
-COMBINE_EXISTING_CSVS = False
-SPEED_CSV_DIR = Path("outputs/OrionA_pong_speed_tests/speed_csv")
-COMBINED_PLOT_DIR = Path("outputs/OrionA_pong_speed_tests/combined_plots")
-SPEED_CSV_DIR.mkdir(parents=True, exist_ok=True)
-COMBINED_PLOT_DIR.mkdir(parents=True, exist_ok=True)
+
 
 SPEED  = 0.2 # deg/s, this is a guess for now but should be in the right ballpark for a daisy scan at 30-40 deg elevation with a 3 degree radius
 
@@ -87,13 +82,19 @@ eta = 0.5
 TOTAL_DURATION_S = 1800  # seconds
 SIM_DURATION_S = 1800  # seconds
 SAMPLE_RATE_HZ = 20  # Hz
-SCAN_PATTERN = "Pong"
+SCAN_PATTERN = "lissajous"
 CHUNK_NUMBER = 0
 
 PREFIX = f"OrionA_{ELEV_LABEL}_vel_el"
-ANALYSIS_OUTDIR = Path(f"outputs/{PREFIX}_pong_analysis_outputs")
-TOD_OUTDIR = Path(f"outputs/{PREFIX}_pong_tod")
+ANALYSIS_OUTDIR = Path(f"outputs/{PREFIX}_lissa_analysis_outputs")
+TOD_OUTDIR = Path(f"outputs/{PREFIX}_lissa_tod")
 
+RUN_SPEED_GRID = True
+COMBINE_EXISTING_CSVS = False
+SPEED_CSV_DIR = Path("outputs/OrionA_{SCAN_PATTERN}_speed_tests/speed_csv")
+COMBINED_PLOT_DIR = Path("outputs/OrionA_{SCAN_PATTERN}_speed_tests/combined_plots")
+SPEED_CSV_DIR.mkdir(parents=True, exist_ok=True)
+COMBINED_PLOT_DIR.mkdir(parents=True, exist_ok=True)
 
 print(dir((maria.tod)))
 
@@ -290,7 +291,7 @@ if __name__ == "__main__":
 
         print(f"\nStarting analysis for elevation range: {ELEV_LABEL} degrees")
         print("===============================================")
-        PREFIX = f"OrionA_{ELEV_LABEL}_pong"
+        PREFIX = f"OrionA_{ELEV_LABEL}_{SCAN_PATTERN.lower()}"
         ANALYSIS_OUTDIR = Path(f"outputs/{PREFIX}_analysis_outputs")
         ANALYSIS_OUTDIR.mkdir(parents=True, exist_ok=True)
 
@@ -298,7 +299,7 @@ if __name__ == "__main__":
 
         for spd in speed_list:
 
-            run_prefix = f"OrionA_{ELEV_LABEL}_speed_{spd:.1f}".replace(".", "p")
+            run_prefix = f"OrionA_{SCAN_PATTERN.lower()}_{ELEV_LABEL}_speed_{spd:.1f}".replace(".", "p")
 
             run_analysis_outdir = Path(f"outputs/{run_prefix}_analysis_outputs")
             run_tod_outdir = Path(f"outputs/{run_prefix}_tods")
@@ -375,6 +376,7 @@ if __name__ == "__main__":
                 el_deg_track = el_deg_track[valid]
                 ra_deg_track = ra_deg_track[valid]
                 dec_deg_track = dec_deg_track[valid]
+                time = time[valid]
 
                 if len(az_deg_track) < 3:
                     continue
@@ -462,8 +464,6 @@ if __name__ == "__main__":
 
                 time_mid = time[1:-1]
 
-                time_mid = time[1:-1]
-
                 # -------------------------------------------------
                 # RA/Dec speed magnitude vs Maria input speed
                 # -------------------------------------------------
@@ -490,7 +490,7 @@ if __name__ == "__main__":
                 plt.ylabel("Speed magnitude (deg/s)")
                 plt.title(
                     f"RA/Dec Speed Magnitude vs Maria Input Speed\n"
-                    f"Pong, Detector {det_idx}, Speed={spd:.2f} deg/s, Elev={ELEV_LABEL}"
+                    f"{SCAN_PATTERN}, Detector {det_idx}, Speed={spd:.2f} deg/s, Elev={ELEV_LABEL}"
                 )
 
                 plt.grid(True)
@@ -530,7 +530,7 @@ if __name__ == "__main__":
                 plt.ylabel("Speed magnitude (deg/s)")
                 plt.title(
                     f"Projected Az/El Speed Magnitude vs Maria Input Speed\n"
-                    f"Pong, Detector {det_idx}, Speed={spd:.2f} deg/s, Elev={ELEV_LABEL}"
+                    f"{SCAN_PATTERN}, Detector {det_idx}, Speed={spd:.2f} deg/s, Elev={ELEV_LABEL}"
                 )
 
                 plt.grid(True)
@@ -570,7 +570,7 @@ if __name__ == "__main__":
                 plt.ylabel("Speed magnitude (deg/s)")
                 plt.title(
                     f"Motor Speed Magnitude vs Maria Input Speed\n"
-                    f"Pong, Detector {det_idx}, Speed={spd:.2f} deg/s, Elev={ELEV_LABEL}"
+                    f"{SCAN_PATTERN}, Detector {det_idx}, Speed={spd:.2f} deg/s, Elev={ELEV_LABEL}"
                 )
 
                 plt.grid(True)
@@ -675,22 +675,22 @@ if __name__ == "__main__":
     # Save single-elevation speed analysis table
     # ========================================================================
 
-    import csv 
-    import pandas as pd
+            import csv 
+            import pandas as pd
 
-    if len(motion_results) == 0:
-                print(f"No motion results for elevation range {ELEV_LABEL}")
-                raise SystemExit("No results to save, exiting.")
+            if len(motion_results) == 0:
+                        print(f"No motion results for elevation range {ELEV_LABEL}")
+                        raise SystemExit("No results to save, exiting.")
 
-    csv_path = SPEED_CSV_DIR / f"maria_pong_speed_elevation_motion_limits_{ELEV_LABEL}.csv"
+            csv_path = SPEED_CSV_DIR / f"maria_{SCAN_PATTERN.lower()}_speed_elevation_motion_limits_{ELEV_LABEL}.csv"
 
-    df = pd.DataFrame(motion_results)
-    df.to_csv(csv_path, index=False)
+            df = pd.DataFrame(motion_results)
+            df.to_csv(csv_path, index=False)
 
-    print(f"\nSaved Pong motion results to {csv_path}")
+            print(f"\nSaved {SCAN_PATTERN} motion results to {csv_path}")
 
     csv_files = sorted(
-        SPEED_CSV_DIR.glob("maria_pong_speed_elevation_motion_limits_*.csv")
+        SPEED_CSV_DIR.glob(f"maria_{SCAN_PATTERN.lower()}_speed_elevation_motion_limits_*.csv")
     )
 
     dfs = []
@@ -709,7 +709,7 @@ if __name__ == "__main__":
     
     combined_df = pd.concat(dfs, ignore_index=True)
 
-    combined_csv_path = SPEED_CSV_DIR / "maria_pong_speed_elevation_motion_limits_combined.csv"
+    combined_csv_path = SPEED_CSV_DIR / f"maria_{SCAN_PATTERN.lower()}_speed_elevation_motion_limits_combined.csv"
     combined_df.to_csv(combined_csv_path, index=False)
 
     print(f"Saved combined CSV to: {combined_csv_path}")
@@ -719,55 +719,55 @@ if __name__ == "__main__":
                 "label": "Maximum Motor AZ Velocity",
                 "unit": "deg/s",
                 "limit": 3.0,
-                "filename": "pong_combined_max_motor_az_velocity_vs_input_speed.png",
+                "filename": f"{SCAN_PATTERN.lower()}_combined_max_motor_az_velocity_vs_input_speed.png",
             },
             "max_motor_el_velocity_deg_s": {
                 "label": "Maximum Motor EL Velocity",
                 "unit": "deg/s",
                 "limit": 1.5,
-                "filename": "pong_combined_max_motor_el_velocity_vs_input_speed.png",
+                "filename": f"{SCAN_PATTERN.lower()}_combined_max_motor_el_velocity_vs_input_speed.png",
             },
             "max_motor_az_acceleration_deg_s2": {
                 "label": "Maximum Motor AZ Acceleration",
                 "unit": "deg/s²",
                 "limit": 6.0,
-                "filename": "pong_combined_max_motor_az_acceleration_vs_input_speed.png",
+                "filename": f"{SCAN_PATTERN.lower()}_combined_max_motor_az_acceleration_vs_input_speed.png",
             },
             "max_motor_el_acceleration_deg_s2": {
                 "label": "Maximum Motor EL Acceleration",
                 "unit": "deg/s²",
                 "limit": 1.5,
-                "filename": "pong_combined_max_motor_el_acceleration_vs_input_speed.png",
+                "filename": f"{SCAN_PATTERN.lower()}_combined_max_motor_el_acceleration_vs_input_speed.png",
             },
             "max_projected_az_velocity_deg_s": {
                 "label": "Maximum Projected AZ Velocity",
                 "unit": "deg/s",
                 "limit": None,
-                "filename": "pong_combined_max_projected_az_velocity_vs_input_speed.png",
+                "filename": f"{SCAN_PATTERN.lower()}_combined_max_projected_az_velocity_vs_input_speed.png",
             },
             "max_projected_az_acceleration_deg_s2": {
                 "label": "Maximum Projected AZ Acceleration",
                 "unit": "deg/s²",
                 "limit": None,
-                "filename": "pong_combined_max_projected_az_acceleration_vs_input_speed.png",
+                "filename": f"{SCAN_PATTERN.lower()}_combined_max_projected_az_acceleration_vs_input_speed.png",
             },
             "max_radec_speed_deg_s": {
                 "label": "Maximum RA/Dec Speed Magnitude",
                 "unit": "deg/s",
                 "limit": None,
-                "filename": "pong_combined_max_radec_speed_magnitude_vs_input_speed.png",
+                "filename": f"{SCAN_PATTERN.lower()}_combined_max_radec_speed_magnitude_vs_input_speed.png",
             },
             "max_projected_azel_speed_deg_s": {
                 "label": "Maximum Projected Az/El Speed Magnitude",
                 "unit": "deg/s",
                 "limit": None,
-                "filename": "pong_combined_max_projected_azel_speed_magnitude_vs_input_speed.png",
+                "filename": f"{SCAN_PATTERN.lower()}_combined_max_projected_azel_speed_magnitude_vs_input_speed.png",
             },
             "max_motor_speed_deg_s": {
                 "label": "Maximum Motor Speed Magnitude",
                 "unit": "deg/s",
                 "limit": None,
-                "filename": "pong_combined_max_motor_speed_magnitude_vs_input_speed.png",
+                "filename": f"{SCAN_PATTERN.lower()}_combined_max_motor_speed_magnitude_vs_input_speed.png",
             },
     }
 
@@ -810,8 +810,8 @@ if __name__ == "__main__":
 
             plt.close("all")
 
-    print(f"Saved combined Pong plots to: {COMBINED_PLOT_DIR}")
-
+    print(f"Saved combined {SCAN_PATTERN} plots to: {COMBINED_PLOT_DIR}")
+    
     raise SystemExit("Finished motion limit analysis, exiting before TOD plotting")
 
     # ========================================================================
