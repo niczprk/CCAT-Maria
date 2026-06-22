@@ -91,8 +91,8 @@ TOD_OUTDIR = Path(f"outputs/{PREFIX}_lissa_tod")
 
 RUN_SPEED_GRID = True
 COMBINE_EXISTING_CSVS = False
-SPEED_CSV_DIR = Path("outputs/OrionA_{SCAN_PATTERN}_speed_tests/speed_csv")
-COMBINED_PLOT_DIR = Path("outputs/OrionA_{SCAN_PATTERN}_speed_tests/combined_plots")
+SPEED_CSV_DIR = Path(f"outputs/OrionA_{SCAN_PATTERN}_speed_tests/speed_csv")
+COMBINED_PLOT_DIR = Path(f"outputs/OrionA_{SCAN_PATTERN}_speed_tests/combined_plots")
 SPEED_CSV_DIR.mkdir(parents=True, exist_ok=True)
 COMBINED_PLOT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -106,10 +106,6 @@ print(dir((maria.tod)))
 # ========================================================================
 
 if __name__ == "__main__":
-
-    # ========================================================================
-    # Part 1: combine existing speed-test CSV files
-    # ========================================================================
 
     # -------------------------------------------------
     # Paths
@@ -152,9 +148,6 @@ if __name__ == "__main__":
     # print(f"Saved combined CSV to: {combined_csv_path}")
     # print(f"Total rows: {len(combined_df)}")
 
-    # # ========================================================================
-    # # Part 2: make combined velocity/acceleration summary plots
-    # # ========================================================================
 
     # # -------------------------------------------------
     # # Overlaid plots
