@@ -82,7 +82,7 @@ eta = 0.5
 TOTAL_DURATION_S = 1800  # seconds
 SIM_DURATION_S = 1800  # seconds
 SAMPLE_RATE_HZ = 20  # Hz
-SCAN_PATTERN = "lissajous"
+SCAN_PATTERN = "back_and_forth"
 CHUNK_NUMBER = 0
 
 PREFIX = f"OrionA_{ELEV_LABEL}_vel_el"
@@ -249,7 +249,9 @@ if __name__ == "__main__":
     # -------------------------------------------------
     # Variable Speed Analysis
     # -------------------------------------------------
-    speed_list = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0]
+    # speed_list = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0]
+    speed_list = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8] #changed for raster scan to avoid hitting the 1.0 deg/s limit
+
 
     # start_time_dict = {
     #     "30deg": "2022-02-10T17:00:00",
