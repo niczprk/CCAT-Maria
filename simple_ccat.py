@@ -127,7 +127,7 @@ START_TIME = "2022-02-10T18:30:00"
 TOTAL_DURATION_S = 1800  # seconds
 SIM_DURATION_S = 1800  # seconds
 SAMPLE_RATE_HZ = 50  # Hz
-SCAN_PATTERN = "daisy"
+SCAN_PATTERN = "stare"
 CHUNK_NUMBER = 0
 
 # ------------------------------
