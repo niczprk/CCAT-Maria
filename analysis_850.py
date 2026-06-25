@@ -12,10 +12,45 @@ from scipy.stats import norm, skew
 import maria
 from maria.instrument import Band
 
+import simple_ccat
+
 
 # ============================================================
 # User settings
 # ============================================================
+
+eta = 0.5 # optical efficiency for this estimate
+
+Polarized = False # whether to include polarization in the simulation
+
+# 0.36, 0.67, & 1.28 are Q1, Q2, and Q3 zenith PMV values for Chajnantor
+
+EL_LIMITS = (65, 75)  # degrees
+
+SPEED  = 0.2 # deg/s, this is a guess for now but should be in the right ballpark for a daisy scan at 30-40 deg elevation with a 3 degree radius
+
+START_TIME = "2022-02-10T17:00:00"
+
+eta = 0.5
+
+# "2022-02-10T22:45:00" for around 75 degrees ?
+#"2022-02-10T20:30:00" for around 60 degrees 
+#"2022-02-10T18:55:00" for roughly 45 degrees
+#"2022-02-10T18:30:00" for roughly 40 degrees
+#"2022-02-10T17:00:00" for roughly 30 degrees
+ 
+
+TOTAL_DURATION_S = 1800  # seconds
+SIM_DURATION_S = 1800  # seconds
+CHUNK_NUMBER = 0
+
+
+# RUN_SPEED_GRID = True
+# COMBINE_EXISTING_CSVS = False
+# SPEED_CSV_DIR = Path(f"outputs/OrionA_{SCAN_PATTERN}_speed_tests/speed_csv")
+# COMBINED_PLOT_DIR = Path(f"outputs/OrionA_{SCAN_PATTERN}_speed_tests/combined_plots")
+# SPEED_CSV_DIR.mkdir(parents=True, exist_ok=True)
+# COMBINED_PLOT_DIR.mkdir(parents=True, exist_ok=True)
 
 SAMPLE_RATE_HZ = 20
 
@@ -27,7 +62,12 @@ PWV_MM = 0.36
 eta = 0.5
 
 NU_HZ = 850e9
+NU_GHZ = NU_HZ / 1e9 #GHz
+bandwidth_hz = 97e9  # GHz bandwidth for 850 GHz band
+
 BAND_LABEL = "850"
+selected_band = "850" #make sure these match
+
 
 # Change these for 850 GHz
 Q_r = 40000
@@ -41,7 +81,7 @@ run_prefix = (
     .replace(".", "p")
 )
 
-TOD_OUTDIR = Path(f"outputs/{run_prefix}_tods")
+TOD_OUTDIR = Path(f"outputs/{run_prefix}_tods") #Im going to have to change this for each run I am interested in
 fits_path = TOD_OUTDIR / f"{run_prefix}_dim_reduced_tods.fits"
 
 OUTDIR = Path(f"outputs/{run_prefix}_{BAND_LABEL}GHz_power_deltaf_analysis")
@@ -52,12 +92,33 @@ OUTDIR.mkdir(parents=True, exist_ok=True)
 # Load TOD
 # ============================================================
 
+
+simple_ccat.tod_analysis(
+    PREFIX=run_prefix,
+    tod_diagnostics=False,
+    maps=False,
+    save_all_plots=False,
+    run_mode="fits",
+    atm_plot=False,
+    temp_mode="inst",
+    ccat_band="850",
+    map_type="BM",
+    pwv_mm=PWV_MM,
+    start_time=START_TIME,
+    total_duration_s=TOTAL_DURATION_S,
+    sim_duration_s=SIM_DURATION_S,
+    sample_rate_hz=SAMPLE_RATE_HZ,
+    scan_pattern=SCAN_PATTERN,
+    el_limits=EL_LIMITS,
+    speed=SPEED,
+)
+
 site = maria.get_site("cerro_chajnantor", altitude=5600)
 
 band = Band(
     name="m2/f850",
     center=NU_HZ,
-    width=60e9,
+    width=bandwidth_hz,
     efficiency=eta,
     NET_CMB=13e-6,
     knee=1.0,
