@@ -82,7 +82,7 @@ eta = 0.5
 TOTAL_DURATION_S = 1800  # seconds
 SIM_DURATION_S = 1800  # seconds
 SAMPLE_RATE_HZ = 20  # Hz
-SCAN_PATTERN = "stare"
+SCAN_PATTERN = "daisy"
 CHUNK_NUMBER = 0
 
 PREFIX = f"OrionA_{ELEV_LABEL}_vel_el"
@@ -300,17 +300,17 @@ if __name__ == "__main__":
     #     speed=spd,
     # )
 
-    fits_path = run_tod_outdir / f"{run_prefix}_dim_reduced_tods.fits"
+    # fits_path = run_tod_outdir / f"{run_prefix}_dim_reduced_tods.fits"
 
-    if not fits_path.exists():
-        raise FileNotFoundError(f"Missing FITS file for {run_prefix}")
+    # if not fits_path.exists():
+    #     raise FileNotFoundError(f"Missing FITS file for {run_prefix}")
         
 
-    # ========================================================================
-    # Load FITS TOD and initialize max motion metrics
-    # ========================================================================
+    # # ========================================================================
+    # # Load FITS TOD and initialize max motion metrics
+    # # ========================================================================
 
-    tod = maria.tod.load(fits_path, site=site, bands=[band])
+    # tod = maria.tod.load(fits_path, site=site, bands=[band])
 
 
     # for elev_label, start_time in start_time_dict.items():
@@ -319,56 +319,56 @@ if __name__ == "__main__":
     # Plot detector layout and highlight detector 604
     # ============================================================
 
-    time_idx = SAMPLE_RATE_HZ   # 1 second
+    # time_idx = SAMPLE_RATE_HZ   # 1 second
 
-    ra_det_deg = np.rad2deg(np.asarray(tod.ra[:, time_idx]))
-    dec_det_deg = np.rad2deg(np.asarray(tod.dec[:, time_idx]))
+    # ra_det_deg = np.rad2deg(np.asarray(tod.ra[:, time_idx]))
+    # dec_det_deg = np.rad2deg(np.asarray(tod.dec[:, time_idx]))
 
-    plt.figure(figsize=(8,8))
+    # plt.figure(figsize=(8,8))
 
-    # All detectors
-    plt.scatter(
-        ra_det_deg,
-        dec_det_deg,
-        s=10,
-        alpha=0.3,
-        color="gray"
-    )
+    # # All detectors
+    # plt.scatter(
+    #     ra_det_deg,
+    #     dec_det_deg,
+    #     s=10,
+    #     alpha=0.3,
+    #     color="gray"
+    # )
 
-    # Highlight detector 604
-    det_idx = 150
+    # # Highlight detector 604
+    # det_idx = 150
 
-    plt.scatter(
-        ra_det_deg[det_idx],
-        dec_det_deg[det_idx],
-        s=250,
-        color="red",
-        edgecolor="black",
-        label=f"Detector {det_idx}"
-    )
+    # plt.scatter(
+    #     ra_det_deg[det_idx],
+    #     dec_det_deg[det_idx],
+    #     s=250,
+    #     color="red",
+    #     edgecolor="black",
+    #     label=f"Detector {det_idx}"
+    # )
 
-    plt.text(
-        ra_det_deg[det_idx],
-        dec_det_deg[det_idx],
-        f" {det_idx}",
-        fontsize=12,
-        color="red",
-        weight="bold"
-    )
+    # plt.text(
+    #     ra_det_deg[det_idx],
+    #     dec_det_deg[det_idx],
+    #     f" {det_idx}",
+    #     fontsize=12,
+    #     color="red",
+    #     weight="bold"
+    # )
 
-    plt.gca().invert_xaxis()
-    plt.axis("equal")
-    plt.xlabel("RA (deg)")
-    plt.ylabel("Dec (deg)")
-    plt.title("Detector layout")
-    plt.grid(True)
-    plt.legend()
-    simple_ccat.savefig(
-        ANALYSIS_OUTDIR,
-        f"{run_prefix}_detector_layout.png"
-    )
+    # plt.gca().invert_xaxis()
+    # plt.axis("equal")
+    # plt.xlabel("RA (deg)")
+    # plt.ylabel("Dec (deg)")
+    # plt.title("Detector layout")
+    # plt.grid(True)
+    # plt.legend()
+    # simple_ccat.savefig(
+    #     ANALYSIS_OUTDIR,
+    #     f"{run_prefix}_detector_layout.png"
+    # )
 
-    raise SystemExit("Detector layout complete")
+    # raise SystemExit("Detector layout complete")
 
     # ========================================================================
     # Loop over MARIA input scan speeds
