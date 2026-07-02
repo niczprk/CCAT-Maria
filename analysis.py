@@ -252,6 +252,8 @@ if __name__ == "__main__":
     # speed_list = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0]
     speed_list = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8] #changed for raster scan to avoid hitting the 1.0 deg/s limit
 
+    pattern_list = ["double_circle", "raster", "daisy", "back_and_forth", "lissajous"]
+
 
     # start_time_dict = {
     #     "30deg": "2022-02-10T17:00:00",
@@ -275,31 +277,293 @@ if __name__ == "__main__":
         gain_error=5e-2,
     )
 
-    run_prefix = "det_loc"
-    spd = 0.2
+    run_prefix = "velocity_per_pattern"
+
+    ROOT_ANALYSIS_DIR = Path("outputs") / run_prefix
+    ROOT_ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
+
+    spd = 0.1
+    EL_LIMITS = (55, 65)
+    det_idx = 604
+
     run_tod_outdir = Path(f"outputs/{run_prefix}_tods")
+    run_tod_outdir.mkdir(parents=True, exist_ok=True)
+
+    for pattern in pattern_list:
+
+        print(f"\nStarting analysis for scan pattern: {pattern}, speed {spd:.2f} deg/s, elevation range: {EL_LIMITS[0]}-{EL_LIMITS[1]} degrees")
+        print(f"===============================================")
+
+        pattern_dir = ROOT_ANALYSIS_DIR / pattern
+        pattern_dir.mkdir(parents=True, exist_ok=True)
 
 
-    # simple_ccat.tod_analysis(
-    #     PREFIX=run_prefix,
-    #     tod_diagnostics=False,
-    #     maps=False,
-    #     save_all_plots=False,
-    #     run_mode="fits",
-    #     atm_plot=False,
-    #     temp_mode="inst",
-    #     ccat_band="280",
-    #     map_type="BM",
-    #     pwv_mm=PWV_MM,
-    #     start_time=START_TIME,
-    #     total_duration_s=TOTAL_DURATION_S,
-    #     sim_duration_s=SIM_DURATION_S,
-    #     sample_rate_hz=SAMPLE_RATE_HZ,
-    #     scan_pattern=SCAN_PATTERN,
-    #     el_limits=EL_LIMITS,
-    #     speed=spd,
-    # )
+        simple_ccat.tod_analysis(
+            PREFIX=run_prefix,
+            tod_diagnostics=False,
+            maps=False,
+            save_all_plots=False,
+            run_mode="fits",
+            atm_plot=False,
+            temp_mode="inst",
+            ccat_band="280",
+            map_type="BM",
+            pwv_mm=PWV_MM,
+            start_time=START_TIME,
+            total_duration_s=TOTAL_DURATION_S,
+            sim_duration_s=SIM_DURATION_S,
+            sample_rate_hz=SAMPLE_RATE_HZ,
+            scan_pattern=pattern,
+            el_limits=EL_LIMITS,
+            speed=spd,
+        )
 
+        fits_path = run_tod_outdir / f"{run_prefix}_dim_reduced_tods.fits"
+
+        if not fits_path.exists():
+            print(f"Missing FITS file for {run_prefix}")
+            continue
+
+        # ========================================================================
+        # Load FITS TOD and initialize max motion metrics
+        # ========================================================================
+
+        tod = maria.tod.load(fits_path, site=site, bands=[band])
+
+        az_deg_track = np.rad2deg(tod.az[det_idx, :])
+        el_deg_track = np.rad2deg(tod.el[det_idx, :])
+
+        ra_deg_track = np.rad2deg(tod.ra[det_idx, :])
+        dec_deg_track = np.rad2deg(tod.dec[det_idx, :])
+
+        time = np.arange(len(az_deg_track)) / SAMPLE_RATE_HZ
+        dt = 1 / SAMPLE_RATE_HZ
+
+        valid = np.isfinite(az_deg_track) & np.isfinite(el_deg_track) & np.isfinite(ra_deg_track) & np.isfinite(dec_deg_track)
+        az_deg_track = az_deg_track[valid]
+        el_deg_track = el_deg_track[valid]
+        ra_deg_track = ra_deg_track[valid]
+        dec_deg_track = dec_deg_track[valid]
+        time = time[valid]
+
+        if len(az_deg_track) < 3:
+            continue
+
+        # Projected angular velocity on sky
+
+        velocity_ra = (
+            np.cos(np.radians(dec_deg_track[1:-1]))
+            * (ra_deg_track[2:] - ra_deg_track[:-2])
+            / (2 * dt)
+        )
+
+        velocity_dec = (
+            (dec_deg_track[2:] - dec_deg_track[:-2])
+            / (2 * dt)
+        )
+
+        projected_velocity_az = (
+            np.cos(np.radians(el_deg_track[1:-1]))
+            * (az_deg_track[2:] - az_deg_track[:-2])
+            / (2 * dt)
+        )
+
+        velocity_el = (
+            (el_deg_track[2:] - el_deg_track[:-2])
+            / (2 * dt)
+        )
+
+        acceleration_motor_az = (
+            np.cos(np.radians(el_deg_track[1:-1]))
+            * (az_deg_track[2:] - 2 * az_deg_track[1:-1]
+            + az_deg_track[:-2]) / (dt ** 2)
+        )
+
+        acceleration_motor_el = (
+            (el_deg_track[2:] - 2 * el_deg_track[1:-1]
+            + el_deg_track[:-2]) / (dt ** 2)
+        )
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(time[1:-1], velocity_ra, lw=0.8, color="blue", label=r"$v_\mathrm{RA}$")
+        plt.plot(time[1:-1], velocity_dec, lw=0.8, color="green", label=r"$v_\mathrm{Dec}$")
+        plt.plot(time[1:-1], projected_velocity_az, lw=0.8, color="red", label=r"$v_\mathrm{AZ}$")
+        plt.plot(time[1:-1], velocity_el, lw=0.8, color="orange", label=r"$v_\mathrm{EL}$")
+        plt.title(f"Detector {det_idx} Angular Velocities vs Time\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Velocity (deg/s)")
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            pattern_dir,
+            f"{run_prefix}_detector_{det_idx}_angular_velocities_vs_time_{pattern}.png"
+        )
+
+        plt.figure(figsize=(10,6))
+        plt.plot(time[1:-1], acceleration_motor_az, lw=0.8, color="blue", label=r"$a_\mathrm{Motor AZ}$")
+        plt.plot(time[1:-1], acceleration_motor_el, lw=0.8, color="green", label=r"$a_\mathrm{Motor EL}$")
+        plt.title(f"Detector {det_idx} Motor Accelerations vs Time\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Acceleration (deg/s²)")
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            pattern_dir,
+            f"{run_prefix}_detector_{det_idx}_motor_accelerations_vs_time_{pattern}.png"
+        )
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], acceleration_motor_az, lw=0.8, color="blue", label=r"$a_\mathrm{Motor AZ}$")
+        plt.title(f"Detector {det_idx} Motor AZ Acceleration vs Time\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Acceleration (deg/s²)")
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            pattern_dir,
+            f"{run_prefix}_detector_{det_idx}_motor_az_acceleration_vs_time_{pattern}.png"
+        )
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], acceleration_motor_el, lw=0.8, color="blue", label=r"$a_\mathrm{Motor EL}$")
+        plt.title(f"Detector {det_idx} Motor EL Acceleration vs Time\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Acceleration (deg/s²)")
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            pattern_dir,
+            f"{run_prefix}_detector_{det_idx}_motor_el_acceleration_vs_time_{pattern}.png"
+        )
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], velocity_ra,lw=0.8, color="blue", label=r"$v_\mathrm{RA}$")
+        plt.title(f"Detector {det_idx} RA Angular Velocity vs Time\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Velocity (deg/s)")
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            pattern_dir,
+            f"{run_prefix}_detector_{det_idx}_ra_angular_velocity_vs_time_{pattern}.png"
+        )
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], velocity_dec, lw=0.8, color="blue", label=r"$v_\mathrm{Dec}$")
+        plt.title(f"Detector {det_idx} Dec Angular Velocity vs Time\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Velocity (deg/s)")
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            pattern_dir,
+            f"{run_prefix}_detector_{det_idx}_dec_angular_velocity_vs_time_{pattern}.png"
+        )
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], projected_velocity_az, lw=0.8, color="blue", label=r"$v_\mathrm{AZ}$")
+        plt.title(f"Detector {det_idx} AZ Angular Velocity vs Time\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Velocity (deg/s)")
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            pattern_dir,
+            f"{run_prefix}_detector_{det_idx}_az_angular_velocity_vs_time_{pattern}.png"
+        )
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(time[1:-1], velocity_el, lw=0.8, color="blue", label=r"$v_\mathrm{EL}$")
+        plt.title(f"Detector {det_idx} EL Angular Velocity vs Time\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Velocity (deg/s)")
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            pattern_dir,
+            f"{run_prefix}_detector_{det_idx}_el_angular_velocity_vs_time_{pattern}.png"
+        )
+
+        plt.figure(figsize=(10, 6))
+        plt.hist(velocity_el, bins=50, color="blue", alpha=0.7, label=r"$v_\mathrm{EL}$")
+        plt.title(f"Detector {det_idx} EL Angular Velocity Distribution\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
+        plt.xlabel("Velocity (deg/s)")
+        plt.ylabel("Frequency")
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            pattern_dir,
+            f"{run_prefix}_detector_{det_idx}_el_angular_velocity_distribution_{pattern}.png"
+        )
+
+        plt.figure(figsize=(10, 6))
+        plt.hist(projected_velocity_az, bins=50, color="blue", alpha=0.7, label=r"$v_\mathrm{AZ}$")
+        plt.title(f"Detector {det_idx} AZ Angular Velocity Distribution\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
+        plt.xlabel("Velocity (deg/s)")
+        plt.ylabel("Frequency")
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            pattern_dir,
+            f"{run_prefix}_detector_{det_idx}_az_angular_velocity_distribution_{pattern}.png"
+        )
+
+        plt.figure(figsize=(10, 6))
+        plt.hist(velocity_ra, bins=50, color="blue", alpha=0.7, label=r"$v_\mathrm{RA}$")
+        plt.title(f"Detector {det_idx} RA Angular Velocity Distribution\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
+        plt.xlabel("Velocity (deg/s)")
+        plt.ylabel("Frequency")
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            pattern_dir,
+            f"{run_prefix}_detector_{det_idx}_ra_angular_velocity_distribution_{pattern}.png"
+        )
+
+        plt.figure(figsize=(10, 6))
+        plt.hist(velocity_dec, bins=50, color="blue", alpha=0.7, label=r"$v_\mathrm{Dec}$")
+        plt.title(f"Detector {det_idx} Dec Angular Velocity Distribution\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
+        plt.xlabel("Velocity (deg/s)")
+        plt.ylabel("Frequency")
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            pattern_dir,
+            f"{run_prefix}_detector_{det_idx}_dec_angular_velocity_distribution_{pattern}.png"
+        )
+
+        plt.figure(figsize=(10, 6))
+        plt.hist(acceleration_motor_az, bins=50, color="blue", alpha=0.7, label=r"$a_\mathrm{Motor AZ}$")
+        plt.title(f"Detector {det_idx} Motor AZ Acceleration Distribution\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
+        plt.xlabel("Acceleration (deg/s²)")
+        plt.ylabel("Frequency")
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            pattern_dir,
+            f"{run_prefix}_detector_{det_idx}_motor_az_acceleration_distribution_{pattern}.png"
+        )
+        plt.figure(figsize=(10, 6))
+        plt.hist(acceleration_motor_el, bins=50, color="blue", alpha=0.7, label=r"$a_\mathrm{Motor EL}$")
+        plt.title(f"Detector {det_idx} Motor EL Acceleration Distribution\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
+        plt.xlabel("Acceleration (deg/s²)")
+        plt.ylabel("Frequency")
+        plt.grid(True)
+        plt.legend()
+        simple_ccat.savefig(
+            pattern_dir,
+            f"{run_prefix}_detector_{det_idx}_motor_el_acceleration_distribution_{pattern}.png"
+        )
+
+        print(f"\n{pattern}")
+        print(f"Max RA velocity: {np.max(np.abs(velocity_ra)):.3f}")
+        print(f"Max Dec velocity: {np.max(np.abs(velocity_dec)):.3f}")
+        print(f"Max AZ velocity: {np.max(np.abs(projected_velocity_az)):.3f}")
+        print(f"Max EL velocity: {np.max(np.abs(velocity_el)):.3f}")
+
+        print(f"Max AZ accel: {np.max(np.abs(acceleration_motor_az)):.3f}")
+        print(f"Max EL accel: {np.max(np.abs(acceleration_motor_el)):.3f}")
+
+        raise SystemExit("Analysis complete for all patterns. Check the output plots in the analysis directory.")
     # fits_path = run_tod_outdir / f"{run_prefix}_dim_reduced_tods.fits"
 
     # if not fits_path.exists():
@@ -553,7 +817,7 @@ if __name__ == "__main__":
 
                 time_mid = time[1:-1]
 
-                
+
 
                 # -------------------------------------------------
                 # RA/Dec speed magnitude vs Maria input speed
