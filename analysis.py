@@ -563,7 +563,7 @@ if __name__ == "__main__":
         print(f"Max AZ accel: {np.max(np.abs(acceleration_motor_az)):.3f}")
         print(f"Max EL accel: {np.max(np.abs(acceleration_motor_el)):.3f}")
 
-        raise SystemExit("Analysis complete for all patterns. Check the output plots in the analysis directory.")
+    raise SystemExit("Analysis complete for all patterns. Check the output plots in the analysis directory.")
     # fits_path = run_tod_outdir / f"{run_prefix}_dim_reduced_tods.fits"
 
     # if not fits_path.exists():
