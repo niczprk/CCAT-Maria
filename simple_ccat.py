@@ -1,6 +1,15 @@
 from __future__ import annotations
 import os, sys
 
+
+# for multiple runs of maria in the same session
+
+os.environ["OMP_NUM_THREADS"] = "1"  # Avoid multithreading issues in numpy/scipy
+os.environ["MKL_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
+os.environ["OPENBLAS_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
+os.environ["NUMEXPR_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
+
+
 from pathlib import Path
 
 from click import Tuple
@@ -26,13 +35,6 @@ from astropy.wcs import WCS
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astropy.nddata import Cutout2D
-
-# for multiple runs of maria in the same session
-
-os.environ["OMP_NUM_THREADS"] = "1"  # Avoid multithreading issues in numpy/scipy
-os.environ["MKL_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
-os.environ["OPENBLAS_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
-os.environ["NUMEXPR_NUM_THREADS"] = "1" # Avoid multithreading issues in numpy/scipy
 
 # -----------------------------
 # Fits // Directory Parameters

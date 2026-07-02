@@ -1,4 +1,10 @@
 from pathlib import Path
+import os, sys
+
+os.environ["OMP_NUM_THREADS"] = "1"  # Limit OpenMP threads to avoid oversubscription
+os.environ["MKL_NUM_THREADS"] = "1"  # Limit MKL threads to avoid oversubscription
+os.environ["NUMEXPR_NUM_THREADS"] = "1"  # Limit NumExpr threads to avoid oversubscription
+os.environ["OPENBLAS_NUM_THREADS"] = "1"  # Limit OpenBLAS threads to avoid oversubscription
 
 import numpy as np
 import pandas as pd
@@ -14,7 +20,6 @@ from maria.instrument import Band
 
 import simple_ccat
 
-
 # ============================================================
 # User settings
 # ============================================================
@@ -27,9 +32,13 @@ Polarized = False # whether to include polarization in the simulation
 
 EL_LIMITS = (65, 75)  # degrees
 
-SPEED  = 0.2 # deg/s, this is a guess for now but should be in the right ballpark for a daisy scan at 30-40 deg elevation with a 3 degree radius
-
 START_TIME = "2022-02-10T17:00:00"
+
+SCAN_PATTERN = "daisy"
+
+ELEV_LABEL = "65-75"
+
+SPEED = 0.1
 
 eta = 0.5
 
@@ -40,8 +49,8 @@ eta = 0.5
 #"2022-02-10T17:00:00" for roughly 30 degrees
  
 
-TOTAL_DURATION_S = 1800  # seconds
-SIM_DURATION_S = 1800  # seconds
+TOTAL_DURATION_S = 900  # seconds
+SIM_DURATION_S = 900  # seconds
 CHUNK_NUMBER = 0
 
 
@@ -52,14 +61,9 @@ CHUNK_NUMBER = 0
 # SPEED_CSV_DIR.mkdir(parents=True, exist_ok=True)
 # COMBINED_PLOT_DIR.mkdir(parents=True, exist_ok=True)
 
-SAMPLE_RATE_HZ = 20
-
-SCAN_PATTERN = "daisy"
-ELEV_LABEL = "65-75"
-SPEED = 0.2
+SAMPLE_RATE_HZ = 10
 
 PWV_MM = 0.36
-eta = 0.5
 
 NU_HZ = 850e9
 NU_GHZ = NU_HZ / 1e9 #GHz
@@ -69,12 +73,12 @@ BAND_LABEL = "850"
 selected_band = "850" #make sure these match
 
 
-# Change these for 850 GHz
-Q_r = 40000
-R_0 = -2.448e9
-P_0 = 957e-18
+# Expected values for 850 GHz band
+Q_r = 15000
+R_0 = -1e7
+P_0 = 120e-12
 
-DETECTORS_TO_PLOT = [0, 50, 309, 339, 472, 843]
+DETECTORS_TO_PLOT = [0, 50, 309, 339, 472, 604, 843]
 
 run_prefix = (
     f"OrionA_{SCAN_PATTERN.lower()}_{ELEV_LABEL}_speed_{SPEED:.1f}"
@@ -93,30 +97,30 @@ OUTDIR.mkdir(parents=True, exist_ok=True)
 # ============================================================
 
 
-simple_ccat.tod_analysis(
-    PREFIX=run_prefix,
-    tod_diagnostics=False,
-    maps=False,
-    save_all_plots=False,
-    run_mode="fits",
-    atm_plot=False,
-    temp_mode="inst",
-    ccat_band="850",
-    map_type="BM",
-    pwv_mm=PWV_MM,
-    start_time=START_TIME,
-    total_duration_s=TOTAL_DURATION_S,
-    sim_duration_s=SIM_DURATION_S,
-    sample_rate_hz=SAMPLE_RATE_HZ,
-    scan_pattern=SCAN_PATTERN,
-    el_limits=EL_LIMITS,
-    speed=SPEED,
-)
+# simple_ccat.tod_analysis(
+#     PREFIX=run_prefix,
+#     tod_diagnostics=False,
+#     maps=False,
+#     save_all_plots=False,
+#     run_mode="fits",
+#     atm_plot=False,
+#     temp_mode="inst",
+#     ccat_band="850",
+#     map_type="BM",
+#     pwv_mm=PWV_MM,
+#     start_time=START_TIME,
+#     total_duration_s=TOTAL_DURATION_S,
+#     sim_duration_s=SIM_DURATION_S,
+#     sample_rate_hz=SAMPLE_RATE_HZ,
+#     scan_pattern=SCAN_PATTERN,
+#     el_limits=EL_LIMITS,
+#     speed=SPEED,
+# )
 
 site = maria.get_site("cerro_chajnantor", altitude=5600)
 
 band = Band(
-    name="m2/f850",
+    name="m2/f093",
     center=NU_HZ,
     width=bandwidth_hz,
     efficiency=eta,
@@ -128,11 +132,7 @@ band = Band(
 if not fits_path.exists():
     raise FileNotFoundError(f"Missing TOD file: {fits_path}")
 
-tod = maria.tod.load(
-    fits_path,
-    site=site,
-    bands=[band],
-)
+tod = maria.tod.load(fits_path, site=site, bands=[band])
 
 print(f"\nLoaded TOD: {fits_path}")
 print(f"TOD shape: {tod.shape}")
