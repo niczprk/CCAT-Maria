@@ -24,6 +24,10 @@ import simple_ccat
 # User settings
 # ============================================================
 
+ccat_band = "280"  # "850" or "350"
+
+Run = True # whether to run the TOD analysis or just load existing TOD
+
 eta = 0.5 # optical efficiency for this estimate
 
 Polarized = False # whether to include polarization in the simulation
@@ -65,18 +69,33 @@ SAMPLE_RATE_HZ = 10
 
 PWV_MM = 0.36
 
-NU_HZ = 850e9
-NU_GHZ = NU_HZ / 1e9 #GHz
-bandwidth_hz = 97e9  # GHz bandwidth for 850 GHz band
+if ccat_band == "850":
+    NU_HZ = 850e9
+    NU_GHZ = NU_HZ / 1e9 #GHz
+    bandwidth_hz = 97e9  # GHz bandwidth for 850 GHz band
 
-BAND_LABEL = "850"
-selected_band = "850" #make sure these match
+    BAND_LABEL = "850"
+    selected_band = "850" #make sure these match
 
+elif ccat_band == "350":
+    NU_HZ = 350e9
+    NU_GHZ = NU_HZ / 1e9 #GHz
+    bandwidth_hz = 35e9  # GHz bandwidth for 350 GHz band
 
-# Expected values for 850 GHz band
-Q_r = 15000
-R_0 = -1e7
-P_0 = 120e-12
+    BAND_LABEL = "350"
+    selected_band = "350" #make sure these match
+
+elif ccat_band == "280":
+    NU_HZ = 280e9
+    NU_GHZ = NU_HZ / 1e9 #GHz
+    bandwidth_hz = 60e9  # GHz bandwidth for 280 GHz band
+
+    BAND_LABEL = "280"
+    selected_band = "280" #make sure these match
+# # Expected values for 850 GHz band
+# Q_r = 15000
+# R_0 = -1e7
+# P_0 = 120e-12
 
 DETECTORS_TO_PLOT = [0, 50, 309, 339, 472, 604, 843]
 
@@ -96,38 +115,65 @@ OUTDIR.mkdir(parents=True, exist_ok=True)
 # Load TOD
 # ============================================================
 
-
-# simple_ccat.tod_analysis(
-#     PREFIX=run_prefix,
-#     tod_diagnostics=False,
-#     maps=False,
-#     save_all_plots=False,
-#     run_mode="fits",
-#     atm_plot=False,
-#     temp_mode="inst",
-#     ccat_band="850",
-#     map_type="BM",
-#     pwv_mm=PWV_MM,
-#     start_time=START_TIME,
-#     total_duration_s=TOTAL_DURATION_S,
-#     sim_duration_s=SIM_DURATION_S,
-#     sample_rate_hz=SAMPLE_RATE_HZ,
-#     scan_pattern=SCAN_PATTERN,
-#     el_limits=EL_LIMITS,
-#     speed=SPEED,
-# )
+if Run == True:
+    simple_ccat.tod_analysis(
+        PREFIX=run_prefix,
+        tod_diagnostics=False,
+        maps=False,
+        save_all_plots=False,
+        run_mode="fits",
+        atm_plot=False,
+        temp_mode="inst",
+        ccat_band=selected_band,
+        map_type="BM",
+        pwv_mm=PWV_MM,
+        start_time=START_TIME,
+        total_duration_s=TOTAL_DURATION_S,
+        sim_duration_s=SIM_DURATION_S,
+        sample_rate_hz=SAMPLE_RATE_HZ,
+        scan_pattern=SCAN_PATTERN,
+        el_limits=EL_LIMITS,
+        speed=SPEED,
+    )
+else:
+    print(f"Skipping TOD generation; loading existing TOD from: {fits_path}")
 
 site = maria.get_site("cerro_chajnantor", altitude=5600)
 
-band = Band(
-    name="m2/f093",
-    center=NU_HZ,
-    width=bandwidth_hz,
-    efficiency=eta,
-    NET_CMB=13e-6,
-    knee=1.0,
-    gain_error=5e-2,
-)
+
+if ccat_band == "850":
+    band = Band(
+        name="m2/f093",
+        center=NU_HZ,
+        width=bandwidth_hz,
+        efficiency=eta,
+        NET_CMB=13e-6,
+        knee=1.0,
+        gain_error=5e-2,
+    )
+
+elif ccat_band == "350":
+    band = Band(
+        name="m2/f093",
+        center=NU_HZ,
+        width=bandwidth_hz,
+        efficiency=eta,
+        NET_CMB=48e-6,
+        knee=1.0,
+        gain_error=5e-2,
+    )
+
+elif ccat_band == "280":
+    f280 = Band(
+        name="m2/f093",
+        center=NU_HZ,
+        width=bandwidth_hz,
+        efficiency= eta,
+        NET_CMB=13e-6,
+        knee=1.0,
+        gain_error=5e-2,
+    )
+    band = f280
 
 if not fits_path.exists():
     raise FileNotFoundError(f"Missing TOD file: {fits_path}")
@@ -145,20 +191,34 @@ print(f"TOD shape: {tod.shape}")
 P_pW = tod.to("pW").signal
 P_pW = np.asarray(P_pW, dtype=np.float64)
 
-print("Power shape:", P_pW.shape)
-print(f"Using {BAND_LABEL} GHz constants:")
-print(f"Q_r = {Q_r:.6g}")
-print(f"R_0 = {R_0:.6g} W^-1")
-print(f"P_0 = {P_0:.6g} W")
+
 
 
 # ============================================================
 # Responsivity model
 # ============================================================
+if ccat_band == "850":
+    Q_r = 15000
+    R_0 = -1e7
+    P_0 = 120e-12
+elif ccat_band == "350":
+    Q_r = 40000 # Quality factor taken from Bayguchi thesis
+    P_0 = 957e-18 # idk but do not question the mighty jordan wheeler
+    R_0 = -2.448e9 #avg responsivity in W^-1 from Jordan Wheeler
+
+elif ccat_band == "280":
+    Q_r = 40000 # Quality factor taken from Bayguchi thesis
+    P_0 = 957e-18 # idk but do not question the mighty jordan wheeler
+    R_0 = -2.448e9 #avg responsivity in W^-1 from Jordan Wheeler
 
 def R(P_W):
     return R_0 / np.sqrt(1 + P_W / P_0)
 
+print("Power shape:", P_pW.shape)
+print(f"Using {BAND_LABEL} GHz constants:")
+print(f"Q_r = {Q_r:.6g}")
+print(f"R_0 = {R_0:.6g} W^-1")
+print(f"P_0 = {P_0:.6g} W")
 
 def delta_f_over_fwhm(P_track_pW):
     P_track_pW = np.asarray(P_track_pW, dtype=np.float64)
