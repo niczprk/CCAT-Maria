@@ -51,12 +51,29 @@ REDUCED_FITS = DATA_DIR / f"{FITS_PREFIX}_20170726_850_DR3_ext_HK_JySr_reduced_f
 
 CCAT_DATA = DATA_DIR / "atm-table-ccat.dat"
 
-CUTOUT_ORIONA = dict(
+SMALL_CUTOUT_ORIONA = dict(
     ra_min=83.3667,
     ra_max=83.8667,
     dec_min=-5.6167,
     dec_max=-5.1167
 )
+#0.5x0.5 degree map centered at RA=83.6167, Dec=-5.3667
+
+MEDIUM_CUTOUT_ORIONA = dict(
+    ra_min=82.8667,
+    ra_max=84.3667,
+    dec_min=-6.1167,
+    dec_max=-4.6167,
+)
+#1.5x1.5 degree map centered at RA=83.6167, Dec=-5.3667
+
+LARGE_CUTOUT_ORIONA = dict(
+    ra_min=82.1167,
+    ra_max=85.1167,
+    dec_min=-6.8667,
+    dec_max=-3.8667,
+)
+#3.0x3.0 degree map centered at RA=83.6167, Dec=-5.3667
 
 # EXP_CUTOUT_ORIONA = dict(
 #     ra_min=82.8667,
@@ -67,10 +84,10 @@ CUTOUT_ORIONA = dict(
 
 CUTOUT_SERPENSE = dict(ra_min=279.35, ra_max=279.765, dec_min=-2.0, dec_max=-1.0)
 
-CUTOUT = CUTOUT_ORIONA
+CUTOUT = MEDIUM_CUTOUT_ORIONA
 
 
-PREFIX = "OrionA_65_tod"#_850GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized
+PREFIX = "OrionA"#_850GHz_eta0.5_pwr_coupling_polarized" # for output files, e.g. "OrionA_polarized
 OUTDIR = Path(f"outputs/{PREFIX}_ccat_outputs")
 
 ANALYSIS_OUTDIR = Path(f"outputs/{PREFIX}_analysis_outputs")
@@ -1996,6 +2013,9 @@ def tod_analysis(
     if save_all_plots:
         plans[0].plot()
         savefig(analysis_outdir, f"{PREFIX}_scan_plan_{ccat_band}GHz.png")
+
+        plans[0].plot_hits(instrument=instrument)
+        savefig(analysis_outdir, f"{PREFIX}_scan_plan_hits_{ccat_band}GHz.png")
 
     
     sim = maria.Simulation(

@@ -24,7 +24,7 @@ import simple_ccat
 # User settings
 # ============================================================
 
-ccat_band = "280"  # "850" or "350"
+ccat_band = "850"  # "850" or "350"
 
 Run = True # whether to run the TOD analysis or just load existing TOD
 
@@ -97,10 +97,11 @@ elif ccat_band == "280":
 # R_0 = -1e7
 # P_0 = 120e-12
 
-DETECTORS_TO_PLOT = [0, 50, 309, 339, 472, 604, 843]
+# DETECTORS_TO_PLOT = [0, 50, 309, 339, 472, 604, 843]
+DETECTORS_TO_PLOT = [604] #these are the detectors that are in the center of the array and should be the most stable
 
 run_prefix = (
-    f"OrionA_{SCAN_PATTERN.lower()}_{ELEV_LABEL}_speed_{SPEED:.1f}"
+    f"OrionA_{SCAN_PATTERN.lower()}_{ELEV_LABEL}_speed_{SPEED:.1f}_small_map"
     .replace(".", "p")
 )
 
@@ -120,7 +121,7 @@ if Run == True:
         PREFIX=run_prefix,
         tod_diagnostics=False,
         maps=False,
-        save_all_plots=False,
+        save_all_plots=True,
         run_mode="fits",
         atm_plot=False,
         temp_mode="inst",

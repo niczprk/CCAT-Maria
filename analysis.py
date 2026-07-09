@@ -57,6 +57,12 @@ ELEVATION_RANGES = [
 ELEV_LABEL = f"{EL_LIMITS[0]}-{EL_LIMITS[1]}"
 
 
+ITERATION_LABEL = "medium_map"
+HIST_XLIM = (-0.115,0.115)
+TIME_XLIM = (0, 100)
+
+
+
 
 SPEED  = 0.2 # deg/s, this is a guess for now but should be in the right ballpark for a daisy scan at 30-40 deg elevation with a 3 degree radius
 
@@ -85,14 +91,14 @@ SAMPLE_RATE_HZ = 20  # Hz
 SCAN_PATTERN = "daisy"
 CHUNK_NUMBER = 0
 
-PREFIX = f"OrionA_{ELEV_LABEL}_vel_el"
+PREFIX = f"OrionA{ITERATION_LABEL}_{ELEV_LABEL}_vel_el"
 ANALYSIS_OUTDIR = Path(f"outputs/{PREFIX}_lissa_analysis_outputs")
 TOD_OUTDIR = Path(f"outputs/{PREFIX}_lissa_tod")
 
 RUN_SPEED_GRID = True
 COMBINE_EXISTING_CSVS = False
-SPEED_CSV_DIR = Path(f"outputs/OrionA_{SCAN_PATTERN}_speed_tests/speed_csv")
-COMBINED_PLOT_DIR = Path(f"outputs/OrionA_{SCAN_PATTERN}_speed_tests/combined_plots")
+SPEED_CSV_DIR = Path(f"outputs/OrionA_{ITERATION_LABEL}_{SCAN_PATTERN}_speed_tests/speed_csv")
+COMBINED_PLOT_DIR = Path(f"outputs/OrionA_{ITERATION_LABEL}_{SCAN_PATTERN}_speed_tests/combined_plots")
 SPEED_CSV_DIR.mkdir(parents=True, exist_ok=True)
 COMBINED_PLOT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -107,10 +113,126 @@ print(dir((maria.tod)))
 
 if __name__ == "__main__":
 
-    # -------------------------------------------------
-    # Paths
-    # -------------------------------------------------
+    # # -------------------------------------------------
+    # # Paths
+    # # -------------------------------------------------
+    # scan_patterns = ["double_circle", "raster", "daisy", "back_and_forth", "lissajous"]
 
+    # for pattern in scan_patterns:
+        
+    #     csv_dir = Path(f"outputs/Scan_Speed_Tests/{pattern}/OrionA_{pattern}_speed_tests/speed_csv")
+    #     csv_files = [
+    #         csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_35-45.csv",
+    #         csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_45-55.csv",
+    #         csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_55-65.csv",
+    #         csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_65-75.csv",
+    #     ]
+
+    #     combined_csv_path = csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_combined_{pattern}_v2.csv"
+
+    #     plot_outdir = Path(f"outputs/Scan_Speed_Tests/{pattern}/OrionA_{pattern}_speed_tests/combined_plots_v2")
+    #     plot_outdir.mkdir(parents=True, exist_ok=True)
+
+    #     #combine CSVs 
+
+    #     dfs = []
+
+    #     for csv_file in csv_files:
+    #         df = pd.read_csv(csv_file)
+
+    #         if "elevation_label" not in df.columns:
+    #             label = csv_file.stem.split("_")[-1]
+    #             df["elevation_label"] = label
+
+    #         dfs.append(df)
+
+    #     combined_df = pd.concat(dfs, ignore_index=True)
+    #     combined_df.to_csv(combined_csv_path, index=False)
+
+    #     print(f"Saved combined CSV to: {combined_csv_path}")
+
+    #     # # -------------------------------------------------
+    #     # Overlaid plots
+    #     # -------------------------------------------------
+
+    #     quantities = {
+    #         "max_motor_az_velocity_deg_s": {
+    #             "label": "Maximum AZ Velocity",
+    #             "unit": "deg/s",
+    #             "limit": 3.0,
+    #             "filename": "combined_max_az_velocity_vs_input_speed.png",
+    #         },
+    #         "max_motor_el_velocity_deg_s": {
+    #             "label": "Maximum EL Velocity",
+    #             "unit": "deg/s",
+    #             "limit": 1.5,
+    #             "filename": "combined_max_el_velocity_vs_input_speed.png",
+    #         },
+    #         "max_motor_az_acceleration_deg_s2": {
+    #             "label": "Maximum AZ Acceleration",
+    #             "unit": "deg/s²",
+    #             "limit": 6.0,
+    #             "filename": "combined_max_az_acceleration_vs_input_speed.png",
+    #         },
+    #         "max_motor_el_acceleration_deg_s2": {
+    #             "label": "Maximum EL Acceleration",
+    #             "unit": "deg/s²",
+    #             "limit": 1.5,
+    #             "filename": "combined_max_el_acceleration_vs_input_speed.png",
+    #         },
+    #     }
+
+    #     for column, info in quantities.items():
+
+    #         plt.figure(figsize=(8, 6))
+
+    #         for elevation_label, group in combined_df.groupby("elevation_label"):
+    #             group = group.sort_values("input_speed_deg_s")
+
+    #             plt.plot(
+    #                 group["input_speed_deg_s"],
+    #                 group[column],
+    #                 marker="o",
+    #                 linewidth=2,
+    #                 alpha=0.8,
+    #                 label=elevation_label,
+    #             )
+
+    #         plt.axhline(
+    #             info["limit"],
+    #             color="black",
+    #             linestyle="--",
+    #             linewidth=1.5,
+    #             label="Motion limit",
+    #         )
+
+    #         plt.xlabel("Maria input speed (deg/s)")
+    #         plt.ylabel(f"{info['label']} ({info['unit']})")
+    #         plt.title(f"{info['label']} vs Maria Input Speed")
+    #         if info["label"] == "Maximum AZ Velocity":
+    #             plt.ylim(0, 3.0)
+    #         elif info["label"] == "Maximum EL Velocity":
+    #             plt.ylim(0, 1.5)
+    #         elif info["label"] == "Maximum AZ Acceleration":
+    #             plt.ylim(0, 20.0)
+    #         elif info["label"] == "Maximum EL Acceleration":
+    #             plt.ylim(0, 7.5)
+    #         plt.xlim(0, 0.8)
+    #         plt.grid(True, alpha=0.3)
+    #         plt.legend(title="Elevation range")
+
+    #         plt.savefig(
+    #             plot_outdir / info["filename"],
+    #             dpi=300,
+    #             bbox_inches="tight",
+    #         )
+
+    #         plt.close()
+
+    #     print(f"Saved combined plots to: {plot_outdir}") 
+
+
+    #-------------------------------------------------------------------------------
     # csv_dir = Path("outputs/OrionA_speed_tests/speed_csv")
 
     # csv_files = [
@@ -277,7 +399,7 @@ if __name__ == "__main__":
         gain_error=5e-2,
     )
 
-    run_prefix = "velocity_per_pattern"
+    run_prefix = f"velocity_per_pattern_{ITERATION_LABEL}"
 
     ROOT_ANALYSIS_DIR = Path("outputs") / run_prefix
     ROOT_ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
@@ -393,6 +515,7 @@ if __name__ == "__main__":
         plt.title(f"Detector {det_idx} Angular Velocities vs Time\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
         plt.xlabel("Time (s)")
         plt.ylabel("Velocity (deg/s)")
+        plt.xlim(TIME_XLIM)
         plt.grid(True)
         plt.legend()
         simple_ccat.savefig(
@@ -406,6 +529,7 @@ if __name__ == "__main__":
         plt.title(f"Detector {det_idx} Motor Accelerations vs Time\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
         plt.xlabel("Time (s)")
         plt.ylabel("Acceleration (deg/s²)")
+        plt.xlim(TIME_XLIM)
         plt.grid(True)
         plt.legend()
         simple_ccat.savefig(
@@ -418,6 +542,7 @@ if __name__ == "__main__":
         plt.title(f"Detector {det_idx} Motor AZ Acceleration vs Time\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
         plt.xlabel("Time (s)")
         plt.ylabel("Acceleration (deg/s²)")
+        plt.xlim(TIME_XLIM)
         plt.grid(True)
         plt.legend()
         simple_ccat.savefig(
@@ -430,6 +555,7 @@ if __name__ == "__main__":
         plt.title(f"Detector {det_idx} Motor EL Acceleration vs Time\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
         plt.xlabel("Time (s)")
         plt.ylabel("Acceleration (deg/s²)")
+        plt.xlim(TIME_XLIM)
         plt.grid(True)
         plt.legend()
         simple_ccat.savefig(
@@ -442,6 +568,7 @@ if __name__ == "__main__":
         plt.title(f"Detector {det_idx} RA Angular Velocity vs Time\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
         plt.xlabel("Time (s)")
         plt.ylabel("Velocity (deg/s)")
+        plt.xlim(TIME_XLIM)
         plt.grid(True)
         plt.legend()
         simple_ccat.savefig(
@@ -453,6 +580,7 @@ if __name__ == "__main__":
         plt.title(f"Detector {det_idx} Dec Angular Velocity vs Time\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
         plt.xlabel("Time (s)")
         plt.ylabel("Velocity (deg/s)")
+        plt.xlim(TIME_XLIM)
         plt.grid(True)
         plt.legend()
         simple_ccat.savefig(
@@ -464,6 +592,7 @@ if __name__ == "__main__":
         plt.title(f"Detector {det_idx} AZ Angular Velocity vs Time\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
         plt.xlabel("Time (s)")
         plt.ylabel("Velocity (deg/s)")
+        plt.xlim(TIME_XLIM)
         plt.grid(True)
         plt.legend()
         simple_ccat.savefig(
@@ -476,6 +605,7 @@ if __name__ == "__main__":
         plt.title(f"Detector {det_idx} EL Angular Velocity vs Time\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
         plt.xlabel("Time (s)")
         plt.ylabel("Velocity (deg/s)")
+        plt.xlim(TIME_XLIM)
         plt.grid(True)
         plt.legend()
         simple_ccat.savefig(
@@ -488,6 +618,7 @@ if __name__ == "__main__":
         plt.title(f"Detector {det_idx} EL Angular Velocity Distribution\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
         plt.xlabel("Velocity (deg/s)")
         plt.ylabel("Frequency")
+        plt.xlim(HIST_XLIM)
         plt.grid(True)
         plt.legend()
         simple_ccat.savefig(
@@ -500,6 +631,7 @@ if __name__ == "__main__":
         plt.title(f"Detector {det_idx} AZ Angular Velocity Distribution\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
         plt.xlabel("Velocity (deg/s)")
         plt.ylabel("Frequency")
+        plt.xlim(HIST_XLIM)
         plt.grid(True)
         plt.legend()
         simple_ccat.savefig(
@@ -512,6 +644,7 @@ if __name__ == "__main__":
         plt.title(f"Detector {det_idx} RA Angular Velocity Distribution\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
         plt.xlabel("Velocity (deg/s)")
         plt.ylabel("Frequency")
+        plt.xlim(HIST_XLIM)
         plt.grid(True)
         plt.legend()
         simple_ccat.savefig(
@@ -524,6 +657,7 @@ if __name__ == "__main__":
         plt.title(f"Detector {det_idx} Dec Angular Velocity Distribution\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
         plt.xlabel("Velocity (deg/s)")
         plt.ylabel("Frequency")
+        plt.xlim(HIST_XLIM)
         plt.grid(True)
         plt.legend()
         simple_ccat.savefig(
@@ -536,6 +670,7 @@ if __name__ == "__main__":
         plt.title(f"Detector {det_idx} Motor AZ Acceleration Distribution\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
         plt.xlabel("Acceleration (deg/s²)")
         plt.ylabel("Frequency")
+        plt.xlim(HIST_XLIM)
         plt.grid(True)
         plt.legend()
         simple_ccat.savefig(
@@ -547,6 +682,7 @@ if __name__ == "__main__":
         plt.title(f"Detector {det_idx} Motor EL Acceleration Distribution\nScan Pattern: {pattern}, Speed: {spd:.2f} deg/s, Elevation: {EL_LIMITS[0]}-{EL_LIMITS[1]} deg")
         plt.xlabel("Acceleration (deg/s²)")
         plt.ylabel("Frequency")
+        plt.xlim(HIST_XLIM)
         plt.grid(True)
         plt.legend()
         simple_ccat.savefig(
@@ -563,7 +699,7 @@ if __name__ == "__main__":
         print(f"Max AZ accel: {np.max(np.abs(acceleration_motor_az)):.3f}")
         print(f"Max EL accel: {np.max(np.abs(acceleration_motor_el)):.3f}")
 
-    raise SystemExit("Analysis complete for all patterns. Check the output plots in the analysis directory.")
+    # raise SystemExit("Analysis complete for all patterns. Check the output plots in the analysis directory.")
     # fits_path = run_tod_outdir / f"{run_prefix}_dim_reduced_tods.fits"
 
     # if not fits_path.exists():
@@ -651,7 +787,7 @@ if __name__ == "__main__":
 
         for spd in speed_list:
 
-            run_prefix = f"OrionA_{SCAN_PATTERN.lower()}_{ELEV_LABEL}_speed_{spd:.1f}".replace(".", "p")
+            run_prefix = f"OrionA_{ITERATION_LABEL}_{SCAN_PATTERN.lower()}_{ELEV_LABEL}_speed_{spd:.1f}".replace(".", "p")
 
             run_analysis_outdir = Path(f"outputs/{run_prefix}_analysis_outputs")
             run_tod_outdir = Path(f"outputs/{run_prefix}_tods")
