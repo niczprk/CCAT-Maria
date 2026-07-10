@@ -143,10 +143,10 @@ START_TIME = "2022-02-10T18:30:00"
 #"2022-02-10T17:00:00" for roughly 30 degrees
  
 
-TOTAL_DURATION_S = 1800  # seconds
-SIM_DURATION_S = 1800  # seconds
-SAMPLE_RATE_HZ = 50  # Hz
-SCAN_PATTERN = "stare"
+TOTAL_DURATION_S = 900  # seconds
+SIM_DURATION_S = 900  # seconds
+SAMPLE_RATE_HZ = 20  # Hz
+SCAN_PATTERN = "lissajous"
 CHUNK_NUMBER = 0
 
 # ------------------------------

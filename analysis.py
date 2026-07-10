@@ -83,12 +83,15 @@ eta = 0.5
 #"2022-02-10T18:55:00" for roughly 45 degrees
 #"2022-02-10T18:30:00" for roughly 40 degrees
 #"2022-02-10T17:00:00" for roughly 30 degrees
+
+# Scan Pattern Options:
+# Daisy, Double Circle, Raster, Back and Forth, Lissajous
  
 
-TOTAL_DURATION_S = 1800  # seconds
-SIM_DURATION_S = 1800  # seconds
+TOTAL_DURATION_S = 900  # seconds
+SIM_DURATION_S = 900  # seconds
 SAMPLE_RATE_HZ = 20  # Hz
-SCAN_PATTERN = "daisy"
+SCAN_PATTERN = "raster"
 CHUNK_NUMBER = 0
 
 PREFIX = f"OrionA{ITERATION_LABEL}_{ELEV_LABEL}_vel_el"
@@ -780,7 +783,7 @@ if __name__ == "__main__":
         print(f"\nStarting analysis for elevation range: {ELEV_LABEL} degrees")
         print("===============================================")
         PREFIX = f"OrionA_{ELEV_LABEL}_{SCAN_PATTERN.lower()}"
-        ANALYSIS_OUTDIR = Path(f"outputs/{PREFIX}_analysis_outputs")
+        ANALYSIS_OUTDIR = Path(f"outputs/Scan_Speed_Tests_Medium/{SCAN_PATTERN.lower()}/{PREFIX}_analysis_outputs")
         ANALYSIS_OUTDIR.mkdir(parents=True, exist_ok=True)
 
         motion_results = []  # Reset motion results for this elevation range
