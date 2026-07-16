@@ -14,6 +14,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from scipy.stats import norm, skew
+from scipy.signal import find_peaks
 
 import maria
 from maria.instrument import Band
@@ -24,7 +25,7 @@ import simple_ccat
 # User settings
 # ============================================================
 
-ccat_band = "350"  # "850" or "350"
+ccat_band = "850"  # "850" or "350"
 
 Run = True # whether to run the TOD analysis or just load existing TOD
 
@@ -40,7 +41,7 @@ START_TIME = "2022-02-10T17:00:00"
 
 #scan pattern options: "lissajous", "raster", "back_and_forth", "daisy", "double_circle", "stare"
 
-SCAN_PATTERN = "raster"
+SCAN_PATTERN = "double_circle"
 
 ELEV_LABEL = "65-75"
 
@@ -103,7 +104,7 @@ elif ccat_band == "280":
 DETECTORS_TO_PLOT = [604] #these are the detectors that are in the center of the array and should be the most stable
 
 run_prefix = (
-    f"OrionA_{SCAN_PATTERN.lower()}_{ELEV_LABEL}_speed_{SPEED:.1f}_small_map"
+    f"OrionA_{SCAN_PATTERN.lower()}_{ELEV_LABEL}_speed_{SPEED:.1f}_large_map"
     .replace(".", "p")
 )
 
@@ -273,7 +274,7 @@ def summarize(name, values, units):
     return stats
 
 
-def make_hist(values, xlabel, title, filename, bins=50):
+def make_hist(values, xlabel, title, filename, bins=50, density=False):
     values = np.asarray(values, dtype=np.float64)
     values = values[np.isfinite(values)]
 
@@ -284,16 +285,73 @@ def make_hist(values, xlabel, title, filename, bins=50):
         bins=bins,
         edgecolor="black",
         alpha=0.8,
+        density=density,
     )
 
     plt.xlabel(xlabel)
-    plt.ylabel("Number of samples")
+    plt.ylabel("Probability density" if density else "Number of samples")
     plt.title(title)
     plt.grid(alpha=0.3)
     plt.tight_layout()
 
     plt.savefig(OUTDIR / filename, dpi=300, bbox_inches="tight")
     plt.close()
+
+
+def standardize(values):
+    """Return finite values standardized to zero mean and unit variance."""
+    values = np.asarray(values, dtype=np.float64)
+    values = values[np.isfinite(values)]
+
+    sigma = np.nanstd(values)
+    if len(values) == 0 or not np.isfinite(sigma) or sigma == 0:
+        return np.array([], dtype=np.float64)
+
+    return (values - np.nanmean(values)) / sigma
+
+
+def contiguous_event_starts(mask):
+    """Return indices at which contiguous True regions begin."""
+    mask = np.asarray(mask, dtype=bool)
+    selected = np.flatnonzero(mask)
+
+    if len(selected) == 0:
+        return np.array([], dtype=int)
+
+    return selected[np.r_[True, np.diff(selected) > 1]]
+
+
+def candidate_spike_bins(values, bins=100, max_candidates=3):
+    """Find narrow histogram peaks above a smoothed local background.
+
+    These are diagnostic candidates, not formal statistically significant peaks.
+    """
+    values = np.asarray(values, dtype=np.float64)
+    values = values[np.isfinite(values)]
+
+    if len(values) < 10:
+        return np.array([], dtype=int), np.array([]), np.array([]), np.array([])
+
+    counts, edges = np.histogram(values, bins=bins)
+
+    # A short moving-average baseline highlights bins that are narrow relative
+    # to the surrounding distribution.
+    kernel = np.ones(7, dtype=np.float64) / 7.0
+    baseline = np.convolve(counts.astype(float), kernel, mode="same")
+    excess = counts - baseline
+
+    # Require both positive excess and modest prominence to avoid returning
+    # arbitrary bins from a smooth tail.
+    min_prominence = max(2.0, 0.02 * np.nanmax(counts))
+    peaks, properties = find_peaks(excess, prominence=min_prominence)
+
+    if len(peaks) == 0:
+        return np.array([], dtype=int), counts, edges, excess
+
+    order = np.argsort(properties["prominences"])[::-1]
+    peaks = peaks[order[:max_candidates]]
+
+    return peaks, counts, edges, excess
 
 
 # ============================================================
@@ -335,6 +393,12 @@ ptp_delta_by_detector = []
 mean_power_by_detector = []
 sigma_power_by_detector = []
 frac_width_by_detector = []
+standardized_power_tracks = []
+standardized_delta_tracks = []
+
+# Retain a detector-by-time matrix so that detector populations producing
+# narrow features can be identified after the loop.
+delta_matrix = np.full(P_pW.shape, np.nan, dtype=np.float64)
 
 n_detectors = P_pW.shape[0]
 
@@ -350,6 +414,19 @@ for det_idx in range(n_detectors):
     frac_width = sigma / mu if mu != 0 else np.nan
 
     delta_track = delta_f_over_fwhm(P_track)
+
+    # The valid samples preserve their original order because boolean indexing
+    # only removes non-finite entries. Save them back into the full matrix.
+    valid_full = np.isfinite(P_pW[det_idx, :])
+    delta_matrix[det_idx, valid_full] = delta_track
+
+    power_standardized = standardize(P_track)
+    delta_standardized = standardize(delta_track)
+
+    if len(power_standardized) > 0:
+        standardized_power_tracks.append(power_standardized)
+    if len(delta_standardized) > 0:
+        standardized_delta_tracks.append(delta_standardized)
 
     delta_ptp = np.nanmax(delta_track) - np.nanmin(delta_track)
     delta_half_ptp = np.abs(delta_ptp / 2)
@@ -448,6 +525,88 @@ make_hist(
 
 
 # ============================================================
+# Diagnostic 1: standardized pooled distributions
+# ============================================================
+
+all_power_standardized = np.concatenate(standardized_power_tracks)
+all_delta_standardized = np.concatenate(standardized_delta_tracks)
+
+common_standardized_bins = np.linspace(-6, 6, 121)
+
+plt.figure(figsize=(8, 6))
+plt.hist(
+    all_power_standardized,
+    bins=common_standardized_bins,
+    density=True,
+    histtype="step",
+    linewidth=1.8,
+    label="Per-detector standardized power",
+)
+plt.hist(
+    -all_delta_standardized,
+    bins=common_standardized_bins,
+    density=True,
+    histtype="step",
+    linewidth=1.2,
+    linestyle="--",
+    label=r"Reflected standardized $\Delta f/\mathrm{FWHM}$",
+)
+plt.xlabel("Standardized detector-relative sample")
+plt.ylabel("Probability density")
+plt.title(
+    "Power–Frequency-Shift Shape Comparison\n"
+    f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
+)
+plt.legend()
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.savefig(
+    OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_standardized_power_delta_comparison.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+plt.close()
+
+
+# ============================================================
+# Diagnostic 2: detector index versus delta f / FWHM density
+# ============================================================
+
+finite_delta = delta_matrix[np.isfinite(delta_matrix)]
+if len(finite_delta) > 0:
+    delta_low, delta_high = np.nanpercentile(finite_delta, [0.5, 99.5])
+    delta_edges = np.linspace(delta_low, delta_high, 121)
+
+    detector_indices = np.repeat(
+        np.arange(n_detectors),
+        delta_matrix.shape[1],
+    )
+    delta_flat = delta_matrix.ravel()
+    finite_flat = np.isfinite(delta_flat)
+
+    plt.figure(figsize=(10, 7))
+    plt.hist2d(
+        detector_indices[finite_flat],
+        delta_flat[finite_flat],
+        bins=[min(120, n_detectors), delta_edges],
+    )
+    plt.xlabel("Detector index")
+    plt.ylabel(r"$\Delta f / \mathrm{FWHM}$")
+    plt.title(
+        "Detector Contributions to Frequency-Shift Distribution\n"
+        f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
+    )
+    plt.colorbar(label="Number of samples")
+    plt.tight_layout()
+    plt.savefig(
+        OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_detector_deltaf_density.png",
+        dpi=300,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+# ============================================================
 # Individual detector plots
 # ============================================================
 
@@ -466,6 +625,52 @@ for det_idx in DETECTORS_TO_PLOT:
     time_sec = time_sec_full[valid]
 
     delta_track = delta_f_over_fwhm(P_track)
+
+    # ========================================================
+    # Direct shape check for this detector
+    # ========================================================
+    power_standardized = standardize(P_track)
+    delta_standardized = standardize(delta_track)
+
+    if len(power_standardized) > 0 and len(delta_standardized) > 0:
+        comparison_bins = np.linspace(-6, 6, 121)
+
+        plt.figure(figsize=(8, 6))
+        plt.hist(
+            power_standardized,
+            bins=comparison_bins,
+            density=True,
+            histtype="step",
+            linewidth=1.8,
+            label="Standardized power",
+        )
+        plt.hist(
+            -delta_standardized,
+            bins=comparison_bins,
+            density=True,
+            histtype="step",
+            linewidth=1.2,
+            linestyle="--",
+            label=r"Reflected standardized $\Delta f/\mathrm{FWHM}$",
+        )
+        plt.xlabel("Standardized value")
+        plt.ylabel("Probability density")
+        plt.title(
+            f"Detector {det_idx}: Power–Frequency-Shift Shape Check\n"
+            f"{BAND_LABEL} GHz, {SCAN_PATTERN}"
+        )
+        plt.legend()
+        plt.grid(alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(
+            OUTDIR / (
+                f"{run_prefix}_{BAND_LABEL}GHz_detector_{det_idx}_"
+                "power_delta_shape_comparison.png"
+            ),
+            dpi=300,
+            bbox_inches="tight",
+        )
+        plt.close()
 
     make_hist(
         P_track,
@@ -513,6 +718,78 @@ for det_idx in DETECTORS_TO_PLOT:
     )
 
     plt.close()
+
+    # ========================================================
+    # Candidate spike locations and recurrence diagnostics
+    # ========================================================
+    candidate_bins, counts, edges, excess = candidate_spike_bins(
+        delta_track,
+        bins=100,
+        max_candidates=3,
+    )
+
+    for rank, bin_idx in enumerate(candidate_bins, start=1):
+        lower = edges[bin_idx]
+        upper = edges[bin_idx + 1]
+        spike_mask = (delta_track >= lower) & (delta_track < upper)
+
+        event_start_indices = contiguous_event_starts(spike_mask)
+        event_times = time_sec[event_start_indices]
+        event_separations = np.diff(event_times)
+
+        print(
+            f"Detector {det_idx}, candidate spike {rank}: "
+            f"[{lower:.6g}, {upper:.6g}), "
+            f"{spike_mask.sum()} samples in {len(event_times)} events"
+        )
+
+        plt.figure(figsize=(11, 5))
+        plt.plot(time_sec, delta_track, linewidth=0.5, label="All samples")
+        plt.scatter(
+            time_sec[spike_mask],
+            delta_track[spike_mask],
+            s=8,
+            label=f"Candidate spike {rank}",
+        )
+        plt.xlabel("Time (s)")
+        plt.ylabel(r"$\Delta f / \mathrm{FWHM}$")
+        plt.title(
+            f"Detector {det_idx}: Candidate Histogram Feature {rank}\n"
+            f"{lower:.4g} to {upper:.4g}"
+        )
+        plt.legend()
+        plt.grid(alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(
+            OUTDIR / (
+                f"{run_prefix}_{BAND_LABEL}GHz_detector_{det_idx}_"
+                f"candidate_spike_{rank}_vs_time.png"
+            ),
+            dpi=300,
+            bbox_inches="tight",
+        )
+        plt.close()
+
+        if len(event_separations) > 0:
+            plt.figure(figsize=(8, 6))
+            plt.hist(event_separations, bins=50, edgecolor="black")
+            plt.xlabel("Time between feature events (s)")
+            plt.ylabel("Number of event pairs")
+            plt.title(
+                f"Detector {det_idx}: Recurrence of Candidate Feature {rank}\n"
+                f"Median interval = {np.nanmedian(event_separations):.3f} s"
+            )
+            plt.grid(alpha=0.3)
+            plt.tight_layout()
+            plt.savefig(
+                OUTDIR / (
+                    f"{run_prefix}_{BAND_LABEL}GHz_detector_{det_idx}_"
+                    f"candidate_spike_{rank}_event_separations.png"
+                ),
+                dpi=300,
+                bbox_inches="tight",
+            )
+            plt.close()
 
 
 # ============================================================
