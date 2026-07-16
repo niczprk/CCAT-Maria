@@ -57,7 +57,7 @@ ELEVATION_RANGES = [
 ELEV_LABEL = f"{EL_LIMITS[0]}-{EL_LIMITS[1]}"
 
 
-ITERATION_LABEL = "medium_map"
+ITERATION_LABEL = "large_map"
 HIST_XLIM = (-0.115,0.115)
 TIME_XLIM = (0, 100)
 
@@ -91,7 +91,7 @@ eta = 0.5
 TOTAL_DURATION_S = 900  # seconds
 SIM_DURATION_S = 900  # seconds
 SAMPLE_RATE_HZ = 20  # Hz
-SCAN_PATTERN = "raster"
+SCAN_PATTERN = "lissajous"
 CHUNK_NUMBER = 0
 
 PREFIX = f"OrionA{ITERATION_LABEL}_{ELEV_LABEL}_vel_el"
@@ -116,138 +116,138 @@ print(dir((maria.tod)))
 
 if __name__ == "__main__":
 
-    # # -------------------------------------------------
-    # # Paths
-    # # -------------------------------------------------
-    # scan_patterns = ["double_circle", "raster", "daisy", "back_and_forth", "lissajous"]
+    # -------------------------------------------------
+    # Paths
+    # -------------------------------------------------
+    scan_patterns = ["double_circle", "raster", "daisy", "back_and_forth", "lissajous"]
 
-    # for pattern in scan_patterns:
+    for pattern in scan_patterns:
         
-    #     csv_dir = Path(f"outputs/Scan_Speed_Tests/{pattern}/OrionA_{pattern}_speed_tests/speed_csv")
-    #     csv_files = [
-    #         csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_35-45.csv",
-    #         csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_45-55.csv",
-    #         csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_55-65.csv",
-    #         csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_65-75.csv",
-    #     ]
+        csv_dir = Path(f"outputs/Scan_Speed_Tests_Large/{pattern}/OrionA_large_map_{pattern}_speed_tests/speed_csv")
+        csv_files = [
+            csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_35-45.csv",
+            csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_45-55.csv",
+            csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_55-65.csv",
+            csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_65-75.csv",
+        ]
 
-    #     combined_csv_path = csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_combined_{pattern}_v2.csv"
+        combined_csv_path = csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_combined_{pattern}_v2.csv"
 
-    #     plot_outdir = Path(f"outputs/Scan_Speed_Tests/{pattern}/OrionA_{pattern}_speed_tests/combined_plots_v2")
-    #     plot_outdir.mkdir(parents=True, exist_ok=True)
+        plot_outdir = Path(f"outputs/Scan_Speed_Tests_Large/{pattern}/OrionA_large_map_{pattern}_speed_tests/combined_plots_v2")
+        plot_outdir.mkdir(parents=True, exist_ok=True)
 
-    #     #combine CSVs 
+        #combine CSVs 
 
-    #     dfs = []
+        dfs = []
 
-    #     for csv_file in csv_files:
-    #         df = pd.read_csv(csv_file)
+        for csv_file in csv_files:
+            df = pd.read_csv(csv_file)
 
-    #         if "elevation_label" not in df.columns:
-    #             label = csv_file.stem.split("_")[-1]
-    #             df["elevation_label"] = label
+            if "elevation_label" not in df.columns:
+                label = csv_file.stem.split("_")[-1]
+                df["elevation_label"] = label
 
-    #         dfs.append(df)
+            dfs.append(df)
 
-    #     combined_df = pd.concat(dfs, ignore_index=True)
-    #     combined_df.to_csv(combined_csv_path, index=False)
+        combined_df = pd.concat(dfs, ignore_index=True)
+        combined_df.to_csv(combined_csv_path, index=False)
 
-    #     print(f"Saved combined CSV to: {combined_csv_path}")
+        print(f"Saved combined CSV to: {combined_csv_path}")
 
-    #     # # -------------------------------------------------
-    #     # Overlaid plots
-    #     # -------------------------------------------------
+        # # -------------------------------------------------
+        # Overlaid plots
+        # -------------------------------------------------
 
-    #     quantities = {
-    #         "max_motor_az_velocity_deg_s": {
-    #             "label": "Maximum AZ Velocity",
-    #             "unit": "deg/s",
-    #             "limit": 3.0,
-    #             "filename": "combined_max_az_velocity_vs_input_speed.png",
-    #         },
-    #         "max_motor_el_velocity_deg_s": {
-    #             "label": "Maximum EL Velocity",
-    #             "unit": "deg/s",
-    #             "limit": 1.5,
-    #             "filename": "combined_max_el_velocity_vs_input_speed.png",
-    #         },
-    #         "max_motor_az_acceleration_deg_s2": {
-    #             "label": "Maximum AZ Acceleration",
-    #             "unit": "deg/s²",
-    #             "limit": 6.0,
-    #             "filename": "combined_max_az_acceleration_vs_input_speed.png",
-    #         },
-    #         "max_motor_el_acceleration_deg_s2": {
-    #             "label": "Maximum EL Acceleration",
-    #             "unit": "deg/s²",
-    #             "limit": 1.5,
-    #             "filename": "combined_max_el_acceleration_vs_input_speed.png",
-    #         },
-    #     }
+        quantities = {
+            "max_motor_az_velocity_deg_s": {
+                "label": "Maximum AZ Velocity",
+                "unit": "deg/s",
+                "limit": 3.0,
+                "filename": "combined_max_az_velocity_vs_input_speed.png",
+            },
+            "max_motor_el_velocity_deg_s": {
+                "label": "Maximum EL Velocity",
+                "unit": "deg/s",
+                "limit": 1.5,
+                "filename": "combined_max_el_velocity_vs_input_speed.png",
+            },
+            "max_motor_az_acceleration_deg_s2": {
+                "label": "Maximum AZ Acceleration",
+                "unit": "deg/s²",
+                "limit": 6.0,
+                "filename": "combined_max_az_acceleration_vs_input_speed.png",
+            },
+            "max_motor_el_acceleration_deg_s2": {
+                "label": "Maximum EL Acceleration",
+                "unit": "deg/s²",
+                "limit": 1.5,
+                "filename": "combined_max_el_acceleration_vs_input_speed.png",
+            },
+        }
 
-    #     for column, info in quantities.items():
+        for column, info in quantities.items():
 
-    #         plt.figure(figsize=(8, 6))
+            plt.figure(figsize=(8, 6))
 
-    #         for elevation_label, group in combined_df.groupby("elevation_label"):
-    #             group = group.sort_values("input_speed_deg_s")
+            for elevation_label, group in combined_df.groupby("elevation_label"):
+                group = group.sort_values("input_speed_deg_s")
 
-    #             plt.plot(
-    #                 group["input_speed_deg_s"],
-    #                 group[column],
-    #                 marker="o",
-    #                 linewidth=2,
-    #                 alpha=0.8,
-    #                 label=elevation_label,
-    #             )
+                plt.plot(
+                    group["input_speed_deg_s"],
+                    group[column],
+                    marker="o",
+                    linewidth=2,
+                    alpha=0.8,
+                    label=elevation_label,
+                )
 
-    #         plt.axhline(
-    #             info["limit"],
-    #             color="black",
-    #             linestyle="--",
-    #             linewidth=1.5,
-    #             label="Motion limit",
-    #         )
+            plt.axhline(
+                info["limit"],
+                color="black",
+                linestyle="--",
+                linewidth=1.5,
+                label="Motion limit",
+            )
 
-    #         plt.xlabel("Maria input speed (deg/s)")
-    #         plt.ylabel(f"{info['label']} ({info['unit']})")
-    #         plt.title(f"{info['label']} vs Maria Input Speed")
-    #         if info["label"] == "Maximum AZ Velocity":
-    #             plt.ylim(0, 3.0)
-    #         elif info["label"] == "Maximum EL Velocity":
-    #             plt.ylim(0, 1.5)
-    #         elif info["label"] == "Maximum AZ Acceleration":
-    #             plt.ylim(0, 20.0)
-    #         elif info["label"] == "Maximum EL Acceleration":
-    #             plt.ylim(0, 7.5)
-    #         plt.xlim(0, 0.8)
-    #         plt.grid(True, alpha=0.3)
-    #         plt.legend(title="Elevation range")
+            plt.xlabel("Maria input speed (deg/s)")
+            plt.ylabel(f"{info['label']} ({info['unit']})")
+            plt.title(f"{info['label']} vs Maria Input Speed")
+            if info["label"] == "Maximum AZ Velocity":
+                plt.ylim(0, 3.0)
+            elif info["label"] == "Maximum EL Velocity":
+                plt.ylim(0, 1.5)
+            elif info["label"] == "Maximum AZ Acceleration":
+                plt.ylim(0, 20.0)
+            elif info["label"] == "Maximum EL Acceleration":
+                plt.ylim(0, 7.5)
+            plt.xlim(0, 0.8)
+            plt.grid(True, alpha=0.3)
+            plt.legend(title="Elevation range")
 
-    #         plt.savefig(
-    #             plot_outdir / info["filename"],
-    #             dpi=300,
-    #             bbox_inches="tight",
-    #         )
+            plt.savefig(
+                plot_outdir / info["filename"],
+                dpi=300,
+                bbox_inches="tight",
+            )
 
-    #         plt.close()
+            plt.close()
 
-    #     print(f"Saved combined plots to: {plot_outdir}") 
+        print(f"Saved combined plots to: {plot_outdir}") 
 
 
-    #-------------------------------------------------------------------------------
-    # csv_dir = Path("outputs/OrionA_speed_tests/speed_csv")
+    # #-------------------------------------------------------------------------------
+    # csv_dir = Path(f"outputs/Scan_Speed_Tests_Large/{pattern}/OrionA_large_map_{pattern}_speed_tests/speed_csv")
 
     # csv_files = [
-    #     csv_dir / "maria_speed_elevation_motion_limits_35-45.csv",
-    #     csv_dir / "maria_speed_elevation_motion_limits_45-55.csv",
-    #     csv_dir / "maria_speed_elevation_motion_limits_55-65.csv",
-    #     csv_dir / "maria_speed_elevation_motion_limits_65-75.csv",
+    #     csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_35-45.csv",
+    #     csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_45-55.csv",
+    #     csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_55-65.csv",
+    #     csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_65-75.csv",
     # ]
 
-    # combined_csv_path = csv_dir / "maria_speed_elevation_motion_limits_combined.csv"
+    # combined_csv_path = csv_dir / f"maria_{pattern}_speed_elevation_motion_limits_combined.csv"
 
-    # plot_outdir = Path("outputs/OrionA_speed_tests/combined_plots")
+    # plot_outdir = Path(f"outputs/Scan_Speed_Tests_Large/{pattern}/OrionA_large_map_{pattern}_speed_tests/combined_plots_v2")
     # plot_outdir.mkdir(parents=True, exist_ok=True)
 
     # # -------------------------------------------------
@@ -345,7 +345,7 @@ if __name__ == "__main__":
 
     # print(f"Saved combined plots to: {plot_outdir}") 
 
-    # raise SystemExit("all done.")
+    raise SystemExit("all done.")
 
     # simple_ccat.tod_analysis(
     # PREFIX=PREFIX,
@@ -783,7 +783,7 @@ if __name__ == "__main__":
         print(f"\nStarting analysis for elevation range: {ELEV_LABEL} degrees")
         print("===============================================")
         PREFIX = f"OrionA_{ELEV_LABEL}_{SCAN_PATTERN.lower()}"
-        ANALYSIS_OUTDIR = Path(f"outputs/Scan_Speed_Tests_Medium/{SCAN_PATTERN.lower()}/{PREFIX}_analysis_outputs")
+        ANALYSIS_OUTDIR = Path(f"outputs/Scan_Speed_Tests_Large/{SCAN_PATTERN.lower()}/{PREFIX}_analysis_outputs")
         ANALYSIS_OUTDIR.mkdir(parents=True, exist_ok=True)
 
         motion_results = []  # Reset motion results for this elevation range

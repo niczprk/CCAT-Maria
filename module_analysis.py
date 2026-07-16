@@ -24,7 +24,7 @@ import simple_ccat
 # User settings
 # ============================================================
 
-ccat_band = "850"  # "850" or "350"
+ccat_band = "350"  # "850" or "350"
 
 Run = True # whether to run the TOD analysis or just load existing TOD
 
@@ -38,7 +38,9 @@ EL_LIMITS = (65, 75)  # degrees
 
 START_TIME = "2022-02-10T17:00:00"
 
-SCAN_PATTERN = "daisy"
+#scan pattern options: "lissajous", "raster", "back_and_forth", "daisy", "double_circle", "stare"
+
+SCAN_PATTERN = "raster"
 
 ELEV_LABEL = "65-75"
 
@@ -108,7 +110,7 @@ run_prefix = (
 TOD_OUTDIR = Path(f"outputs/{run_prefix}_tods") #Im going to have to change this for each run I am interested in
 fits_path = TOD_OUTDIR / f"{run_prefix}_dim_reduced_tods.fits"
 
-OUTDIR = Path(f"outputs/{run_prefix}_{BAND_LABEL}GHz_power_deltaf_analysis")
+OUTDIR = Path(f"outputs/delta_f_analysis/{SCAN_PATTERN}/{run_prefix}_{BAND_LABEL}GHz_power_deltaf_analysis")
 OUTDIR.mkdir(parents=True, exist_ok=True)
 
 
