@@ -54,6 +54,8 @@ eta = 0.5
 #"2022-02-10T18:55:00" for roughly 45 degrees
 #"2022-02-10T18:30:00" for roughly 40 degrees
 #"2022-02-10T17:00:00" for roughly 30 degrees
+
+
  
 
 TOTAL_DURATION_S = 900  # seconds
@@ -104,7 +106,7 @@ elif ccat_band == "280":
 DETECTORS_TO_PLOT = [604] #these are the detectors that are in the center of the array and should be the most stable
 
 run_prefix = (
-    f"OrionA_{SCAN_PATTERN.lower()}_{ELEV_LABEL}_speed_{SPEED:.1f}_large_map"
+    f"OrionA_{SCAN_PATTERN.lower()}_{ELEV_LABEL}_speed_{SPEED:.1f}_small_map"
     .replace(".", "p")
 )
 
@@ -353,7 +355,261 @@ def candidate_spike_bins(values, bins=100, max_candidates=3):
 
     return peaks, counts, edges, excess
 
+def robust_sigma_mad(values):
+    """estimate of std using MAD"""
+    values = np.asarray(values, dtype=np.float64)
+    values = values[np.isfinite(values)]
 
+    if len(values) == 0:
+        return np.nan
+    
+    median = np.nanmedian(values)
+    mad = np.nanmedian(np.abs(values - median))
+
+    return 1.4826 * mad  # Scale factor for Gaussian distribution
+
+
+def rolling_median(values, window_samples):
+    """Centered rolling-median smoothing that preserves array length"""
+    values = np.asarray(values, dtype=np.float64)
+
+    window_samples = max (1, int(window_samples))
+
+    if window_samples % 2 == 0:
+        window_samples += 1  # Ensure odd window size for centering
+
+    return (
+        pd.Series(values).rolling(window=window_samples, center = True, min_periods = 1).median().to_numpy(dtype = np.float64)
+    )
+
+def remove_short_true_regions(mask, min_samples):
+    """Remove contiguous True regions shorter than min_samples."""
+    mask = np.asarray(mask, dtype=bool)
+    cleaned = np.zeros_like(mask, dtype=bool)
+
+    if len(mask) == 0:
+        return cleaned
+    
+    padded = np.r_[False, mask, False]
+    changes = np.diff(padded.astype(int))
+
+    starts = np.flatnonzero(changes ==1)
+    stops = np.flatnonzero(changes == -1)
+    
+    for start, stop in zip(starts, stops):
+        if stop - start >= min_samples:
+            cleaned[start:stop] = True
+    return cleaned
+
+def mask_regions(mask):
+    """Return inclusive start and stop indicies of contiguous True regions in a boolean mask."""
+
+    mask = np.asarray(mask, dtype=bool)
+
+    if len(mask) == 0:
+        return []
+    
+    padded = np.r_[False, mask, False]
+    changes = np.diff(padded.astype(int))
+
+    starts = np.flatnonzero(changes == 1)
+    stops = np.flatnonzero(changes == -1)
+
+    return [ 
+        (start, stop-1)
+        for start, stop in zip(starts, stops)
+    ]
+
+
+def analyse_frequency_plateaus(
+    time_sec,
+    frequency_track,
+    sample_rate_hz,
+    smooth_window_s=0.7,
+    min_plateau_duration_s=0.5,
+    plateau_mad_factor=0.75,
+    spike_mad_factor=6.0,
+):
+    """
+    Smooth a frequency-shift track, calculate its time derivative,
+    and identify sustained low-derivative intervals.
+
+    Parameters
+    ----------
+    time_sec : array
+        Time coordinate in seconds.
+
+    frequency_track : array
+        Frequency-shift track. In this script this is Delta f / FWHM.
+
+    sample_rate_hz : float
+        TOD sample rate.
+
+    smooth_window_s : float
+        Width of rolling-median smoothing window in seconds.
+
+    min_plateau_duration_s : float
+        Minimum duration required for a low-derivative region to be
+        considered a plateau.
+
+    plateau_mad_factor : float
+        Controls the low-derivative plateau threshold.
+
+    spike_mad_factor : float
+        Controls the high-derivative transition threshold.
+    """
+    time_sec = np.asarray(time_sec, dtype=np.float64)
+    frequency_track = np.asarray(
+        frequency_track,
+        dtype=np.float64,
+    )
+
+    if len(time_sec) != len(frequency_track):
+        raise ValueError(
+            "time_sec and frequency_track must have the same length."
+        )
+
+    finite = (
+        np.isfinite(time_sec)
+        & np.isfinite(frequency_track)
+    )
+
+    time_sec = time_sec[finite]
+    frequency_track = frequency_track[finite]
+
+    if len(time_sec) < 3:
+        raise ValueError(
+            "At least three finite samples are required."
+        )
+
+    # Convert smoothing duration to an odd number of samples.
+    smooth_samples = max(
+        1,
+        int(round(smooth_window_s * sample_rate_hz)),
+    )
+
+    frequency_smoothed = rolling_median(
+        frequency_track,
+        smooth_samples,
+    )
+
+    # Units are FWHM per second because frequency_track is Delta f/FWHM.
+    df_dt = np.gradient(
+        frequency_smoothed,
+        time_sec,
+    )
+
+    abs_df_dt = np.abs(df_dt)
+
+    derivative_baseline = np.nanmedian(abs_df_dt)
+    derivative_sigma = robust_sigma_mad(abs_df_dt)
+
+    if (
+        not np.isfinite(derivative_sigma)
+        or derivative_sigma == 0
+    ):
+        derivative_sigma = np.nanstd(abs_df_dt)
+
+    if (
+        not np.isfinite(derivative_sigma)
+        or derivative_sigma == 0
+    ):
+        derivative_sigma = np.finfo(float).eps
+
+    plateau_threshold = (
+        derivative_baseline
+        + plateau_mad_factor * derivative_sigma
+    )
+
+    raw_plateau_mask = (
+        abs_df_dt <= plateau_threshold
+    )
+
+    min_plateau_samples = max(
+        1,
+        int(round(
+            min_plateau_duration_s * sample_rate_hz
+        )),
+    )
+
+    plateau_mask = remove_short_true_regions(
+        raw_plateau_mask,
+        min_plateau_samples,
+    )
+
+    # Separately identify unusually rapid transitions.
+    derivative_center = np.nanmedian(df_dt)
+    spike_sigma = robust_sigma_mad(df_dt)
+
+    if (
+        not np.isfinite(spike_sigma)
+        or spike_sigma == 0
+    ):
+        spike_sigma = np.nanstd(df_dt)
+
+    if (
+        not np.isfinite(spike_sigma)
+        or spike_sigma == 0
+    ):
+        spike_sigma = np.finfo(float).eps
+
+    spike_threshold = (
+        spike_mad_factor * spike_sigma
+    )
+
+    derivative_spike_mask = (
+        np.abs(df_dt - derivative_center)
+        >= spike_threshold
+    )
+
+    plateau_rows = []
+
+    for plateau_number, (start_idx, stop_idx) in enumerate(
+        mask_regions(plateau_mask),
+        start=1,
+    ):
+        region = slice(start_idx, stop_idx + 1)
+
+        plateau_rows.append({
+            "plateau_number": plateau_number,
+            "start_index": start_idx,
+            "stop_index": stop_idx,
+            "start_time_s": time_sec[start_idx],
+            "stop_time_s": time_sec[stop_idx],
+            "duration_s": (
+                time_sec[stop_idx]
+                - time_sec[start_idx]
+            ),
+            "mean_delta_f_over_fwhm": np.nanmean(
+                frequency_smoothed[region]
+            ),
+            "std_delta_f_over_fwhm": np.nanstd(
+                frequency_smoothed[region]
+            ),
+            "frequency_range": (
+                np.nanmax(frequency_smoothed[region])
+                - np.nanmin(frequency_smoothed[region])
+            ),
+            "mean_abs_df_dt": np.nanmean(
+                abs_df_dt[region]
+            ),
+            "max_abs_df_dt": np.nanmax(
+                abs_df_dt[region]
+            ),
+        })
+
+    return {
+        "time_sec": time_sec,
+        "frequency_raw": frequency_track,
+        "frequency_smoothed": frequency_smoothed,
+        "df_dt": df_dt,
+        "plateau_mask": plateau_mask,
+        "derivative_spike_mask": derivative_spike_mask,
+        "plateau_threshold": plateau_threshold,
+        "spike_threshold": spike_threshold,
+        "plateau_rows": plateau_rows,
+    }
+    
 # ============================================================
 # All-detector power statistics
 # ============================================================
@@ -457,6 +713,35 @@ detector_csv_path = OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_detector_power_delta
 detector_df.to_csv(detector_csv_path, index=False)
 
 print(f"\nSaved detector statistics CSV to: {detector_csv_path}")
+
+
+# ============================================================
+#Array-common frequency-shift track
+# ============================================================
+
+common_delta_track = np.nanmedian(delta_matrix, axis=0)
+common_valid = np.isfinite(common_delta_track)
+
+common_time = np.arange(P_pW.shape[1]) / SAMPLE_RATE_HZ
+
+common_delta = common_delta_track[common_valid]
+common_time = common_time[common_valid]
+
+common_result = analyse_frequency_plateaus(
+    time_sec=common_time,
+    frequency_track=common_delta_track[common_valid],
+    sample_rate_hz=SAMPLE_RATE_HZ,
+    smooth_window_s=2.0,
+    min_plateau_duration_s=2.0,
+    plateau_mad_factor=0.75,
+    spike_mad_factor=6.0,
+)
+
+dfdt = common_result["df_dt"]
+
+plateau_mask = common_result["plateau_mask"]
+
+frequency = common_result["frequency_smoothed"]
 
 
 # ============================================================
