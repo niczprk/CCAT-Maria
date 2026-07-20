@@ -1962,12 +1962,21 @@ def tod_analysis(
     
     else:
         raise ValueError(f"Invalid ccat_band: {ccat_band}. Choose from '220', '280', '350', '410', '850'.")
-    
+
+    if ccat_band == "280":
+        beam_spacing = 3.0
+    elif ccat_band == "350":
+        beam_spacing = 4.0
+    elif ccat_band == "850":
+        beam_spacing = 6.0
+    else:
+        beam_spacing = 3.0
+
 
     array_cfg = {
         "shape": "hexagon",
         "field_of_view": 1.3,
-        "beam_spacing": 3.0,
+        "beam_spacing": beam_spacing,
         "primary_size": 6.0,
         "bands": [band],
         "polarized": Polarized,
