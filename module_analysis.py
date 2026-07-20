@@ -41,7 +41,7 @@ START_TIME = "2022-02-10T17:00:00"
 
 #scan pattern options: "lissajous", "raster", "back_and_forth", "daisy", "double_circle", "stare"
 
-SCAN_PATTERN = "double_circle"
+SCAN_PATTERN = "daisy"
 
 ELEV_LABEL = "65-75"
 
@@ -864,12 +864,11 @@ def make_array_feature_diagnostic(
         label="Candidate histogram feature",
     )
 
-    # Shade times at which many detectors occupy the feature.
     if np.any(high_occupancy_mask):
         frequency_axis.fill_between(
             diagnostic_time,
-            frequency_axis.get_ylim()[0],
-            frequency_axis.get_ylim()[1],
+            0,
+            1,
             where=high_occupancy_mask,
             alpha=0.08,
             transform=frequency_axis.get_xaxis_transform(),
@@ -879,48 +878,44 @@ def make_array_feature_diagnostic(
     frequency_axis.set_ylabel(
         r"Array-median $\Delta f/\mathrm{FWHM}$"
     )
-
-    frequency_axis.set_title(
-        f"Array-Wide Histogram Feature {feature_rank} Diagnostic\n"
-        f"{band_label} GHz, {scan_pattern}, Elev={elev_label}, "
-        f"Feature={lower:.4g} to {upper:.4g}"
-    )
-
     frequency_axis.grid(alpha=0.3)
     frequency_axis.legend(loc="best")
 
-    # Derivative
+
+    # Absolute derivative
     derivative_axis.plot(
         diagnostic_time,
-        common_df_dt,
+        abs_df_dt,
         linewidth=0.7,
-    )
-
-    derivative_axis.axhline(
-        0,
-        linestyle="--",
-        linewidth=1,
+        label=r"$|d(\Delta f/\mathrm{FWHM})/dt|$",
     )
 
     if np.any(high_occupancy_mask):
+        derivative_axis.fill_between(
+            diagnostic_time,
+            0,
+            1,
+            where=high_occupancy_mask,
+            alpha=0.08,
+            transform=derivative_axis.get_xaxis_transform(),
+        )
+
         derivative_axis.scatter(
             diagnostic_time[high_occupancy_mask],
-            common_df_dt[high_occupancy_mask],
+            abs_df_dt[high_occupancy_mask],
             s=8,
             label="High feature occupancy",
             zorder=4,
         )
 
     derivative_axis.set_ylabel(
-        r"$d(\Delta f/\mathrm{FWHM})/dt$"
+        r"$|d(\Delta f/\mathrm{FWHM})/dt|$"
         "\n"
         r"$(\mathrm{s}^{-1})$"
     )
-
     derivative_axis.grid(alpha=0.3)
+    derivative_axis.legend(loc="best")
 
-    if np.any(high_occupancy_mask):
-        derivative_axis.legend(loc="best")
 
     # Detector occupancy
     occupancy_axis.plot(
@@ -941,19 +936,10 @@ def make_array_feature_diagnostic(
     occupancy_axis.set_ylabel(
         "Fraction of detectors\nin feature"
     )
-
-    occupancy_axis.set_ylim(
-        bottom=0,
-        top=max(
-            1.05 * peak_occupancy
-            if np.isfinite(peak_occupancy)
-            else 1.0,
-            0.05,
-        ),
-    )
-
     occupancy_axis.grid(alpha=0.3)
     occupancy_axis.legend(loc="best")
+
+# ============================================================
 
     plt.tight_layout()
 
@@ -985,6 +971,597 @@ def make_array_feature_diagnostic(
         "feature_mean_abs_df_dt": feature_mean_abs_df_dt,
         "derivative_ratio": derivative_ratio,
     }
+
+
+def make_feature_geometry_diagnostic(
+    tod,
+    delta_matrix,
+    time_sec,
+    lower,
+    upper,
+    feature_rank,
+    outdir,
+    run_prefix,
+    band_label,
+    scan_pattern,
+    elev_label,
+    occupancy_fraction_of_peak=0.5,
+):
+    """
+    Test whether a pooled Delta f/FWHM histogram feature corresponds
+    to a preferred telescope position or observing geometry.
+
+    The function:
+      1. computes the fraction of detectors in the feature at each time,
+      2. marks times with occupancy above a fraction of the peak,
+      3. compares those times with Az/El, RA/Dec, elevation, and airmass.
+
+    Parameters
+    ----------
+    tod
+        Loaded MARIA TOD object.
+
+    delta_matrix : ndarray
+        Detector-by-time Delta f/FWHM matrix.
+
+    time_sec : ndarray
+        Time coordinate corresponding to the columns of delta_matrix.
+
+    lower, upper : float
+        Candidate feature bounds in Delta f/FWHM.
+
+    feature_rank : int
+        Feature number used in titles and filenames.
+
+    occupancy_fraction_of_peak : float
+        High-occupancy threshold expressed as a fraction of the peak
+        detector occupancy.
+    """
+    delta_matrix = np.asarray(delta_matrix, dtype=np.float64)
+    time_sec = np.asarray(time_sec, dtype=np.float64)
+
+    if delta_matrix.ndim != 2:
+        raise ValueError(
+            "delta_matrix must have shape detector-by-time."
+        )
+
+    if delta_matrix.shape[1] != len(time_sec):
+        raise ValueError(
+            "delta_matrix time axis does not match time_sec."
+        )
+
+    # ========================================================
+    # Detector occupancy in this Delta f/FWHM feature
+    # ========================================================
+
+    valid_delta = np.isfinite(delta_matrix)
+
+    in_feature = (
+        valid_delta
+        & (delta_matrix >= lower)
+        & (delta_matrix < upper)
+    )
+
+    n_valid = np.sum(valid_delta, axis=0)
+    n_in_feature = np.sum(in_feature, axis=0)
+
+    occupancy = np.divide(
+        n_in_feature,
+        n_valid,
+        out=np.full(
+            delta_matrix.shape[1],
+            np.nan,
+            dtype=np.float64,
+        ),
+        where=n_valid > 0,
+    )
+
+    peak_occupancy = np.nanmax(occupancy)
+
+    if not np.isfinite(peak_occupancy) or peak_occupancy <= 0:
+        print(
+            f"Feature {feature_rank}: no finite detector occupancy."
+        )
+        return None
+
+    occupancy_threshold = (
+        occupancy_fraction_of_peak * peak_occupancy
+    )
+
+    high_occupancy_mask = (
+        np.isfinite(occupancy)
+        & (occupancy >= occupancy_threshold)
+    )
+
+    if not np.any(high_occupancy_mask):
+        print(
+            f"Feature {feature_rank}: no high-occupancy samples."
+        )
+        return None
+
+    # ========================================================
+    # Helper to collapse a TOD coordinate to one value per time
+    # ========================================================
+
+    def common_coordinate(values, coordinate_name):
+        """
+        Return one representative coordinate per time sample.
+
+        MARIA coordinates may be:
+          - one-dimensional: time
+          - two-dimensional: detector by time
+        """
+        values = np.asarray(values, dtype=np.float64)
+
+        if values.ndim == 1:
+            common = values
+
+        elif values.ndim == 2:
+            if values.shape[1] == len(time_sec):
+                common = np.nanmedian(values, axis=0)
+
+            elif values.shape[0] == len(time_sec):
+                common = np.nanmedian(values, axis=1)
+
+            else:
+                raise ValueError(
+                    f"Could not match {coordinate_name} shape "
+                    f"{values.shape} to {len(time_sec)} time samples."
+                )
+
+        else:
+            raise ValueError(
+                f"{coordinate_name} has unsupported shape "
+                f"{values.shape}."
+            )
+
+        if len(common) != len(time_sec):
+            raise ValueError(
+                f"{coordinate_name} has {len(common)} samples, "
+                f"but time_sec has {len(time_sec)}."
+            )
+
+        return common
+
+    # ========================================================
+    # Extract representative telescope coordinates
+    # ========================================================
+
+    az = common_coordinate(tod.az, "azimuth")
+    el = common_coordinate(tod.el, "elevation")
+    ra = common_coordinate(tod.ra, "right ascension")
+    dec = common_coordinate(tod.dec, "declination")
+
+    # MARIA normally stores angular coordinates in radians.
+    # Convert only when values appear to be in radians.
+    def angular_values_to_degrees(values, coordinate_name):
+        values = np.asarray(values, dtype=np.float64)
+        finite_values = values[np.isfinite(values)]
+
+        if len(finite_values) == 0:
+            return values
+
+        max_abs = np.nanmax(np.abs(finite_values))
+
+        if coordinate_name in {"azimuth", "right ascension"}:
+            probably_radians = max_abs <= 2 * np.pi + 0.1
+        else:
+            probably_radians = max_abs <= np.pi + 0.1
+
+        if probably_radians:
+            return np.rad2deg(values)
+
+        return values
+
+    az_deg = angular_values_to_degrees(
+        az,
+        "azimuth",
+    )
+
+    el_deg = angular_values_to_degrees(
+        el,
+        "elevation",
+    )
+
+    ra_deg = angular_values_to_degrees(
+        ra,
+        "right ascension",
+    )
+
+    dec_deg = angular_values_to_degrees(
+        dec,
+        "declination",
+    )
+
+    # Put azimuth into 0–360 degrees for easier interpretation.
+    az_deg = np.mod(az_deg, 360.0)
+
+    # Approximate plane-parallel airmass.
+    # This is sufficient for comparing 65–75 degree observations.
+    with np.errstate(
+        divide="ignore",
+        invalid="ignore",
+    ):
+        airmass = 1.0 / np.sin(
+            np.deg2rad(el_deg)
+        )
+
+    airmass[
+        ~np.isfinite(airmass)
+        | (el_deg <= 0)
+    ] = np.nan
+
+    # Require finite geometry and occupancy values.
+    geometry_valid = (
+        np.isfinite(time_sec)
+        & np.isfinite(occupancy)
+        & np.isfinite(az_deg)
+        & np.isfinite(el_deg)
+        & np.isfinite(ra_deg)
+        & np.isfinite(dec_deg)
+        & np.isfinite(airmass)
+    )
+
+    high_geometry_mask = (
+        high_occupancy_mask
+        & geometry_valid
+    )
+
+    if not np.any(high_geometry_mask):
+        print(
+            f"Feature {feature_rank}: high-occupancy samples "
+            "have no valid geometry."
+        )
+        return None
+
+    # ========================================================
+    # Numerical summaries
+    # ========================================================
+
+    selected_time = time_sec[high_geometry_mask]
+    selected_az = az_deg[high_geometry_mask]
+    selected_el = el_deg[high_geometry_mask]
+    selected_ra = ra_deg[high_geometry_mask]
+    selected_dec = dec_deg[high_geometry_mask]
+    selected_airmass = airmass[high_geometry_mask]
+    selected_occupancy = occupancy[high_geometry_mask]
+
+    summary = {
+        "feature_rank": feature_rank,
+        "feature_lower": lower,
+        "feature_upper": upper,
+        "peak_detector_occupancy": peak_occupancy,
+        "occupancy_threshold": occupancy_threshold,
+        "n_high_occupancy_samples": int(
+            np.sum(high_geometry_mask)
+        ),
+        "mean_azimuth_deg": np.nanmean(selected_az),
+        "std_azimuth_deg": np.nanstd(selected_az),
+        "azimuth_range_deg": (
+            np.nanmax(selected_az)
+            - np.nanmin(selected_az)
+        ),
+        "mean_elevation_deg": np.nanmean(selected_el),
+        "std_elevation_deg": np.nanstd(selected_el),
+        "elevation_range_deg": (
+            np.nanmax(selected_el)
+            - np.nanmin(selected_el)
+        ),
+        "mean_ra_deg": np.nanmean(selected_ra),
+        "std_ra_deg": np.nanstd(selected_ra),
+        "mean_dec_deg": np.nanmean(selected_dec),
+        "std_dec_deg": np.nanstd(selected_dec),
+        "mean_airmass": np.nanmean(selected_airmass),
+        "std_airmass": np.nanstd(selected_airmass),
+        "airmass_range": (
+            np.nanmax(selected_airmass)
+            - np.nanmin(selected_airmass)
+        ),
+    }
+
+    print(
+        f"\nFeature {feature_rank} geometry:"
+    )
+    print(
+        f"  Delta f/FWHM range: "
+        f"[{lower:.6g}, {upper:.6g})"
+    )
+    print(
+        f"  Peak occupancy: "
+        f"{peak_occupancy:.2%}"
+    )
+    print(
+        f"  Selected occupancy threshold: "
+        f"{occupancy_threshold:.2%}"
+    )
+    print(
+        f"  High-occupancy samples: "
+        f"{summary['n_high_occupancy_samples']}"
+    )
+    print(
+        f"  Elevation: "
+        f"{summary['mean_elevation_deg']:.4f} "
+        f"+/- {summary['std_elevation_deg']:.4f} deg"
+    )
+    print(
+        f"  Elevation range: "
+        f"{summary['elevation_range_deg']:.4f} deg"
+    )
+    print(
+        f"  Azimuth range: "
+        f"{summary['azimuth_range_deg']:.4f} deg"
+    )
+    print(
+        f"  Airmass: "
+        f"{summary['mean_airmass']:.6f} "
+        f"+/- {summary['std_airmass']:.6f}"
+    )
+
+    # ========================================================
+    # Plot 1: Azimuth–elevation geometry
+    # ========================================================
+
+    fig, axis = plt.subplots(
+        figsize=(10, 8)
+    )
+
+    axis.plot(
+        az_deg[geometry_valid],
+        el_deg[geometry_valid],
+        linewidth=0.5,
+        alpha=0.35,
+        label="Full scan path",
+        zorder=1,
+    )
+
+    scatter = axis.scatter(
+        selected_az,
+        selected_el,
+        c=selected_occupancy,
+        s=20,
+        zorder=3,
+    )
+
+    colorbar = fig.colorbar(
+        scatter,
+        ax=axis,
+    )
+
+    colorbar.set_label(
+        "Fraction of detectors in feature"
+    )
+
+    axis.set_xlabel("Array-median azimuth (deg)")
+    axis.set_ylabel("Array-median elevation (deg)")
+
+    axis.set_title(
+        f"Feature {feature_rank}: Azimuth–Elevation Locations\n"
+        f"{band_label} GHz, {scan_pattern}, Elev={elev_label}, "
+        f"Feature={lower:.4g} to {upper:.4g}"
+    )
+
+    axis.grid(alpha=0.3)
+    axis.legend(loc="best")
+    fig.tight_layout()
+
+    azel_output = outdir / (
+        f"{run_prefix}_{band_label}GHz_"
+        f"array_feature_{feature_rank}_"
+        "azimuth_elevation_geometry.png"
+    )
+
+    fig.savefig(
+        azel_output,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+
+    # ========================================================
+    # Plot 2: RA–Dec geometry
+    # ========================================================
+
+    fig, axis = plt.subplots(
+        figsize=(10, 8)
+    )
+
+    axis.plot(
+        ra_deg[geometry_valid],
+        dec_deg[geometry_valid],
+        linewidth=0.5,
+        alpha=0.35,
+        label="Full scan path",
+        zorder=1,
+    )
+
+    scatter = axis.scatter(
+        selected_ra,
+        selected_dec,
+        c=selected_occupancy,
+        s=20,
+        zorder=3,
+    )
+
+    colorbar = fig.colorbar(
+        scatter,
+        ax=axis,
+    )
+
+    colorbar.set_label(
+        "Fraction of detectors in feature"
+    )
+
+    axis.set_xlabel("Array-median right ascension (deg)")
+    axis.set_ylabel("Array-median declination (deg)")
+
+    axis.set_title(
+        f"Feature {feature_rank}: RA–Dec Locations\n"
+        f"{band_label} GHz, {scan_pattern}, Elev={elev_label}"
+    )
+
+    axis.grid(alpha=0.3)
+    axis.legend(loc="best")
+    fig.tight_layout()
+
+    radec_output = outdir / (
+        f"{run_prefix}_{band_label}GHz_"
+        f"array_feature_{feature_rank}_"
+        "radec_geometry.png"
+    )
+
+    fig.savefig(
+        radec_output,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+
+    # ========================================================
+    # Plot 3: time, elevation, airmass, and occupancy
+    # ========================================================
+
+    fig, axes = plt.subplots(
+        3,
+        1,
+        figsize=(13, 10),
+        sharex=True,
+    )
+
+    elevation_axis = axes[0]
+    airmass_axis = axes[1]
+    occupancy_axis = axes[2]
+
+    # Elevation
+    elevation_axis.plot(
+        time_sec[geometry_valid],
+        el_deg[geometry_valid],
+        linewidth=0.8,
+        label="Array-median elevation",
+        zorder=2,
+    )
+
+    elevation_axis.scatter(
+        selected_time,
+        selected_el,
+        c=selected_occupancy,
+        s=15,
+        label="High feature occupancy",
+        zorder=3,
+    )
+
+    elevation_axis.set_ylabel("Elevation (deg)")
+    elevation_axis.grid(alpha=0.3)
+    elevation_axis.legend(loc="best")
+
+    # Airmass
+    airmass_axis.plot(
+        time_sec[geometry_valid],
+        airmass[geometry_valid],
+        linewidth=0.8,
+        label="Approximate airmass",
+        zorder=2,
+    )
+
+    airmass_axis.scatter(
+        selected_time,
+        selected_airmass,
+        c=selected_occupancy,
+        s=15,
+        label="High feature occupancy",
+        zorder=3,
+    )
+
+    airmass_axis.set_ylabel("Airmass")
+    airmass_axis.grid(alpha=0.3)
+    airmass_axis.legend(loc="best")
+
+    # Occupancy
+    occupancy_axis.plot(
+        time_sec,
+        occupancy,
+        linewidth=0.8,
+        label="Detector occupancy",
+    )
+
+    occupancy_axis.axhline(
+        occupancy_threshold,
+        linestyle="--",
+        linewidth=1,
+        label=(
+            f"{occupancy_fraction_of_peak:.0%} "
+            "of peak occupancy"
+        ),
+    )
+
+    occupancy_axis.set_xlabel("Time (s)")
+    occupancy_axis.set_ylabel(
+        "Fraction of detectors\nin feature"
+    )
+
+    occupancy_axis.grid(alpha=0.3)
+    occupancy_axis.legend(loc="best")
+
+    fig.suptitle(
+        f"Feature {feature_rank}: Geometry versus Time\n"
+        f"{band_label} GHz, {scan_pattern}, Elev={elev_label}, "
+        f"Feature={lower:.4g} to {upper:.4g}"
+    )
+
+    fig.tight_layout()
+
+    time_geometry_output = outdir / (
+        f"{run_prefix}_{band_label}GHz_"
+        f"array_feature_{feature_rank}_"
+        "elevation_airmass_occupancy_vs_time.png"
+    )
+
+    fig.savefig(
+        time_geometry_output,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+
+    # ========================================================
+    # Save selected geometry samples
+    # ========================================================
+
+    selected_geometry_df = pd.DataFrame({
+        "time_s": selected_time,
+        "feature_occupancy": selected_occupancy,
+        "azimuth_deg": selected_az,
+        "elevation_deg": selected_el,
+        "ra_deg": selected_ra,
+        "dec_deg": selected_dec,
+        "airmass": selected_airmass,
+    })
+
+    selected_geometry_csv = outdir / (
+        f"{run_prefix}_{band_label}GHz_"
+        f"array_feature_{feature_rank}_"
+        "high_occupancy_geometry_samples.csv"
+    )
+
+    selected_geometry_df.to_csv(
+        selected_geometry_csv,
+        index=False,
+    )
+
+    print(f"  Saved Az/El plot: {azel_output}")
+    print(f"  Saved RA/Dec plot: {radec_output}")
+    print(
+        f"  Saved geometry time plot: "
+        f"{time_geometry_output}"
+    )
+    print(
+        f"  Saved selected samples: "
+        f"{selected_geometry_csv}"
+    )
+
+    return summary
 
 # ============================================================
 # All-detector power statistics
@@ -1183,6 +1760,7 @@ array_candidate_bins, array_counts, array_edges, array_excess = (
 )
 
 array_feature_rows = []
+array_geometry_rows = []
 
 for feature_rank, bin_idx in enumerate(
     array_candidate_bins,
@@ -1208,6 +1786,24 @@ for feature_rank, bin_idx in enumerate(
     if result is not None:
         array_feature_rows.append(result)
 
+    geometry_result = make_feature_geometry_diagnostic(
+        tod=tod,
+        delta_matrix=delta_matrix,
+        time_sec=time_sec_full,
+        lower=lower,
+        upper=upper,
+        feature_rank=feature_rank,
+        outdir=OUTDIR,
+        run_prefix=run_prefix,
+        band_label=BAND_LABEL,
+        scan_pattern=SCAN_PATTERN,
+        elev_label=ELEV_LABEL,
+        occupancy_fraction_of_peak=0.5
+    )
+
+    if geometry_result is not None:
+        array_geometry_rows.append(geometry_result)
+
 
 if len(array_feature_rows) > 0:
     array_feature_df = pd.DataFrame(
@@ -1227,6 +1823,26 @@ if len(array_feature_rows) > 0:
     print(
         f"\nSaved array-feature summary to: "
         f"{array_feature_csv}"
+    )
+
+if len(array_geometry_rows) > 0:
+    array_geometry_df = pd.DataFrame(
+        array_geometry_rows
+    )
+
+    array_geometry_csv = OUTDIR / (
+        f"{run_prefix}_{BAND_LABEL}GHz_"
+        "array_feature_geometry_summary.csv"
+    )
+
+    array_geometry_df.to_csv(
+        array_geometry_csv,
+        index=False,
+    )
+
+    print(
+        f"\nSaved array-feature geometry summary to: "
+        f"{array_geometry_csv}"
     )
 
 stats_rows.append(
