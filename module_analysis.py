@@ -610,6 +610,382 @@ def analyse_frequency_plateaus(
         "plateau_rows": plateau_rows,
     }
     
+def make_array_feature_diagnostic(
+    delta_matrix,
+    time_sec,
+    lower,
+    upper,
+    feature_rank,
+    outdir,
+    run_prefix,
+    band_label,
+    scan_pattern,
+    elev_label,
+    smooth_window_s=2.0,
+):
+    """
+    Compare an all-detector histogram feature with the array-common
+    frequency track and its time derivative.
+
+    Parameters
+    ----------
+    delta_matrix : ndarray
+        Detector-by-time matrix of Delta f / FWHM.
+
+    time_sec : ndarray
+        Time coordinate corresponding to the columns of delta_matrix.
+
+    lower, upper : float
+        Lower and upper edges of the candidate histogram feature.
+
+    feature_rank : int
+        Candidate-feature number used in plot labels and filenames.
+
+    smooth_window_s : float
+        Width of the rolling-median smoothing window.
+    """
+    delta_matrix = np.asarray(delta_matrix, dtype=np.float64)
+    time_sec = np.asarray(time_sec, dtype=np.float64)
+
+    if delta_matrix.ndim != 2:
+        raise ValueError("delta_matrix must be detector by time.")
+
+    if delta_matrix.shape[1] != len(time_sec):
+        raise ValueError(
+            "delta_matrix time axis does not match time_sec."
+        )
+
+    # --------------------------------------------------------
+    # 1. Array-common frequency-shift track
+    # --------------------------------------------------------
+
+    common_delta = np.nanmedian(delta_matrix, axis=0)
+
+    common_valid = (
+        np.isfinite(common_delta)
+        & np.isfinite(time_sec)
+    )
+
+    diagnostic_time = time_sec[common_valid]
+    common_delta = common_delta[common_valid]
+
+    if len(common_delta) < 3:
+        print(
+            f"Feature {feature_rank}: insufficient finite samples."
+        )
+        return None
+
+    # Rolling-median smoothing.
+    dt_median = np.nanmedian(np.diff(diagnostic_time))
+
+    if not np.isfinite(dt_median) or dt_median <= 0:
+        raise ValueError("Could not determine a valid time spacing.")
+
+    smooth_samples = max(
+        1,
+        int(round(smooth_window_s / dt_median)),
+    )
+
+    if smooth_samples % 2 == 0:
+        smooth_samples += 1
+
+    common_smoothed = (
+        pd.Series(common_delta)
+        .rolling(
+            window=smooth_samples,
+            center=True,
+            min_periods=1,
+        )
+        .median()
+        .to_numpy(dtype=np.float64)
+    )
+
+    # --------------------------------------------------------
+    # 2. Time derivative
+    # --------------------------------------------------------
+
+    common_df_dt = np.gradient(
+        common_smoothed,
+        diagnostic_time,
+    )
+
+    abs_df_dt = np.abs(common_df_dt)
+
+    # --------------------------------------------------------
+    # 3. Fraction of valid detectors in the feature at each time
+    # --------------------------------------------------------
+
+    full_valid = np.isfinite(delta_matrix)
+
+    in_feature = (
+        full_valid
+        & (delta_matrix >= lower)
+        & (delta_matrix < upper)
+    )
+
+    n_valid_detectors = np.sum(full_valid, axis=0)
+    n_feature_detectors = np.sum(in_feature, axis=0)
+
+    feature_occupancy = np.divide(
+        n_feature_detectors,
+        n_valid_detectors,
+        out=np.full(
+            delta_matrix.shape[1],
+            np.nan,
+            dtype=np.float64,
+        ),
+        where=n_valid_detectors > 0,
+    )
+
+    feature_occupancy = feature_occupancy[common_valid]
+
+    # --------------------------------------------------------
+    # 4. Define high-occupancy periods for visual comparison
+    # --------------------------------------------------------
+
+    peak_occupancy = np.nanmax(feature_occupancy)
+
+    if np.isfinite(peak_occupancy) and peak_occupancy > 0:
+        high_occupancy_threshold = 0.5 * peak_occupancy
+
+        high_occupancy_mask = (
+            feature_occupancy >= high_occupancy_threshold
+        )
+    else:
+        high_occupancy_threshold = np.nan
+        high_occupancy_mask = np.zeros(
+            len(feature_occupancy),
+            dtype=bool,
+        )
+
+    # --------------------------------------------------------
+    # 5. Numerical comparison
+    # --------------------------------------------------------
+
+    baseline_median_abs_df_dt = np.nanmedian(abs_df_dt)
+
+    if np.any(high_occupancy_mask):
+        feature_median_abs_df_dt = np.nanmedian(
+            abs_df_dt[high_occupancy_mask]
+        )
+
+        feature_mean_abs_df_dt = np.nanmean(
+            abs_df_dt[high_occupancy_mask]
+        )
+
+        derivative_ratio = (
+            feature_median_abs_df_dt
+            / baseline_median_abs_df_dt
+            if baseline_median_abs_df_dt > 0
+            else np.nan
+        )
+
+        high_occupancy_duration_s = np.sum(
+            np.diff(
+                np.r_[
+                    diagnostic_time,
+                    diagnostic_time[-1] + dt_median,
+                ]
+            )[high_occupancy_mask]
+        )
+    else:
+        feature_median_abs_df_dt = np.nan
+        feature_mean_abs_df_dt = np.nan
+        derivative_ratio = np.nan
+        high_occupancy_duration_s = 0.0
+
+    print(
+        f"\nArray feature {feature_rank}: "
+        f"[{lower:.6g}, {upper:.6g})"
+    )
+    print(
+        f"  Peak detector occupancy: "
+        f"{peak_occupancy:.2%}"
+    )
+    print(
+        f"  High-occupancy threshold: "
+        f"{high_occupancy_threshold:.2%}"
+    )
+    print(
+        f"  High-occupancy duration: "
+        f"{high_occupancy_duration_s:.2f} s"
+    )
+    print(
+        f"  Median |df/dt| overall: "
+        f"{baseline_median_abs_df_dt:.6g} FWHM/s"
+    )
+    print(
+        f"  Median |df/dt| during high occupancy: "
+        f"{feature_median_abs_df_dt:.6g} FWHM/s"
+    )
+    print(
+        f"  High-occupancy / overall derivative ratio: "
+        f"{derivative_ratio:.4g}"
+    )
+
+    # --------------------------------------------------------
+    # 6. Three-panel diagnostic plot
+    # --------------------------------------------------------
+
+    fig, axes = plt.subplots(
+        3,
+        1,
+        figsize=(13, 10),
+        sharex=True,
+        gridspec_kw={
+            "height_ratios": [2.0, 1.2, 1.2],
+        },
+    )
+
+    frequency_axis = axes[0]
+    derivative_axis = axes[1]
+    occupancy_axis = axes[2]
+
+    # Frequency track
+    frequency_axis.plot(
+        diagnostic_time,
+        common_delta,
+        linewidth=0.5,
+        alpha=0.45,
+        label="Raw array median",
+    )
+
+    frequency_axis.plot(
+        diagnostic_time,
+        common_smoothed,
+        linewidth=1.2,
+        label="Smoothed array median",
+    )
+
+    frequency_axis.axhspan(
+        lower,
+        upper,
+        alpha=0.2,
+        label="Candidate histogram feature",
+    )
+
+    # Shade times at which many detectors occupy the feature.
+    if np.any(high_occupancy_mask):
+        frequency_axis.fill_between(
+            diagnostic_time,
+            frequency_axis.get_ylim()[0],
+            frequency_axis.get_ylim()[1],
+            where=high_occupancy_mask,
+            alpha=0.08,
+            transform=frequency_axis.get_xaxis_transform(),
+            label="High array occupancy",
+        )
+
+    frequency_axis.set_ylabel(
+        r"Array-median $\Delta f/\mathrm{FWHM}$"
+    )
+
+    frequency_axis.set_title(
+        f"Array-Wide Histogram Feature {feature_rank} Diagnostic\n"
+        f"{band_label} GHz, {scan_pattern}, Elev={elev_label}, "
+        f"Feature={lower:.4g} to {upper:.4g}"
+    )
+
+    frequency_axis.grid(alpha=0.3)
+    frequency_axis.legend(loc="best")
+
+    # Derivative
+    derivative_axis.plot(
+        diagnostic_time,
+        common_df_dt,
+        linewidth=0.7,
+    )
+
+    derivative_axis.axhline(
+        0,
+        linestyle="--",
+        linewidth=1,
+    )
+
+    if np.any(high_occupancy_mask):
+        derivative_axis.scatter(
+            diagnostic_time[high_occupancy_mask],
+            common_df_dt[high_occupancy_mask],
+            s=8,
+            label="High feature occupancy",
+            zorder=4,
+        )
+
+    derivative_axis.set_ylabel(
+        r"$d(\Delta f/\mathrm{FWHM})/dt$"
+        "\n"
+        r"$(\mathrm{s}^{-1})$"
+    )
+
+    derivative_axis.grid(alpha=0.3)
+
+    if np.any(high_occupancy_mask):
+        derivative_axis.legend(loc="best")
+
+    # Detector occupancy
+    occupancy_axis.plot(
+        diagnostic_time,
+        feature_occupancy,
+        linewidth=0.9,
+    )
+
+    if np.isfinite(high_occupancy_threshold):
+        occupancy_axis.axhline(
+            high_occupancy_threshold,
+            linestyle="--",
+            linewidth=1,
+            label="50% of peak occupancy",
+        )
+
+    occupancy_axis.set_xlabel("Time (s)")
+    occupancy_axis.set_ylabel(
+        "Fraction of detectors\nin feature"
+    )
+
+    occupancy_axis.set_ylim(
+        bottom=0,
+        top=max(
+            1.05 * peak_occupancy
+            if np.isfinite(peak_occupancy)
+            else 1.0,
+            0.05,
+        ),
+    )
+
+    occupancy_axis.grid(alpha=0.3)
+    occupancy_axis.legend(loc="best")
+
+    plt.tight_layout()
+
+    output_path = outdir / (
+        f"{run_prefix}_{band_label}GHz_"
+        f"array_feature_{feature_rank}_"
+        "frequency_derivative_occupancy.png"
+    )
+
+    plt.savefig(
+        output_path,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+
+    print(f"  Saved diagnostic: {output_path}")
+
+    return {
+        "feature_rank": feature_rank,
+        "feature_lower": lower,
+        "feature_upper": upper,
+        "peak_detector_occupancy": peak_occupancy,
+        "high_occupancy_threshold": high_occupancy_threshold,
+        "high_occupancy_duration_s": high_occupancy_duration_s,
+        "overall_median_abs_df_dt": baseline_median_abs_df_dt,
+        "feature_median_abs_df_dt": feature_median_abs_df_dt,
+        "feature_mean_abs_df_dt": feature_mean_abs_df_dt,
+        "derivative_ratio": derivative_ratio,
+    }
+
 # ============================================================
 # All-detector power statistics
 # ============================================================
@@ -655,6 +1031,10 @@ standardized_delta_tracks = []
 # Retain a detector-by-time matrix so that detector populations producing
 # narrow features can be identified after the loop.
 delta_matrix = np.full(P_pW.shape, np.nan, dtype=np.float64)
+
+time_sec_full = (
+    np.arange(P_pW.shape[1], dtype=np.float64) / SAMPLE_RATE_HZ
+)
 
 n_detectors = P_pW.shape[0]
 
@@ -719,29 +1099,29 @@ print(f"\nSaved detector statistics CSV to: {detector_csv_path}")
 #Array-common frequency-shift track
 # ============================================================
 
-common_delta_track = np.nanmedian(delta_matrix, axis=0)
-common_valid = np.isfinite(common_delta_track)
+# common_delta_track = np.nanmedian(delta_matrix, axis=0)
+# common_valid = np.isfinite(common_delta_track)
 
-common_time = np.arange(P_pW.shape[1]) / SAMPLE_RATE_HZ
+# common_time = time_sec_full
 
-common_delta = common_delta_track[common_valid]
-common_time = common_time[common_valid]
+# common_delta = common_delta_track[common_valid]
+# common_time = common_time[common_valid]
 
-common_result = analyse_frequency_plateaus(
-    time_sec=common_time,
-    frequency_track=common_delta_track[common_valid],
-    sample_rate_hz=SAMPLE_RATE_HZ,
-    smooth_window_s=2.0,
-    min_plateau_duration_s=2.0,
-    plateau_mad_factor=0.75,
-    spike_mad_factor=6.0,
-)
+# common_result = analyse_frequency_plateaus(
+#     time_sec=common_time,
+#     frequency_track=common_delta_track[common_valid],
+#     sample_rate_hz=SAMPLE_RATE_HZ,
+#     smooth_window_s=2.0,
+#     min_plateau_duration_s=2.0,
+#     plateau_mad_factor=0.75,
+#     spike_mad_factor=6.0,
+# )
 
-dfdt = common_result["df_dt"]
+# dfdt = common_result["df_dt"]
 
-plateau_mask = common_result["plateau_mask"]
+# plateau_mask = common_result["plateau_mask"]
 
-frequency = common_result["frequency_smoothed"]
+# frequency = common_result["frequency_smoothed"]
 
 
 # ============================================================
@@ -789,6 +1169,65 @@ make_hist(
 # ============================================================
 
 all_delta = np.concatenate(all_delta_tracks)
+
+# ============================================================
+# Array-wide frequency-feature diagnostic
+# ============================================================
+
+array_candidate_bins, array_counts, array_edges, array_excess = (
+    candidate_spike_bins(
+        all_delta,
+        bins=100,
+        max_candidates=3,
+    )
+)
+
+array_feature_rows = []
+
+for feature_rank, bin_idx in enumerate(
+    array_candidate_bins,
+    start=1,
+):
+    lower = array_edges[bin_idx]
+    upper = array_edges[bin_idx + 1]
+
+    result = make_array_feature_diagnostic(
+        delta_matrix=delta_matrix,
+        time_sec=time_sec_full,
+        lower=lower,
+        upper=upper,
+        feature_rank=feature_rank,
+        outdir=OUTDIR,
+        run_prefix=run_prefix,
+        band_label=BAND_LABEL,
+        scan_pattern=SCAN_PATTERN,
+        elev_label=ELEV_LABEL,
+        smooth_window_s=2.0,
+    )
+
+    if result is not None:
+        array_feature_rows.append(result)
+
+
+if len(array_feature_rows) > 0:
+    array_feature_df = pd.DataFrame(
+        array_feature_rows
+    )
+
+    array_feature_csv = OUTDIR / (
+        f"{run_prefix}_{BAND_LABEL}GHz_"
+        "array_feature_diagnostic_summary.csv"
+    )
+
+    array_feature_df.to_csv(
+        array_feature_csv,
+        index=False,
+    )
+
+    print(
+        f"\nSaved array-feature summary to: "
+        f"{array_feature_csv}"
+    )
 
 stats_rows.append(
     summarize(
