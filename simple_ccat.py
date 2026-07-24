@@ -1968,7 +1968,7 @@ def tod_analysis(
     elif ccat_band == "350":
         beam_spacing = 4.0
     elif ccat_band == "850":
-        beam_spacing = 6.0
+        beam_spacing = 10.0
     else:
         beam_spacing = 3.0
 
@@ -2784,6 +2784,7 @@ if __name__ == "__main__":
     ending_time = time.perf_counter()
     elapsed_time = ending_time - starting_time
     print(f"\nTotal execution time: {elapsed_time:.2f} seconds")
+
 
     
 

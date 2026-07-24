@@ -1,4 +1,11 @@
 from pathlib import Path
+from typing import Optional
+
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.animation import FuncAnimation, PillowWriter, FFMpegWriter
+from matplotlib.colors import Normalize, TwoSlopeNorm
+
 import os, sys
 
 os.environ["OMP_NUM_THREADS"] = "1"  # Limit OpenMP threads to avoid oversubscription
@@ -25,7 +32,7 @@ import simple_ccat
 # User settings
 # ============================================================
 
-ccat_band = "850"  # "850" or "350"
+ccat_band = "350"  # "850" or "350"
 
 Run = True # whether to run the TOD analysis or just load existing TOD
 
@@ -58,7 +65,7 @@ eta = 0.5
 
  
 
-TOTAL_DURATION_S = 900  # seconds
+TOTAL_DURATION_S = 900  # seconds 15 mins
 SIM_DURATION_S = 900  # seconds
 CHUNK_NUMBER = 0
 
@@ -113,7 +120,7 @@ run_prefix = (
 TOD_OUTDIR = Path(f"outputs/{run_prefix}_tods") #Im going to have to change this for each run I am interested in
 fits_path = TOD_OUTDIR / f"{run_prefix}_dim_reduced_tods.fits"
 
-OUTDIR = Path(f"outputs/delta_f_analysis/{SCAN_PATTERN}/{run_prefix}_{BAND_LABEL}GHz_power_deltaf_analysis")
+OUTDIR = Path(f"outputs/delta_f_analysis/{SCAN_PATTERN}/900_run_{run_prefix}_{BAND_LABEL}GHz_power_deltaf_analysis")
 OUTDIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -197,7 +204,90 @@ print(f"TOD shape: {tod.shape}")
 P_pW = tod.to("pW").signal
 P_pW = np.asarray(P_pW, dtype=np.float64)
 
+# ============================================================
+# Prepare detector-resolved Az/El matrices for animations
+# ============================================================
 
+az_raw = np.asarray(tod.az, dtype=np.float64)
+el_raw = np.asarray(tod.el, dtype=np.float64)
+
+print("Raw tod.az shape:", az_raw.shape)
+print("Raw tod.el shape:", el_raw.shape)
+print("Power shape:", P_pW.shape)
+
+# Remove only singleton dimensions, if any.
+az_raw = np.squeeze(az_raw)
+el_raw = np.squeeze(el_raw)
+
+print("Squeezed tod.az shape:", az_raw.shape)
+print("Squeezed tod.el shape:", el_raw.shape)
+
+# ------------------------------------------------------------
+# Match the expected detector-by-time orientation
+# ------------------------------------------------------------
+
+if az_raw.shape == P_pW.shape:
+    az_matrix = az_raw
+
+elif az_raw.T.shape == P_pW.shape:
+    az_matrix = az_raw.T
+
+else:
+    raise ValueError(
+        "Could not match tod.az to detector power shape. "
+        f"tod.az shape after squeeze: {az_raw.shape}; "
+        f"P_pW shape: {P_pW.shape}"
+    )
+
+
+if el_raw.shape == P_pW.shape:
+    el_matrix = el_raw
+
+elif el_raw.T.shape == P_pW.shape:
+    el_matrix = el_raw.T
+
+else:
+    raise ValueError(
+        "Could not match tod.el to detector power shape. "
+        f"tod.el shape after squeeze: {el_raw.shape}; "
+        f"P_pW shape: {P_pW.shape}"
+    )
+
+# ------------------------------------------------------------
+# MARIA Az/El coordinates are normally stored in radians.
+# Convert to degrees.
+# ------------------------------------------------------------
+
+az_deg_matrix_raw = np.rad2deg(az_matrix)
+el_deg_matrix = np.rad2deg(el_matrix)
+
+az_reference_deg = np.nanmedian(az_deg_matrix_raw)
+el_reference_deg = np.nanmedian(el_deg_matrix)
+
+# delta_az_deg = ((az_deg_matrix_raw - az_reference_deg + 180) % 360 - 180)
+
+# Put azimuth into the range 0–360 degrees.
+az_deg_matrix = (az_deg_matrix_raw * np.cos(np.deg2rad(el_reference_deg)))
+
+time_sec_full = (
+    np.arange(P_pW.shape[1], dtype=np.float64)
+    / SAMPLE_RATE_HZ
+)
+
+print("Animation Az shape:", az_deg_matrix.shape)
+print("Animation El shape:", el_deg_matrix.shape)
+print("Animation power shape:", P_pW.shape)
+print("Animation time shape:", time_sec_full.shape)
+print(
+    "Az range:",
+    np.nanmin(az_deg_matrix),
+    np.nanmax(az_deg_matrix),
+)
+print(
+    "El range:",
+    np.nanmin(el_deg_matrix),
+    np.nanmax(el_deg_matrix),
+)
 
 
 # ============================================================
@@ -1563,6 +1653,362 @@ def make_feature_geometry_diagnostic(
 
     return summary
 
+
+def animate_detector_azel_power(
+    az_deg: np.ndarray,
+    el_deg: np.ndarray,
+    power_pW: np.ndarray,
+    time_s: np.ndarray,
+    output_path: Path,
+    *,
+    colour_mode: str = "absolute",
+    frame_step: int = 10,
+    fps: int = 20,
+    marker_size: float = 14.0,
+    title: str = "Detector Power in Azimuth–Elevation",
+    fixed_az_limits: Optional[tuple[float, float]] = None,
+    fixed_el_limits: Optional[tuple[float, float]] = None,
+) -> None:
+    """
+    Animate detector locations in azimuth/elevation, coloured by power.
+
+    Expected input shape:
+        az_deg:   (n_detectors, n_times)
+        el_deg:   (n_detectors, n_times)
+        power_pW: (n_detectors, n_times)
+        time_s:   (n_times,)
+
+    Parameters
+    ----------
+    colour_mode
+        The mode of colouring the detectors:
+        - "absolute": Use the absolute detector power.
+        - "detector_median_subtracted": Subtract the median power of each detector.
+        - "frame_median_subtracted": Subtract the median power of each frame.
+    frame_step
+        Use every `frame_step`-th time sample as an animation frame.
+    fps
+        Frames per second in the saved animation.
+    fixed_az_limits, fixed_el_limits
+        Optional fixed plotting limits. If omitted, limits are computed
+        from the entire observation and remain fixed for every frame.
+    """
+
+    az_deg = np.asarray(az_deg, dtype=float)
+    el_deg = np.asarray(el_deg, dtype=float)
+    power_pW = np.asarray(power_pW, dtype=float)
+    time_s = np.asarray(time_s, dtype=float)
+
+    if az_deg.ndim != 2 or el_deg.ndim != 2 or power_pW.ndim != 2:
+        raise ValueError(
+            "az_deg, el_deg, and power_pW must all be 2D arrays with "
+            "shape (n_detectors, n_times)."
+        )
+
+    if az_deg.shape != el_deg.shape or az_deg.shape != power_pW.shape:
+        raise ValueError(
+            "az_deg, el_deg, and power_pW must have identical shapes. "
+            f"Received {az_deg.shape}, {el_deg.shape}, and {power_pW.shape}."
+        )
+
+    n_detectors, n_times = power_pW.shape
+
+    if time_s.ndim != 1 or len(time_s) != n_times:
+        raise ValueError(
+            f"time_s must have shape ({n_times},), but has {time_s.shape}."
+        )
+
+    if frame_step < 1:
+        raise ValueError("frame_step must be at least 1.")
+
+    # ------------------------------------------------------------
+    # Select the quantity represented by colour
+    # ------------------------------------------------------------
+
+    finite_position = np.isfinite(az_deg) & np.isfinite(el_deg)
+
+    valid_colour_modes = {
+        "absolute",
+        "detector_median_subtracted",
+        "frame_median_subtracted",
+    }
+
+    if colour_mode not in valid_colour_modes:
+        raise ValueError(
+            f"colour_mode must be one of {sorted(valid_colour_modes)}. "
+            f"Received {colour_mode!r}."
+        )
+
+
+    if colour_mode == "absolute":
+        # Original detector power.
+        colour_values = power_pW
+        colour_label = "Detector power (pW)"
+        mode_label = "absolute power"
+
+        finite_colour = colour_values[np.isfinite(colour_values)]
+
+        if finite_colour.size == 0:
+            raise ValueError("No finite detector power values found.")
+
+        colour_low, colour_high = np.nanpercentile(
+            finite_colour,
+            [1.0, 99.0],
+        )
+
+        if colour_high <= colour_low:
+            colour_low = np.nanmin(finite_colour)
+            colour_high = np.nanmax(finite_colour)
+
+        norm = Normalize(
+            vmin=colour_low,
+            vmax=colour_high,
+        )
+        cmap = "viridis"
+
+
+    elif colour_mode == "detector_median_subtracted":
+        # Remove the time median of each detector:
+        #
+        # P_i(t) - median_t[P_i(t)]
+        detector_medians = np.nanmedian(
+            power_pW,
+            axis=1,
+            keepdims=True,
+        )
+
+        colour_values = power_pW - detector_medians
+
+        colour_label = (
+            "Detector-median-subtracted power (pW)"
+        )
+        mode_label = "detector-median-subtracted power"
+
+        finite_colour = colour_values[np.isfinite(colour_values)]
+
+        if finite_colour.size == 0:
+            raise ValueError(
+                "No finite detector-median-subtracted values found."
+            )
+
+        colour_limit = np.nanpercentile(
+            np.abs(finite_colour),
+            99.0,
+        )
+
+        if not np.isfinite(colour_limit) or colour_limit <= 0:
+            colour_limit = np.nanmax(np.abs(finite_colour))
+
+        norm = TwoSlopeNorm(
+            vmin=-colour_limit,
+            vcenter=0.0,
+            vmax=colour_limit,
+        )
+        cmap = "coolwarm"
+
+
+    elif colour_mode == "frame_median_subtracted":
+        # Step 1: Remove the time median of each detector.
+        detector_medians = np.nanmedian(
+            power_pW,
+            axis=1,
+            keepdims=True,
+        )
+
+        detector_relative_power = (
+            power_pW - detector_medians
+        )
+
+        # Step 2: For every time sample, remove the median residual
+        # across all detectors.
+        #
+        # [P_i(t) - median_t(P_i)]
+        #       - median_i[P_i(t) - median_t(P_i)]
+        frame_medians = np.nanmedian(
+            detector_relative_power,
+            axis=0,
+            keepdims=True,
+        )
+
+        colour_values = (
+            detector_relative_power - frame_medians
+        )
+
+        colour_label = (
+            "Detector- and frame-median-subtracted power (pW)"
+        )
+        mode_label = (
+            "detector- and frame-median-subtracted power"
+        )
+
+        finite_colour = colour_values[np.isfinite(colour_values)]
+
+        if finite_colour.size == 0:
+            raise ValueError(
+                "No finite frame-median-subtracted values found."
+            )
+
+        # A slightly tighter percentile may be useful here because
+        # this mode is intended to expose small residual variations.
+        colour_limit = np.nanpercentile(
+            np.abs(finite_colour),
+            99.0,
+        )
+
+        if not np.isfinite(colour_limit) or colour_limit <= 0:
+            colour_limit = np.nanmax(np.abs(finite_colour))
+
+        norm = TwoSlopeNorm(
+            vmin=-colour_limit,
+            vcenter=0.0,
+            vmax=colour_limit,
+        )
+        cmap = "coolwarm"
+
+    if not np.any(finite_position):
+        raise ValueError("No finite detector azimuth/elevation positions found.")
+
+    if fixed_az_limits is None:
+        az_min = np.nanpercentile(az_deg[finite_position], 0.1)
+        az_max = np.nanpercentile(az_deg[finite_position], 99.9)
+        az_padding = max(0.02, 0.03 * (az_max - az_min))
+        fixed_az_limits = (
+            az_min - az_padding,
+            az_max + az_padding,
+        )
+
+    if fixed_el_limits is None:
+        el_min = np.nanpercentile(el_deg[finite_position], 0.1)
+        el_max = np.nanpercentile(el_deg[finite_position], 99.9)
+        el_padding = max(0.02, 0.03 * (el_max - el_min))
+        fixed_el_limits = (
+            el_min - el_padding,
+            el_max + el_padding,
+        )
+
+    frame_indices = np.arange(0, n_times, frame_step)
+
+    # ------------------------------------------------------------
+    # Create figure
+    # ------------------------------------------------------------
+    fig, ax = plt.subplots(figsize=(9, 8))
+
+    initial_index = frame_indices[0]
+    initial_valid = (
+        np.isfinite(az_deg[:, initial_index])
+        & np.isfinite(el_deg[:, initial_index])
+        & np.isfinite(colour_values[:, initial_index])
+    )
+
+    scatter = ax.scatter(
+        az_deg[initial_valid, initial_index],
+        el_deg[initial_valid, initial_index],
+        c=colour_values[initial_valid, initial_index],
+        s=marker_size,
+        cmap=cmap,
+        norm=norm,
+        edgecolors="none",
+    )
+
+    ax.set_xlim(*fixed_az_limits)
+    ax.set_ylim(*fixed_el_limits)
+    ax.set_xlabel(
+    rf"Projected azimuth offset, "
+    rf"$\Delta\mathrm{{Az}}\cos(\mathrm{{El}}_0)$ (deg)")
+    ax.set_ylabel("Elevation (deg)")
+    ax.grid(alpha=0.25)
+
+    time_text = ax.text(
+        0.02,
+        0.98,
+        "",
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        bbox={
+            "facecolor": "white",
+            "alpha": 0.8,
+            "edgecolor": "none",
+        },
+    )
+
+
+    ax.set_title(f"{title}\nColoured by {mode_label}")
+
+    colourbar = fig.colorbar(scatter, ax=ax, pad=0.02)
+    colourbar.set_label(colour_label)
+
+    def update(frame_number: int):
+        sample_index = frame_indices[frame_number]
+
+        valid = (
+            np.isfinite(az_deg[:, sample_index])
+            & np.isfinite(el_deg[:, sample_index])
+            & np.isfinite(colour_values[:, sample_index])
+        )
+
+        positions = np.column_stack(
+            (
+                az_deg[valid, sample_index],
+                el_deg[valid, sample_index],
+            )
+        )
+
+        scatter.set_offsets(positions)
+        scatter.set_array(colour_values[valid, sample_index])
+
+        time_text.set_text(
+            f"Time: {time_s[sample_index]:.1f} s\n"
+            f"Detectors shown: {np.count_nonzero(valid)}/{n_detectors}"
+        )
+
+        return scatter, time_text
+
+    animation = FuncAnimation(
+        fig,
+        update,
+        frames=len(frame_indices),
+        interval=1000 / fps,
+        blit=False,
+    )
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    suffix = output_path.suffix.lower()
+
+    if suffix == ".mp4":
+        try:
+            writer = FFMpegWriter(
+                fps=fps,
+                bitrate=3000,
+                metadata={"artist": "Matplotlib"},
+            )
+            animation.save(output_path, writer=writer, dpi=150)
+
+        except FileNotFoundError as error:
+            plt.close(fig)
+            raise RuntimeError(
+                "FFmpeg was not found. Install FFmpeg or save the "
+                "animation with a .gif extension."
+            ) from error
+
+    elif suffix == ".gif":
+        animation.save(
+            output_path,
+            writer=PillowWriter(fps=fps),
+            dpi=120,
+        )
+
+    else:
+        plt.close(fig)
+        raise ValueError(
+            "output_path must end in either '.mp4' or '.gif'."
+        )
+
+    plt.close(fig)
+
+    print(f"Saved detector animation to: {output_path}")
 # ============================================================
 # All-detector power statistics
 # ============================================================
@@ -1945,7 +2391,144 @@ if len(finite_delta) > 0:
     )
     plt.close()
 
+# ============================================================
+# Diagnostic 3: Time vs detector index coloured with detector Power
+# ============================================================
 
+time_sec = np.arange(P_pW.shape[1]) / SAMPLE_RATE_HZ
+
+plt.figure(figsize=(14, 7))
+
+extent = [
+    time_sec[0],
+    time_sec[-1],
+    0,
+    n_detectors - 1,
+]
+
+plt.imshow(
+    P_pW,
+    origin="lower",
+    aspect="auto",
+    extent=extent,
+    interpolation="nearest",
+    cmap="coolwarm",
+)
+
+plt.xlabel("Time (s)")
+plt.ylabel("Detector index")
+plt.title(
+    "Detector Power vs Time\n"
+    f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
+)
+
+cbar = plt.colorbar()
+cbar.set_label("Detector Power (pW)")
+
+plt.tight_layout()
+plt.savefig(
+    OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_detector_power_vs_time.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+plt.close()
+
+# ============================================================
+# Diagnostic 4: Time vs detector index coloured with detector Power subtracting median
+# ============================================================
+
+time_sec = np.arange(P_pW.shape[1]) / SAMPLE_RATE_HZ
+
+P_relative = P_pW - np.nanmedian(P_pW, axis=1, keepdims=True)
+
+color_limit = np.nanstd(P_relative, axis=1, keepdims=True).max()
+
+plt.figure(figsize=(14, 7))
+
+extent = [
+    time_sec[0],
+    time_sec[-1],
+    0,
+    n_detectors - 1,
+]
+
+plt.imshow(
+    P_relative,
+    origin="lower",
+    aspect="auto",
+    extent=extent,
+    interpolation="nearest",
+    cmap="coolwarm",
+    vmin=-color_limit,
+    vmax=color_limit
+)
+
+plt.xlabel("Time (s)")
+plt.ylabel("Detector index")
+plt.title(
+    "Median Subtracted Detector Power vs Time\n"
+    f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
+)
+
+cbar = plt.colorbar()
+cbar.set_label("Detector Power (pW)")
+
+plt.tight_layout()
+plt.savefig(
+    OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_median_subtracted_detector_power_vs_time.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+plt.close()
+
+
+# ============================================================
+# Diagnostic 5: Time vs detector index coloured with detector Power instantaneous subtracting median
+# ============================================================
+
+time_sec = np.arange(P_pW.shape[1]) / SAMPLE_RATE_HZ
+
+P_relative = P_pW - np.nanmedian(P_pW, axis=0, keepdims=True)
+
+color_limit = np.nanstd(P_relative, axis=1, keepdims=True).max()
+
+plt.figure(figsize=(14, 7))
+
+extent = [
+    time_sec[0],
+    time_sec[-1],
+    0,
+    n_detectors - 1,
+]
+
+plt.imshow(
+    P_relative,
+    origin="lower",
+    aspect="auto",
+    extent=extent,
+    interpolation="nearest",
+    cmap="coolwarm",
+    vmin=-color_limit,
+    vmax=color_limit
+)
+
+plt.xlabel("Time (s)")
+plt.ylabel("Detector index")
+plt.title(
+    "Instantaneous Median Subtracted Detector Power vs Time\n"
+    f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
+)
+
+cbar = plt.colorbar()
+cbar.set_label("Detector Power (pW)")
+
+plt.tight_layout()
+plt.savefig(
+    OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_inst_median_subtracted_detector_power_vs_time.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+plt.close()
 # ============================================================
 # Individual detector plots
 # ============================================================
@@ -1969,6 +2552,8 @@ for det_idx in DETECTORS_TO_PLOT:
     # ========================================================
     # Direct shape check for this detector
     # ========================================================
+
+
     power_standardized = standardize(P_track)
     delta_standardized = standardize(delta_track)
 
@@ -2142,3 +2727,71 @@ summary_df.to_csv(summary_csv_path, index=False)
 
 print(f"\nSaved summary statistics CSV to: {summary_csv_path}")
 print(f"Saved plots to: {OUTDIR}")
+
+
+animation_dir = OUTDIR / "detector_azel_animations"
+
+os.makedirs(animation_dir, exist_ok=True)
+
+power_matrix = tod.to("pW").signal          # (Ndet, Ntime)
+
+# el_deg_matrix = np.rad2deg(tod.el)          # (Ndet, Ntime)
+# az_deg_matrix = np.cos(el_deg_matrix) * np.rad2deg(tod.az)          # (Ndet, Ntime)
+
+
+animate_detector_azel_power(
+    az_deg=az_deg_matrix,
+    el_deg=el_deg_matrix,
+    power_pW=P_pW,
+    time_s=time_sec_full,
+    output_path=(
+        animation_dir
+        / f"{BAND_LABEL}GHz_detector_azel_power_animation.mp4"
+    ),
+    colour_mode="absolute",
+    frame_step=10,
+    fps=20,
+    marker_size=10.0,
+    title=(
+        f"Prime-Cam Detector Loading in Az-El\n"
+        f"{BAND_LABEL} GHz, {SCAN_PATTERN}, Elev={ELEV_LABEL}"
+    ),
+)
+
+animate_detector_azel_power(
+    az_deg=az_deg_matrix,
+    el_deg=el_deg_matrix,
+    power_pW=P_pW,
+    time_s=time_sec_full,
+    output_path=(
+        animation_dir
+        / f"{run_prefix}_{BAND_LABEL}GHz_azel_detector_median_subtracted_power.mp4"
+    ),
+    colour_mode="detector_median_subtracted",
+    frame_step=10,
+    fps=20,
+    marker_size=18,
+    title=(
+        f"Prime-Cam Large-Scale Loading Changes in Az–El\n"
+        f"{BAND_LABEL} GHz, {SCAN_PATTERN}, Elev={ELEV_LABEL}"
+    ),
+)
+
+animate_detector_azel_power(
+    az_deg=az_deg_matrix,
+    el_deg=el_deg_matrix,
+    power_pW=P_pW,
+    time_s=time_sec_full,
+    output_path=(
+        animation_dir
+        / f"{run_prefix}_{BAND_LABEL}GHz_azel_small_scale_residuals.mp4"
+    ),
+    colour_mode="frame_median_subtracted",
+    frame_step=10,
+    fps=20,
+    marker_size=18,
+    title=(
+        f"Prime-Cam Small-Scale Loading Residuals in Az–El\n"
+        f"{BAND_LABEL} GHz, {SCAN_PATTERN}, Elev={ELEV_LABEL}"
+    ),
+)
