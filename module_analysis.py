@@ -32,7 +32,7 @@ import simple_ccat
 # User settings
 # ============================================================
 
-ccat_band = "350"  # "850" or "350"
+ccat_band = "850"  # "850" or "350"
 
 Run = True # whether to run the TOD analysis or just load existing TOD
 
@@ -48,7 +48,7 @@ START_TIME = "2022-02-10T17:00:00"
 
 #scan pattern options: "lissajous", "raster", "back_and_forth", "daisy", "double_circle", "stare"
 
-SCAN_PATTERN = "daisy"
+SCAN_PATTERN = "stare"
 
 ELEV_LABEL = "65-75"
 
@@ -2481,6 +2481,236 @@ plt.savefig(
 )
 plt.close()
 
+# ============================================================
+# Diagnostic 4.5: Time vs detector index coloured with detector Power subtracting median
+# ============================================================
+
+time_sec = np.arange(P_pW.shape[1]) / SAMPLE_RATE_HZ
+
+P_detector_sub = P_pW - np.nanmedian(P_pW, axis=1, keepdims=True)
+
+P_small_scale = P_detector_sub - np.nanmedian(P_detector_sub, axis=0, keepdims=True)
+
+color_limit = float(
+    np.nanpercentile(np.abs(P_small_scale), 99.5)
+)
+
+plt.figure(figsize=(14, 7))
+
+extent = [
+    time_sec[0],
+    time_sec[-1],
+    0,
+    n_detectors - 1,
+]
+
+plt.imshow(
+    P_small_scale,
+    origin="lower",
+    aspect="auto",
+    extent=extent,
+    interpolation="nearest",
+    cmap="coolwarm",
+    vmin=-color_limit,
+    vmax=color_limit
+)
+
+plt.xlabel("Time (s)")
+plt.ylabel("Detector index")
+plt.title(
+    "Small Scale Median Subtracted Detector Power vs Time\n"
+    f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
+)
+
+cbar = plt.colorbar()
+cbar.set_label("Detector Power (pW)")
+
+plt.tight_layout()
+plt.savefig(
+    OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_small_scale_median_subtracted_detector_power_vs_time.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+plt.close()
+
+
+# ============================================================
+# Detector index vs detector elevation coloured by
+# median-subtracted detector power
+# ============================================================
+
+n_detectors, n_times = P_pW.shape
+
+# Each detector's elevation at every time sample.
+elevation_deg_matrix = np.asarray(
+    el_deg_matrix,
+    dtype=np.float64,
+)
+
+if elevation_deg_matrix.shape != P_pW.shape:
+    raise ValueError(
+        "el_deg_matrix and P_pW must have the same shape. "
+        f"Received {elevation_deg_matrix.shape} and {P_pW.shape}."
+    )
+
+# Detector index for every detector-time sample.
+detector_grid = np.broadcast_to(
+    np.arange(n_detectors)[:, np.newaxis],
+    P_pW.shape,
+)
+
+# ------------------------------------------------------------
+# Plot 1: Detector-median-subtracted power
+# ------------------------------------------------------------
+
+P_colour = (
+    P_pW
+    - np.nanmedian(P_pW, axis=1, keepdims=True)
+)
+
+x = elevation_deg_matrix.ravel()
+y = detector_grid.ravel()
+colour = P_colour.ravel()
+
+valid = (
+    np.isfinite(x)
+    & np.isfinite(y)
+    & np.isfinite(colour)
+)
+
+x_valid = x[valid]
+y_valid = y[valid]
+colour_valid = colour[valid]
+
+color_limit = float(
+    np.nanpercentile(np.abs(colour_valid), 99.5)
+)
+
+if not np.isfinite(color_limit) or color_limit <= 0:
+    color_limit = 1.0
+
+plt.figure(figsize=(12, 7))
+
+scatter = plt.scatter(
+    x_valid,
+    y_valid,
+    c=colour_valid,
+    cmap="coolwarm",
+    s=1.0,
+    marker=".",
+    linewidths=0,
+    rasterized=True,
+    vmin=-color_limit,
+    vmax=color_limit,
+)
+
+plt.xlabel("Detector Elevation (deg)")
+plt.ylabel("Detector Index")
+plt.title(
+    "Median-Subtracted Detector Power vs Elevation\n"
+    f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
+)
+
+cbar = plt.colorbar(scatter)
+cbar.set_label("Median-Subtracted Detector Power (pW)")
+
+plt.tight_layout()
+
+plt.savefig(
+    OUTDIR
+    / (
+        f"{run_prefix}_{BAND_LABEL}GHz_"
+        "median_subtracted_detector_power_vs_elevation.png"
+    ),
+    dpi=300,
+    bbox_inches="tight",
+)
+
+plt.close()
+
+
+# ============================================================
+# Detector index vs detector elevation coloured by
+# small-scale detector power residual
+# ============================================================
+
+# Step 1: Remove each detector's median over time.
+P_detector_sub = (
+    P_pW
+    - np.nanmedian(P_pW, axis=1, keepdims=True)
+)
+
+# Step 2: Remove the instantaneous array median.
+P_small_scale = (
+    P_detector_sub
+    - np.nanmedian(
+        P_detector_sub,
+        axis=0,
+        keepdims=True,
+    )
+)
+
+x = elevation_deg_matrix.ravel()
+y = detector_grid.ravel()
+colour = P_small_scale.ravel()
+
+valid = (
+    np.isfinite(x)
+    & np.isfinite(y)
+    & np.isfinite(colour)
+)
+
+x_valid = x[valid]
+y_valid = y[valid]
+colour_valid = colour[valid]
+
+color_limit = float(
+    np.nanpercentile(np.abs(colour_valid), 99.5)
+)
+
+if not np.isfinite(color_limit) or color_limit <= 0:
+    color_limit = 1.0
+
+plt.figure(figsize=(12, 7))
+
+scatter = plt.scatter(
+    x_valid,
+    y_valid,
+    c=colour_valid,
+    cmap="coolwarm",
+    s=1.0,
+    marker=".",
+    linewidths=0,
+    rasterized=True,
+    vmin=-color_limit,
+    vmax=color_limit,
+)
+
+plt.xlabel("Detector Elevation (deg)")
+plt.ylabel("Detector Index")
+plt.title(
+    "Small-Scale Detector Power Residual vs Elevation\n"
+    f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
+)
+
+cbar = plt.colorbar(scatter)
+cbar.set_label(
+    "Detector- and Frame-Median-Subtracted Power (pW)"
+)
+
+plt.tight_layout()
+
+plt.savefig(
+    OUTDIR
+    / (
+        f"{run_prefix}_{BAND_LABEL}GHz_"
+        "small_scale_detector_power_vs_elevation.png"
+    ),
+    dpi=300,
+    bbox_inches="tight",
+)
+
+plt.close()
 
 # ============================================================
 # Diagnostic 5: Time vs detector index coloured with detector Power instantaneous subtracting median
@@ -2738,7 +2968,7 @@ power_matrix = tod.to("pW").signal          # (Ndet, Ntime)
 # el_deg_matrix = np.rad2deg(tod.el)          # (Ndet, Ntime)
 # az_deg_matrix = np.cos(el_deg_matrix) * np.rad2deg(tod.az)          # (Ndet, Ntime)
 
-
+raise SystemExit("Animation Generation Disabled")
 animate_detector_azel_power(
     az_deg=az_deg_matrix,
     el_deg=el_deg_matrix,
