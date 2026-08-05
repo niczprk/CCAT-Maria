@@ -48,7 +48,7 @@ START_TIME = "2022-02-10T17:00:00"
 
 #scan pattern options: "lissajous", "raster", "back_and_forth", "daisy", "double_circle", "stare"
 
-SCAN_PATTERN = "stare"
+SCAN_PATTERN = "daisy"
 
 ELEV_LABEL = "65-75"
 
@@ -81,6 +81,17 @@ SAMPLE_RATE_HZ = 10
 
 PWV_MM = 0.36
 
+# Atmospheric power tests
+# Run the script once for each of the three PWV values below.
+# Each run will save its own results and update the combined PWV plots.
+PWV_TEST_VALUES = [0.36, 0.67, 1.28]
+ELEVATION_BIN_WIDTH_DEG = 1.0
+AIRMass_BIN_WIDTH = 0.01
+ATMOSPHERE_TEST_ROOT = Path(
+    f"outputs/atmospheric_power_tests/{ccat_band}GHz/{SCAN_PATTERN}"
+)
+ATMOSPHERE_TEST_ROOT.mkdir(parents=True, exist_ok=True)
+
 if ccat_band == "850":
     NU_HZ = 850e9
     NU_GHZ = NU_HZ / 1e9 #GHz
@@ -112,8 +123,11 @@ elif ccat_band == "280":
 # DETECTORS_TO_PLOT = [0, 50, 309, 339, 472, 604, 843]
 DETECTORS_TO_PLOT = [604] #these are the detectors that are in the center of the array and should be the most stable
 
+pwv_tag = f"{PWV_MM:.2f}".replace(".", "p")
+
 run_prefix = (
-    f"OrionA_{SCAN_PATTERN.lower()}_{ELEV_LABEL}_speed_{SPEED:.1f}_small_map"
+    f"OrionA_{SCAN_PATTERN.lower()}_{ELEV_LABEL}_speed_{SPEED:.1f}_"
+    f"PWV_{pwv_tag}mm_small_map"
     .replace(".", "p")
 )
 
@@ -261,13 +275,7 @@ else:
 az_deg_matrix_raw = np.rad2deg(az_matrix)
 el_deg_matrix = np.rad2deg(el_matrix)
 
-az_reference_deg = np.nanmedian(az_deg_matrix_raw)
-el_reference_deg = np.nanmedian(el_deg_matrix)
-
-# delta_az_deg = ((az_deg_matrix_raw - az_reference_deg + 180) % 360 - 180)
-
-# Put azimuth into the range 0–360 degrees.
-az_deg_matrix = (az_deg_matrix_raw * np.cos(np.deg2rad(el_reference_deg)))
+az_deg_matrix = np.mod(az_deg_matrix_raw, 360.0)
 
 time_sec_full = (
     np.arange(P_pW.shape[1], dtype=np.float64)
@@ -1912,9 +1920,7 @@ def animate_detector_azel_power(
 
     ax.set_xlim(*fixed_az_limits)
     ax.set_ylim(*fixed_el_limits)
-    ax.set_xlabel(
-    rf"Projected azimuth offset, "
-    rf"$\Delta\mathrm{{Az}}\cos(\mathrm{{El}}_0)$ (deg)")
+    ax.set_xlabel("Azimuth (deg)")
     ax.set_ylabel("Elevation (deg)")
     ax.grid(alpha=0.25)
 
@@ -2009,6 +2015,762 @@ def animate_detector_azel_power(
     plt.close(fig)
 
     print(f"Saved detector animation to: {output_path}")
+
+# ============================================================
+# Atmospheric power test helpers
+# ============================================================
+
+def safe_correlation(x, y):
+    """Return a Pearson correlation coefficient using finite samples only."""
+    x = np.asarray(x, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64)
+
+    valid = np.isfinite(x) & np.isfinite(y)
+
+    if np.count_nonzero(valid) < 3:
+        return np.nan
+
+    x_valid = x[valid]
+    y_valid = y[valid]
+
+    if np.nanstd(x_valid) == 0 or np.nanstd(y_valid) == 0:
+        return np.nan
+
+    return float(np.corrcoef(x_valid, y_valid)[0, 1])
+
+
+def bin_metric(x, y, bin_width):
+    """
+    Bin y as a function of x and return the median and 16th/84th percentiles.
+    """
+    x = np.asarray(x, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64)
+
+    valid = np.isfinite(x) & np.isfinite(y)
+    x = x[valid]
+    y = y[valid]
+
+    if len(x) == 0:
+        return pd.DataFrame()
+
+    lower_edge = np.floor(np.nanmin(x) / bin_width) * bin_width
+    upper_edge = np.ceil(np.nanmax(x) / bin_width) * bin_width
+
+    edges = np.arange(
+        lower_edge,
+        upper_edge + bin_width,
+        bin_width,
+    )
+
+    rows = []
+
+    for left, right in zip(edges[:-1], edges[1:]):
+        in_bin = (x >= left) & (x < right)
+
+        if np.count_nonzero(in_bin) == 0:
+            continue
+
+        values = y[in_bin]
+
+        rows.append({
+            "bin_left": left,
+            "bin_right": right,
+            "bin_centre": 0.5 * (left + right),
+            "median": np.nanmedian(values),
+            "p16": np.nanpercentile(values, 16),
+            "p84": np.nanpercentile(values, 84),
+            "n_samples": np.count_nonzero(np.isfinite(values)),
+        })
+
+    return pd.DataFrame(rows)
+
+
+def calculate_atmospheric_power_metrics(
+    power_pW,
+    elevation_deg_matrix,
+):
+    """
+    Calculate common-mode and small-scale detector power quantities.
+
+    Returns one value per time sample for:
+      - raw array-median power,
+      - detector-median-subtracted common power,
+      - small-scale detector scatter,
+      - elevation,
+      - airmass.
+    """
+    power_pW = np.asarray(power_pW, dtype=np.float64)
+    elevation_deg_matrix = np.asarray(
+        elevation_deg_matrix,
+        dtype=np.float64,
+    )
+
+    if power_pW.ndim != 2:
+        raise ValueError(
+            "power_pW must have shape (n_detectors, n_times)."
+        )
+
+    if elevation_deg_matrix.shape != power_pW.shape:
+        raise ValueError(
+            "elevation_deg_matrix must have the same shape as power_pW."
+        )
+
+    # Representative elevation of the array at each time sample.
+    elevation_deg = np.nanmedian(
+        elevation_deg_matrix,
+        axis=0,
+    )
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        airmass = 1.0 / np.sin(np.deg2rad(elevation_deg))
+
+    airmass[
+        (~np.isfinite(airmass))
+        | (elevation_deg <= 0)
+    ] = np.nan
+
+    # Absolute/common atmospheric loading.
+    raw_array_median_pW = np.nanmedian(
+        power_pW,
+        axis=0,
+    )
+
+    # Remove each detector's median over the whole observation.
+    detector_medians = np.nanmedian(
+        power_pW,
+        axis=1,
+        keepdims=True,
+    )
+
+    detector_median_subtracted = (
+        power_pW - detector_medians
+    )
+
+    # This is the common temporal signal remaining after static
+    # detector-to-detector offsets are removed.
+    median_subtracted_common_pW = np.nanmedian(
+        detector_median_subtracted,
+        axis=0,
+    )
+
+    # Remove the instantaneous common signal to isolate the
+    # detector-to-detector residual structure.
+    small_scale_residual_pW = (
+        detector_median_subtracted
+        - median_subtracted_common_pW[np.newaxis, :]
+    )
+
+    small_scale_std_pW = np.nanstd(
+        small_scale_residual_pW,
+        axis=0,
+    )
+
+    small_scale_mad_pW = np.full(
+        power_pW.shape[1],
+        np.nan,
+        dtype=np.float64,
+    )
+
+    for time_index in range(power_pW.shape[1]):
+        small_scale_mad_pW[time_index] = robust_sigma_mad(
+            small_scale_residual_pW[:, time_index]
+        )
+
+    return {
+        "elevation_deg": elevation_deg,
+        "airmass": airmass,
+        "raw_array_median_pW": raw_array_median_pW,
+        "detector_median_subtracted_pW": detector_median_subtracted,
+        "median_subtracted_common_pW": median_subtracted_common_pW,
+        "small_scale_residual_pW": small_scale_residual_pW,
+        "small_scale_std_pW": small_scale_std_pW,
+        "small_scale_mad_pW": small_scale_mad_pW,
+    }
+
+
+def plot_binned_relationship(
+    x,
+    y,
+    x_label,
+    y_label,
+    title,
+    output_path,
+    bin_width,
+):
+    """Make a scatter plot with a binned median and percentile range."""
+    x = np.asarray(x, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64)
+
+    valid = np.isfinite(x) & np.isfinite(y)
+
+    binned = bin_metric(
+        x=x,
+        y=y,
+        bin_width=bin_width,
+    )
+
+    fig, axis = plt.subplots(figsize=(8, 6))
+
+    axis.scatter(
+        x[valid],
+        y[valid],
+        s=5,
+        alpha=0.15,
+        rasterized=True,
+        label="Time samples",
+    )
+
+    if not binned.empty:
+        axis.plot(
+            binned["bin_centre"],
+            binned["median"],
+            marker="o",
+            linewidth=1.5,
+            label="Binned median",
+        )
+
+        axis.fill_between(
+            binned["bin_centre"],
+            binned["p16"],
+            binned["p84"],
+            alpha=0.2,
+            label="16th-84th percentile",
+        )
+
+    correlation = safe_correlation(x, y)
+
+    axis.set_xlabel(x_label)
+    axis.set_ylabel(y_label)
+    axis.set_title(
+        f"{title}\nPearson r = {correlation:.3f}"
+    )
+    axis.grid(alpha=0.3)
+    axis.legend(loc="best")
+    fig.tight_layout()
+
+    fig.savefig(
+        output_path,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+
+    return binned, correlation
+
+
+def update_combined_pwv_plots(
+    comparison_directory,
+    band_label,
+    scan_pattern,
+):
+    """
+    Rebuild combined PWV plots from all run summaries currently available.
+    """
+    comparison_directory = Path(comparison_directory)
+
+    summary_files = sorted(
+        comparison_directory.glob(
+            "*_atmospheric_power_summary.csv"
+        )
+    )
+
+    if len(summary_files) == 0:
+        return
+
+    summary_frames = []
+
+    for summary_file in summary_files:
+        try:
+            summary_frames.append(pd.read_csv(summary_file))
+        except Exception as error:
+            print(
+                f"Could not read {summary_file}: {error}"
+            )
+
+    if len(summary_frames) == 0:
+        return
+
+    combined = pd.concat(
+        summary_frames,
+        ignore_index=True,
+    )
+
+    combined = (
+        combined
+        .sort_values("pwv_mm")
+        .drop_duplicates(
+            subset=["pwv_mm", "elevation_label"],
+            keep="last",
+        )
+    )
+
+    combined_csv = comparison_directory / (
+        f"{band_label}GHz_{scan_pattern}_"
+        "combined_atmospheric_power_summary.csv"
+    )
+
+    combined.to_csv(
+        combined_csv,
+        index=False,
+    )
+
+    # Absolute loading versus PWV.
+    fig, axis = plt.subplots(figsize=(8, 6))
+
+    axis.plot(
+        combined["pwv_mm"],
+        combined["median_raw_array_power_pW"],
+        marker="o",
+    )
+
+    axis.set_xlabel("PWV (mm)")
+    axis.set_ylabel("Median array power (pW)")
+    axis.set_title(
+        f"Absolute Detector Loading versus PWV\n"
+        f"{band_label} GHz, {scan_pattern}"
+    )
+    axis.grid(alpha=0.3)
+    fig.tight_layout()
+
+    fig.savefig(
+        comparison_directory
+        / (
+            f"{band_label}GHz_{scan_pattern}_"
+            "median_array_power_vs_pwv.png"
+        ),
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+
+    # Small-scale residual amplitude versus PWV.
+    fig, axis = plt.subplots(figsize=(8, 6))
+
+    axis.plot(
+        combined["pwv_mm"],
+        combined["median_small_scale_std_pW"],
+        marker="o",
+        label="Standard deviation",
+    )
+
+    axis.plot(
+        combined["pwv_mm"],
+        combined["median_small_scale_mad_pW"],
+        marker="s",
+        label="Robust MAD estimate",
+    )
+
+    axis.set_xlabel("PWV (mm)")
+    axis.set_ylabel("Median small-scale scatter (pW)")
+    axis.set_title(
+        f"Small-Scale Detector Fluctuations versus PWV\n"
+        f"{band_label} GHz, {scan_pattern}"
+    )
+    axis.grid(alpha=0.3)
+    axis.legend(loc="best")
+    fig.tight_layout()
+
+    fig.savefig(
+        comparison_directory
+        / (
+            f"{band_label}GHz_{scan_pattern}_"
+            "small_scale_scatter_vs_pwv.png"
+        ),
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+
+    print(
+        f"Updated combined atmospheric comparison: {combined_csv}"
+    )
+
+
+def run_atmospheric_power_tests(
+    power_pW,
+    elevation_deg_matrix,
+    time_sec,
+    pwv_mm,
+    outdir,
+    comparison_directory,
+    run_prefix,
+    band_label,
+    scan_pattern,
+    elevation_label,
+    elevation_bin_width_deg=1.0,
+    airmass_bin_width=0.01,
+):
+    """
+    Run the elevation, airmass, and PWV power tests for one TOD.
+    """
+    outdir = Path(outdir)
+    comparison_directory = Path(comparison_directory)
+
+    atmosphere_outdir = outdir / "atmospheric_power_tests"
+    atmosphere_outdir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    comparison_directory.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    metrics = calculate_atmospheric_power_metrics(
+        power_pW=power_pW,
+        elevation_deg_matrix=elevation_deg_matrix,
+    )
+
+    if len(time_sec) != len(metrics["elevation_deg"]):
+        raise ValueError(
+            "time_sec does not match the number of power samples."
+        )
+
+    # Save a per-time-sample table for later checks.
+    time_series_df = pd.DataFrame({
+        "time_s": time_sec,
+        "pwv_mm": pwv_mm,
+        "elevation_deg": metrics["elevation_deg"],
+        "airmass": metrics["airmass"],
+        "raw_array_median_power_pW": (
+            metrics["raw_array_median_pW"]
+        ),
+        "median_subtracted_common_power_pW": (
+            metrics["median_subtracted_common_pW"]
+        ),
+        "small_scale_std_pW": (
+            metrics["small_scale_std_pW"]
+        ),
+        "small_scale_mad_pW": (
+            metrics["small_scale_mad_pW"]
+        ),
+    })
+
+    time_series_csv = atmosphere_outdir / (
+        f"{run_prefix}_{band_label}GHz_"
+        "atmospheric_power_time_series.csv"
+    )
+
+    time_series_df.to_csv(
+        time_series_csv,
+        index=False,
+    )
+
+    # --------------------------------------------------------
+    # Time comparison
+    # --------------------------------------------------------
+    fig, axes = plt.subplots(
+        4,
+        1,
+        figsize=(13, 12),
+        sharex=True,
+    )
+
+    axes[0].plot(
+        time_sec,
+        metrics["elevation_deg"],
+        linewidth=0.8,
+    )
+    axes[0].set_ylabel("Elevation (deg)")
+    axes[0].grid(alpha=0.3)
+
+    axes[1].plot(
+        time_sec,
+        metrics["median_subtracted_common_pW"],
+        linewidth=0.7,
+    )
+    axes[1].set_ylabel(
+        "Median-subtracted\ncommon power (pW)"
+    )
+    axes[1].grid(alpha=0.3)
+
+    axes[2].plot(
+        time_sec,
+        metrics["small_scale_std_pW"],
+        linewidth=0.7,
+        label="Standard deviation",
+    )
+    axes[2].plot(
+        time_sec,
+        metrics["small_scale_mad_pW"],
+        linewidth=0.7,
+        alpha=0.8,
+        label="MAD estimate",
+    )
+    axes[2].set_ylabel(
+        "Small-scale\nscatter (pW)"
+    )
+    axes[2].grid(alpha=0.3)
+    axes[2].legend(loc="best")
+
+    axes[3].plot(
+        time_sec,
+        metrics["airmass"],
+        linewidth=0.8,
+    )
+    axes[3].set_xlabel("Time (s)")
+    axes[3].set_ylabel("Airmass")
+    axes[3].grid(alpha=0.3)
+
+    fig.suptitle(
+        f"Atmospheric Power Quantities versus Time\n"
+        f"{band_label} GHz, PWV={pwv_mm:.2f} mm, "
+        f"{scan_pattern}, Elev={elevation_label}"
+    )
+
+    fig.tight_layout()
+
+    fig.savefig(
+        atmosphere_outdir
+        / (
+            f"{run_prefix}_{band_label}GHz_"
+            "atmospheric_power_quantities_vs_time.png"
+        ),
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+
+    # --------------------------------------------------------
+    # Elevation correlations
+    # --------------------------------------------------------
+    elevation_tests = {
+        "raw_array_power": (
+            metrics["raw_array_median_pW"],
+            "Array-median power (pW)",
+            "Raw Array Power versus Elevation",
+        ),
+        "median_subtracted_common_power": (
+            metrics["median_subtracted_common_pW"],
+            "Median-subtracted common power (pW)",
+            "Median-Subtracted Common Power versus Elevation",
+        ),
+        "small_scale_std": (
+            metrics["small_scale_std_pW"],
+            "Small-scale standard deviation (pW)",
+            "Small-Scale Power Scatter versus Elevation",
+        ),
+        "small_scale_mad": (
+            metrics["small_scale_mad_pW"],
+            "Small-scale MAD estimate (pW)",
+            "Robust Small-Scale Power Scatter versus Elevation",
+        ),
+    }
+
+    correlation_results = {}
+    binned_elevation_frames = []
+
+    for test_name, (
+        y_values,
+        y_label,
+        title,
+    ) in elevation_tests.items():
+
+        binned, correlation = plot_binned_relationship(
+            x=metrics["elevation_deg"],
+            y=y_values,
+            x_label="Array-median elevation (deg)",
+            y_label=y_label,
+            title=(
+                f"{title}\n"
+                f"{band_label} GHz, PWV={pwv_mm:.2f} mm"
+            ),
+            output_path=(
+                atmosphere_outdir
+                / (
+                    f"{run_prefix}_{band_label}GHz_"
+                    f"{test_name}_vs_elevation.png"
+                )
+            ),
+            bin_width=elevation_bin_width_deg,
+        )
+
+        correlation_results[
+            f"{test_name}_elevation_r"
+        ] = correlation
+
+        if not binned.empty:
+            binned["metric"] = test_name
+            binned["pwv_mm"] = pwv_mm
+            binned["x_quantity"] = "elevation_deg"
+            binned_elevation_frames.append(binned)
+
+    # --------------------------------------------------------
+    # Airmass correlations
+    # --------------------------------------------------------
+    airmass_tests = {
+        "raw_array_power": (
+            metrics["raw_array_median_pW"],
+            "Array-median power (pW)",
+            "Raw Array Power versus Airmass",
+        ),
+        "median_subtracted_common_power": (
+            metrics["median_subtracted_common_pW"],
+            "Median-subtracted common power (pW)",
+            "Median-Subtracted Common Power versus Airmass",
+        ),
+        "small_scale_std": (
+            metrics["small_scale_std_pW"],
+            "Small-scale standard deviation (pW)",
+            "Small-Scale Power Scatter versus Airmass",
+        ),
+        "small_scale_mad": (
+            metrics["small_scale_mad_pW"],
+            "Small-scale MAD estimate (pW)",
+            "Robust Small-Scale Power Scatter versus Airmass",
+        ),
+    }
+
+    binned_airmass_frames = []
+
+    for test_name, (
+        y_values,
+        y_label,
+        title,
+    ) in airmass_tests.items():
+
+        binned, correlation = plot_binned_relationship(
+            x=metrics["airmass"],
+            y=y_values,
+            x_label="Approximate airmass",
+            y_label=y_label,
+            title=(
+                f"{title}\n"
+                f"{band_label} GHz, PWV={pwv_mm:.2f} mm"
+            ),
+            output_path=(
+                atmosphere_outdir
+                / (
+                    f"{run_prefix}_{band_label}GHz_"
+                    f"{test_name}_vs_airmass.png"
+                )
+            ),
+            bin_width=airmass_bin_width,
+        )
+
+        correlation_results[
+            f"{test_name}_airmass_r"
+        ] = correlation
+
+        if not binned.empty:
+            binned["metric"] = test_name
+            binned["pwv_mm"] = pwv_mm
+            binned["x_quantity"] = "airmass"
+            binned_airmass_frames.append(binned)
+
+    if len(binned_elevation_frames) > 0:
+        elevation_binned_df = pd.concat(
+            binned_elevation_frames,
+            ignore_index=True,
+        )
+
+        elevation_binned_df.to_csv(
+            atmosphere_outdir
+            / (
+                f"{run_prefix}_{band_label}GHz_"
+                "power_metrics_binned_by_elevation.csv"
+            ),
+            index=False,
+        )
+
+        # Save a copy in the shared comparison directory.
+        elevation_binned_df.to_csv(
+            comparison_directory
+            / (
+                f"{run_prefix}_{band_label}GHz_"
+                "power_metrics_binned_by_elevation.csv"
+            ),
+            index=False,
+        )
+
+    if len(binned_airmass_frames) > 0:
+        airmass_binned_df = pd.concat(
+            binned_airmass_frames,
+            ignore_index=True,
+        )
+
+        airmass_binned_df.to_csv(
+            atmosphere_outdir
+            / (
+                f"{run_prefix}_{band_label}GHz_"
+                "power_metrics_binned_by_airmass.csv"
+            ),
+            index=False,
+        )
+
+    summary_row = {
+        "run_prefix": run_prefix,
+        "band_ghz": band_label,
+        "scan_pattern": scan_pattern,
+        "elevation_label": elevation_label,
+        "pwv_mm": pwv_mm,
+        "median_elevation_deg": np.nanmedian(
+            metrics["elevation_deg"]
+        ),
+        "median_airmass": np.nanmedian(
+            metrics["airmass"]
+        ),
+        "median_raw_array_power_pW": np.nanmedian(
+            metrics["raw_array_median_pW"]
+        ),
+        "median_small_scale_std_pW": np.nanmedian(
+            metrics["small_scale_std_pW"]
+        ),
+        "median_small_scale_mad_pW": np.nanmedian(
+            metrics["small_scale_mad_pW"]
+        ),
+        "p16_small_scale_std_pW": np.nanpercentile(
+            metrics["small_scale_std_pW"],
+            16,
+        ),
+        "p84_small_scale_std_pW": np.nanpercentile(
+            metrics["small_scale_std_pW"],
+            84,
+        ),
+    }
+
+    summary_row.update(correlation_results)
+
+    summary_df = pd.DataFrame([summary_row])
+
+    summary_csv = atmosphere_outdir / (
+        f"{run_prefix}_{band_label}GHz_"
+        "atmospheric_power_summary.csv"
+    )
+
+    summary_df.to_csv(
+        summary_csv,
+        index=False,
+    )
+
+    shared_summary_csv = comparison_directory / (
+        f"{run_prefix}_{band_label}GHz_"
+        "atmospheric_power_summary.csv"
+    )
+
+    summary_df.to_csv(
+        shared_summary_csv,
+        index=False,
+    )
+
+    update_combined_pwv_plots(
+        comparison_directory=comparison_directory,
+        band_label=band_label,
+        scan_pattern=scan_pattern,
+    )
+
+    print(
+        f"Saved atmospheric power tests to: {atmosphere_outdir}"
+    )
+
+    return metrics, summary_df
+
+
 # ============================================================
 # All-detector power statistics
 # ============================================================
@@ -2759,6 +3521,29 @@ plt.savefig(
     bbox_inches="tight",
 )
 plt.close()
+
+# ============================================================
+# Atmospheric loading, elevation, airmass, and PWV tests
+# ============================================================
+
+atmospheric_metrics, atmospheric_summary = (
+    run_atmospheric_power_tests(
+        power_pW=P_pW,
+        elevation_deg_matrix=el_deg_matrix,
+        time_sec=time_sec_full,
+        pwv_mm=PWV_MM,
+        outdir=OUTDIR,
+        comparison_directory=ATMOSPHERE_TEST_ROOT,
+        run_prefix=run_prefix,
+        band_label=BAND_LABEL,
+        scan_pattern=SCAN_PATTERN,
+        elevation_label=ELEV_LABEL,
+        elevation_bin_width_deg=ELEVATION_BIN_WIDTH_DEG,
+        airmass_bin_width=AIRMass_BIN_WIDTH,
+    )
+)
+
+
 # ============================================================
 # Individual detector plots
 # ============================================================
@@ -2968,7 +3753,7 @@ power_matrix = tod.to("pW").signal          # (Ndet, Ntime)
 # el_deg_matrix = np.rad2deg(tod.el)          # (Ndet, Ntime)
 # az_deg_matrix = np.cos(el_deg_matrix) * np.rad2deg(tod.az)          # (Ndet, Ntime)
 
-raise SystemExit("Animation Generation Disabled")
+# raise SystemExit("Animation Generation Disabled")
 animate_detector_azel_power(
     az_deg=az_deg_matrix,
     el_deg=el_deg_matrix,
