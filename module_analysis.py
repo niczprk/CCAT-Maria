@@ -2883,6 +2883,589 @@ def run_atmospheric_power_tests(
 
     return metrics, summary_df
 
+
+
+
+def get_mkid_parameters(band_label):
+    """
+    Return the MKID response parameters used for one Prime-Cam band.
+    """
+
+    band_label = str(band_label)
+
+    if band_label == "280":
+        return {
+            "Q_r": 40000.0,
+            "R_0": -2.448e9,
+            "P_0": 957e-18,
+        }
+
+    if band_label == "350":
+        return {
+            "Q_r": 40000.0,
+            "R_0": -2.448e9,
+            "P_0": 957e-18,
+        }
+
+    if band_label == "850":
+        return {
+            "Q_r": 15000.0,
+            "R_0": -1.0e7,
+            "P_0": 120e-12,
+        }
+
+    raise ValueError(
+        f"Unsupported Prime-Cam band: {band_label}"
+    )
+
+def calculate_linewidth_feasibility_metrics(
+    power_pW,
+    band_label,
+    linewidth_limit=0.10,
+):
+    """
+    Calculate fixed-tone MKID frequency excursions for a full
+    detector-by-time power matrix.
+
+    The fixed readout tone for each detector is assumed to correspond
+    to that detector's median optical loading over the observation.
+
+    Parameters
+    ----------
+    power_pW : ndarray
+        Detector optical power with shape
+        (n_detectors, n_times), in pW.
+
+    band_label : str
+        Prime-Cam band: "280", "350", or "850".
+
+    linewidth_limit : float
+        Adopted acceptable absolute Delta f / FWHM excursion.
+
+    Returns
+    -------
+    metrics : dict
+        One-row summary metrics for the simulation.
+
+    delta_f_fwhm : ndarray
+        Detector-by-time normalized frequency-shift matrix.
+    """
+
+    power_pW = np.asarray(
+        power_pW,
+        dtype=np.float64,
+    )
+
+    if power_pW.ndim != 2:
+        raise ValueError(
+            "power_pW must have shape "
+            "(n_detectors, n_times)."
+        )
+
+    parameters = get_mkid_parameters(
+        band_label
+    )
+
+    Q_r_local = parameters["Q_r"]
+    R_0_local = parameters["R_0"]
+    P_0_local = parameters["P_0"]
+
+    power_W = power_pW * 1e-12
+
+    # One fixed operating point for each detector.
+    median_power_W = np.nanmedian(
+        power_W,
+        axis=1,
+        keepdims=True,
+    )
+
+    with np.errstate(
+        divide="ignore",
+        invalid="ignore",
+    ):
+        responsivity_at_reference = (
+            R_0_local
+            / np.sqrt(
+                1.0
+                + median_power_W / P_0_local
+            )
+        )
+
+    delta_power_W = (
+        power_W - median_power_W
+    )
+
+    delta_f_fwhm = (
+        Q_r_local
+        * responsivity_at_reference
+        * delta_power_W
+    )
+
+    finite = np.isfinite(
+        delta_f_fwhm
+    )
+
+    absolute_shift = np.abs(
+        delta_f_fwhm[finite]
+    )
+
+    if absolute_shift.size == 0:
+        raise ValueError(
+            "No finite Delta f / FWHM values were calculated."
+        )
+
+    within_limit = (
+        absolute_shift <= linewidth_limit
+    )
+
+    # Fraction within the limit for each individual detector.
+    per_detector_fraction = np.full(
+        power_pW.shape[0],
+        np.nan,
+        dtype=np.float64,
+    )
+
+    per_detector_max_abs = np.full(
+        power_pW.shape[0],
+        np.nan,
+        dtype=np.float64,
+    )
+
+    per_detector_p95_abs = np.full(
+        power_pW.shape[0],
+        np.nan,
+        dtype=np.float64,
+    )
+
+    for detector_index in range(
+        power_pW.shape[0]
+    ):
+        detector_values = np.abs(
+            delta_f_fwhm[
+                detector_index,
+                np.isfinite(
+                    delta_f_fwhm[
+                        detector_index
+                    ]
+                ),
+            ]
+        )
+
+        if detector_values.size == 0:
+            continue
+
+        per_detector_fraction[
+            detector_index
+        ] = np.mean(
+            detector_values <= linewidth_limit
+        )
+
+        per_detector_max_abs[
+            detector_index
+        ] = np.nanmax(
+            detector_values
+        )
+
+        per_detector_p95_abs[
+            detector_index
+        ] = np.nanpercentile(
+            detector_values,
+            95,
+        )
+
+    metrics = {
+        "linewidth_limit": float(
+            linewidth_limit
+        ),
+
+        # All detector-time samples pooled together.
+        "fraction_within_linewidth_limit": float(
+            np.mean(within_limit)
+        ),
+        "p50_abs_delta_f_over_fwhm": float(
+            np.nanpercentile(
+                absolute_shift,
+                50,
+            )
+        ),
+        "p95_abs_delta_f_over_fwhm": float(
+            np.nanpercentile(
+                absolute_shift,
+                95,
+            )
+        ),
+        "p99_abs_delta_f_over_fwhm": float(
+            np.nanpercentile(
+                absolute_shift,
+                99,
+            )
+        ),
+        "max_abs_delta_f_over_fwhm": float(
+            np.nanmax(
+                absolute_shift
+            )
+        ),
+
+        # Distribution across detectors.
+        "median_detector_fraction_within_limit": float(
+            np.nanmedian(
+                per_detector_fraction
+            )
+        ),
+        "minimum_detector_fraction_within_limit": float(
+            np.nanmin(
+                per_detector_fraction
+            )
+        ),
+        "fraction_detectors_fully_within_limit": float(
+            np.nanmean(
+                per_detector_fraction >= 1.0
+            )
+        ),
+        "median_detector_p95_abs_delta_f_over_fwhm": float(
+            np.nanmedian(
+                per_detector_p95_abs
+            )
+        ),
+        "maximum_detector_p95_abs_delta_f_over_fwhm": float(
+            np.nanmax(
+                per_detector_p95_abs
+            )
+        ),
+        "median_detector_max_abs_delta_f_over_fwhm": float(
+            np.nanmedian(
+                per_detector_max_abs
+            )
+        ),
+
+        # Record the model parameters in the output.
+        "mkid_Q_r": float(
+            Q_r_local
+        ),
+        "mkid_R_0_W_inverse": float(
+            R_0_local
+        ),
+        "mkid_P_0_W": float(
+            P_0_local
+        ),
+    }
+
+    return metrics, delta_f_fwhm
+
+def match_coordinate_to_power_shape(
+    coordinate,
+    power_shape,
+    coordinate_name,
+):
+    """
+    Convert a MARIA coordinate array to detector-by-time shape.
+    """
+
+    coordinate = np.squeeze(
+        np.asarray(
+            coordinate,
+            dtype=np.float64,
+        )
+    )
+
+    if coordinate.shape == power_shape:
+        return coordinate
+
+    if coordinate.T.shape == power_shape:
+        return coordinate.T
+
+    raise ValueError(
+        f"Could not match {coordinate_name} shape "
+        f"{coordinate.shape} to power shape "
+        f"{power_shape}."
+    )
+def calculate_sky_coverage_metrics(
+    tod,
+    power_shape,
+    map_size_deg,
+    pixel_size_deg=0.02,
+    minimum_hits_for_coverage=1,
+    minimum_hits_for_revisit=2,
+):
+    """
+    Calculate focal-plane sky coverage using every detector position.
+
+    Coverage is evaluated within a fixed square map of width
+    map_size_deg centred on the median array pointing.
+
+    Returns
+    -------
+    metrics : dict
+        Coverage fraction, revisit fraction, and hit-count uniformity.
+
+    hit_map : ndarray
+        Two-dimensional map of sample counts.
+
+    x_edges, y_edges : ndarray
+        Histogram edges in tangent-plane degrees.
+    """
+
+    ra_matrix = match_coordinate_to_power_shape(
+        tod.ra,
+        power_shape,
+        "right ascension",
+    )
+
+    dec_matrix = match_coordinate_to_power_shape(
+        tod.dec,
+        power_shape,
+        "declination",
+    )
+
+    # MARIA normally stores RA and Dec in radians.
+    ra_rad = np.asarray(
+        ra_matrix,
+        dtype=np.float64,
+    )
+
+    dec_rad = np.asarray(
+        dec_matrix,
+        dtype=np.float64,
+    )
+
+    finite_geometry = (
+        np.isfinite(ra_rad)
+        & np.isfinite(dec_rad)
+    )
+
+    if not np.any(finite_geometry):
+        raise ValueError(
+            "No finite RA/Dec coordinates were found."
+        )
+
+    # Representative map centre.
+    ra_centre_rad = np.nanmedian(
+        ra_rad[finite_geometry]
+    )
+
+    dec_centre_rad = np.nanmedian(
+        dec_rad[finite_geometry]
+    )
+
+    # Wrap the RA difference onto [-pi, pi].
+    delta_ra_rad = np.angle(
+        np.exp(
+            1j
+            * (
+                ra_rad
+                - ra_centre_rad
+            )
+        )
+    )
+
+    # Small-angle tangent-plane coordinates.
+    x_deg = np.rad2deg(
+        delta_ra_rad
+        * np.cos(dec_centre_rad)
+    )
+
+    y_deg = np.rad2deg(
+        dec_rad
+        - dec_centre_rad
+    )
+
+    half_width_deg = (
+        0.5 * float(map_size_deg)
+    )
+
+    n_bins = max(
+        1,
+        int(
+            np.ceil(
+                map_size_deg
+                / pixel_size_deg
+            )
+        ),
+    )
+
+    histogram_range = [
+        [
+            -half_width_deg,
+            half_width_deg,
+        ],
+        [
+            -half_width_deg,
+            half_width_deg,
+        ],
+    ]
+
+    valid = (
+        np.isfinite(x_deg)
+        & np.isfinite(y_deg)
+        & (x_deg >= -half_width_deg)
+        & (x_deg <= half_width_deg)
+        & (y_deg >= -half_width_deg)
+        & (y_deg <= half_width_deg)
+    )
+
+    hit_map, x_edges, y_edges = np.histogram2d(
+        x_deg[valid],
+        y_deg[valid],
+        bins=(n_bins, n_bins),
+        range=histogram_range,
+    )
+
+    covered_mask = (
+        hit_map
+        >= minimum_hits_for_coverage
+    )
+
+    revisit_mask = (
+        hit_map
+        >= minimum_hits_for_revisit
+    )
+
+    total_pixels = hit_map.size
+    covered_hits = hit_map[
+        covered_mask
+    ]
+
+    coverage_fraction = (
+        np.count_nonzero(
+            covered_mask
+        )
+        / total_pixels
+    )
+
+    revisit_fraction = (
+        np.count_nonzero(
+            revisit_mask
+        )
+        / total_pixels
+    )
+
+    if (
+        covered_hits.size > 0
+        and np.nanmean(
+            covered_hits
+        ) > 0
+    ):
+        mean_hits_per_covered_pixel = float(
+            np.nanmean(
+                covered_hits
+            )
+        )
+
+        hit_count_cv = float(
+            np.nanstd(
+                covered_hits
+            )
+            / mean_hits_per_covered_pixel
+        )
+    else:
+        mean_hits_per_covered_pixel = np.nan
+        hit_count_cv = np.nan
+
+    metrics = {
+        "coverage_map_size_deg": float(
+            map_size_deg
+        ),
+        "coverage_pixel_size_deg": float(
+            pixel_size_deg
+        ),
+        "coverage_n_pixels": int(
+            total_pixels
+        ),
+        "coverage_n_covered_pixels": int(
+            np.count_nonzero(
+                covered_mask
+            )
+        ),
+        "coverage_fraction": float(
+            coverage_fraction
+        ),
+        "revisit_fraction": float(
+            revisit_fraction
+        ),
+        "hit_count_cv": float(
+            hit_count_cv
+        ),
+        "mean_hits_per_covered_pixel": float(
+            mean_hits_per_covered_pixel
+        ),
+    }
+
+    return (
+        metrics,
+        hit_map,
+        x_edges,
+        y_edges,
+    )
+
+
+def save_coverage_hit_map(
+    hit_map,
+    x_edges,
+    y_edges,
+    output_path,
+    title,
+):
+    """
+    Save a focal-plane hit-count map.
+    """
+
+    output_path = Path(
+        output_path
+    )
+
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    fig, axis = plt.subplots(
+        figsize=(8, 7)
+    )
+
+    image = axis.imshow(
+        hit_map.T,
+        origin="lower",
+        aspect="equal",
+        extent=[
+            x_edges[0],
+            x_edges[-1],
+            y_edges[0],
+            y_edges[-1],
+        ],
+    )
+
+    colorbar = fig.colorbar(
+        image,
+        ax=axis,
+    )
+
+    colorbar.set_label(
+        "Detector samples per pixel"
+    )
+
+    axis.set_xlabel(
+        "Projected RA offset (deg)"
+    )
+
+    axis.set_ylabel(
+        "Declination offset (deg)"
+    )
+
+    axis.set_title(
+        title
+    )
+
+    fig.tight_layout()
+
+    fig.savefig(
+        output_path,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+
+
 def make_band_for_sweep(
     band_label,
     efficiency=0.5,
@@ -5092,12 +5675,32 @@ ELEVATION_RANGES_TO_TEST = [
 ]
 
 SCAN_PATTERNS_TO_TEST = [
+    "lissajous",
+    "raster",
+    "back_and_forth",
     "daisy",
+    "double_circle",
+    "pong",
 ]
 
 SWEEP_SPEED = 0.1
 SWEEP_DURATION_S = 900
 SWEEP_SAMPLE_RATE_HZ = 10
+
+
+LINEWIDTH_LIMIT = 0.10
+
+# Physical width of the requested target map.
+# Change this when running the 0.5, 1.5, or 3.0 degree maps.
+SWEEP_MAP_SIZE_DEG = 0.5
+
+# Angular size of one coverage-map pixel.
+# This should remain fixed when comparing scan patterns.
+COVERAGE_PIXEL_SIZE_DEG = 0.02
+
+MIN_HITS_FOR_COVERAGE = 1
+MIN_HITS_FOR_REVISIT = 2
+
 
 SWEEP_ROOT = Path(
     "outputs/atmospheric_parameter_sweep"
@@ -5303,6 +5906,97 @@ for scan in SCAN_PATTERNS_TO_TEST:
                 )
 
                 # --------------------------------------------
+                # Fixed-tone detector-linewidth metrics
+                # --------------------------------------------
+
+                (
+                    linewidth_metrics,
+                    delta_f_fwhm_matrix,
+                ) = calculate_linewidth_feasibility_metrics(
+                    power_pW=power_pW,
+                    band_label=band_label,
+                    linewidth_limit=LINEWIDTH_LIMIT,
+                )
+
+                print("\nDetector-linewidth suitability")
+                print("-" * 50)
+                print(
+                    "Fraction of all samples within limit: "
+                    f"{linewidth_metrics['fraction_within_linewidth_limit']:.4%}"
+                )
+                print(
+                    "95th percentile absolute excursion: "
+                    f"{linewidth_metrics['p95_abs_delta_f_over_fwhm']:.6g}"
+                )
+                print(
+                    "Maximum absolute excursion: "
+                    f"{linewidth_metrics['max_abs_delta_f_over_fwhm']:.6g}"
+                )
+                print(
+                    "Fraction of detectors fully within limit: "
+                    f"{linewidth_metrics['fraction_detectors_fully_within_limit']:.4%}"
+                )
+
+
+                # --------------------------------------------
+                # Focal-plane coverage metrics
+                # --------------------------------------------
+
+                (
+                    coverage_metrics,
+                    coverage_hit_map,
+                    coverage_x_edges,
+                    coverage_y_edges,
+                ) = calculate_sky_coverage_metrics(
+                    tod=tod,
+                    power_shape=power_pW.shape,
+                    map_size_deg=SWEEP_MAP_SIZE_DEG,
+                    pixel_size_deg=COVERAGE_PIXEL_SIZE_DEG,
+                    minimum_hits_for_coverage=(
+                        MIN_HITS_FOR_COVERAGE
+                    ),
+                    minimum_hits_for_revisit=(
+                        MIN_HITS_FOR_REVISIT
+                    ),
+                )
+
+                coverage_plot_path = (
+                    run_outdir
+                    / (
+                        f"{run_prefix}_{band_label}GHz_"
+                        "focal_plane_coverage_hit_map.png"
+                    )
+                )
+
+                save_coverage_hit_map(
+                    hit_map=coverage_hit_map,
+                    x_edges=coverage_x_edges,
+                    y_edges=coverage_y_edges,
+                    output_path=coverage_plot_path,
+                    title=(
+                        "Prime-Cam Focal-Plane Coverage\n"
+                        f"{band_label} GHz, {scan}, "
+                        f"Elevation={elev_label}, "
+                        f"Duration={SWEEP_DURATION_S} s"
+                    ),
+                )
+
+                print("\nCoverage efficiency")
+                print("-" * 50)
+                print(
+                    "Coverage fraction: "
+                    f"{coverage_metrics['coverage_fraction']:.4%}"
+                )
+                print(
+                    "Revisit fraction: "
+                    f"{coverage_metrics['revisit_fraction']:.4%}"
+                )
+                print(
+                    "Hit-count coefficient of variation: "
+                    f"{coverage_metrics['hit_count_cv']:.6g}"
+                )
+
+                # --------------------------------------------
                 # Elevation, airmass, and small-scale analysis
                 # --------------------------------------------
 
@@ -5394,24 +6088,25 @@ for scan in SCAN_PATTERNS_TO_TEST:
                     "band_ghz": band_label,
                     "pwv_mm": pwv_mm,
                     "scan_pattern": scan,
-                    "elevation_min_deg": (
-                        elev_limits[0]
-                    ),
-                    "elevation_max_deg": (
-                        elev_limits[1]
+                    "elevation_min_deg": elev_limits[0],
+                    "elevation_max_deg": elev_limits[1],
+                    "mean_elevation_deg": float(
+                        np.nanmean(
+                            array_elevation_deg
+                        )
                     ),
                     "elevation_label": elev_label,
-                    "scan_speed_deg_s": (
-                        SWEEP_SPEED
-                    ),
-                    "duration_s": (
-                        SWEEP_DURATION_S
-                    ),
-                    "sample_rate_hz": (
-                        SWEEP_SAMPLE_RATE_HZ
-                    ),
+
+                    "input_speed_deg_s": SWEEP_SPEED,
+                    "map_size_deg": SWEEP_MAP_SIZE_DEG,
+                    "duration_s": SWEEP_DURATION_S,
+                    "sample_rate_hz": SWEEP_SAMPLE_RATE_HZ,
                     "tod_path": str(fits_path),
                 }
+
+                combined_row.update(linewidth_metrics)
+
+                combined_row.update(coverage_metrics)
 
                 # Add every value returned by the
                 # atmospheric-power analysis.
