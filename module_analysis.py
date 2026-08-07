@@ -20,11 +20,12 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from scipy.stats import norm, skew
+from scipy.stats import norm, skew, pearsonr
 from scipy.signal import find_peaks
 
 import maria
 from maria.instrument import Band
+from maria.spectrum import AtmosphericSpectrum
 
 import simple_ccat
 
@@ -32,7 +33,7 @@ import simple_ccat
 # User settings
 # ============================================================
 
-ccat_band = "850"  # "850" or "350"
+ccat_band = "280"  # "850" or "350"
 
 Run = True # whether to run the TOD analysis or just load existing TOD
 
@@ -79,7 +80,7 @@ CHUNK_NUMBER = 0
 
 SAMPLE_RATE_HZ = 10
 
-PWV_MM = 0.36
+PWV_MM = 0.67
 
 # Atmospheric power tests
 # Run the script once for each of the three PWV values below.
@@ -325,15 +326,32 @@ print(f"R_0 = {R_0:.6g} W^-1")
 print(f"P_0 = {P_0:.6g} W")
 
 def delta_f_over_fwhm(P_track_pW):
-    P_track_pW = np.asarray(P_track_pW, dtype=np.float64)
+    """
+    Calculate Delta f / FWHM relative to a fixed readout tone
+    selected at the median detector loading.
+    """
+    P_track_pW = np.asarray(
+        P_track_pW,
+        dtype=np.float64,
+    )
+
     valid = np.isfinite(P_track_pW)
 
     P_track_pW = P_track_pW[valid]
     P_track_W = P_track_pW * 1e-12
 
-    P_ref_W = np.nanmean(P_track_W)
+    if P_track_W.size == 0:
+        return np.array([], dtype=np.float64)
 
-    return Q_r * R(P_ref_W) * (P_track_W - P_ref_W)
+    # Fixed-tone operating point.
+    P_ref_W = np.nanmedian(P_track_W)
+
+    # Responsivity evaluated at the fixed operating point.
+    R_ref = R(P_ref_W)
+
+    delta_P_W = P_track_W - P_ref_W
+
+    return Q_r * R_ref * delta_P_W
 
 
 # ============================================================
@@ -2388,6 +2406,101 @@ def update_combined_pwv_plots(
         f"Updated combined atmospheric comparison: {combined_csv}"
     )
 
+def get_tau0_from_maria_transmission(
+    *,
+    band,
+    pwv_mm,
+    reference_elevation_deg=60.0,
+    site_altitude_m=5600.0,
+):
+    """
+    Derive zenith optical depth from MARIA transmission at the
+    frequency sample nearest the observing-band centre.
+
+    MARIA returns line-of-sight transmission:
+
+        transmission = exp(-tau_0 / sin(elevation))
+
+    Therefore:
+
+        tau_0 = -log(transmission) * sin(elevation)
+    """
+
+    atmosphere = AtmosphericSpectrum(
+        region="chajnantor",
+        altitude=site_altitude_m,
+    )
+
+    frequencies_hz = np.asarray(
+        band.nu.Hz,
+        dtype=np.float64,
+    )
+
+    band_center_hz = float(band.center.Hz)
+
+    center_index = np.argmin(
+        np.abs(frequencies_hz - band_center_hz)
+    )
+
+    reference_elevation_rad = np.deg2rad(
+        reference_elevation_deg
+    )
+
+    transmission = atmosphere.transmission(
+        nu=frequencies_hz,
+        elevation=float(reference_elevation_rad),
+        pwv=float(pwv_mm),
+    )
+
+    transmission = np.asarray(
+        transmission,
+        dtype=np.float64,
+    )
+
+    transmission_center = transmission[center_index]
+
+    if (
+        not np.isfinite(transmission_center)
+        or transmission_center <= 0
+        or transmission_center > 1
+    ):
+        raise ValueError(
+            "Invalid MARIA transmission at the band centre: "
+            f"{transmission_center}"
+        )
+
+    tau_0 = (
+        -np.log(transmission_center)
+        * np.sin(reference_elevation_rad)
+    )
+
+    actual_center_ghz = (
+        frequencies_hz[center_index] / 1e9
+    )
+
+    print("\nMARIA transmission-derived opacity")
+    print("-" * 50)
+    print(f"Requested band centre: {band_center_hz / 1e9:.3f} GHz")
+    print(f"Nearest MARIA frequency: {actual_center_ghz:.3f} GHz")
+    print(f"PWV: {pwv_mm:.3f} mm")
+    print(
+        f"Reference elevation: "
+        f"{reference_elevation_deg:.2f} deg"
+    )
+    print(
+        f"Band-centre transmission: "
+        f"{transmission_center:.6g}"
+    )
+    print(f"Derived tau_0: {tau_0:.6g}")
+
+    return {
+        "tau_0": float(tau_0),
+        "transmission_center": float(transmission_center),
+        "frequency_center_ghz": float(actual_center_ghz),
+        "reference_elevation_deg": float(
+            reference_elevation_deg
+        ),
+    }
 
 def run_atmospheric_power_tests(
     power_pW,
@@ -2770,6 +2883,1131 @@ def run_atmospheric_power_tests(
 
     return metrics, summary_df
 
+def make_band_for_sweep(
+    band_label,
+    efficiency=0.5,
+):
+    """
+    Construct the MARIA Band object for one Prime-Cam band.
+    """
+
+    band_label = str(band_label)
+
+    if band_label == "280":
+        centre_hz = 280e9
+        width_hz = 60e9
+        net_cmb = 13e-6
+
+    elif band_label == "350":
+        centre_hz = 350e9
+        width_hz = 35e9
+        net_cmb = 48e-6
+
+    elif band_label == "850":
+        centre_hz = 850e9
+        width_hz = 97e9
+        net_cmb = 13e-6
+
+    else:
+        raise ValueError(
+            f"Unsupported band: {band_label}"
+        )
+
+    return Band(
+        name="m2/f093",
+        center=centre_hz,
+        width=width_hz,
+        efficiency=efficiency,
+        NET_CMB=net_cmb,
+        knee=1.0,
+        gain_error=5e-2,
+    )
+
+
+def analyse_power_against_optical_depth(
+    power_pW,
+    elevation_deg_matrix,
+    time_sec,
+    pwv_mm,
+    tau_0,
+    outdir,
+    run_prefix,
+    band_label,
+):
+    """
+    Compare detector power with the elevation-dependent atmospheric
+    loading predicted using a transmission-derived zenith opacity.
+
+    Parameters
+    ----------
+    power_pW : ndarray
+        Detector power with shape (n_detectors, n_times), in pW.
+
+    elevation_deg_matrix : ndarray
+        Detector elevation with shape (n_detectors, n_times),
+        in degrees.
+
+    time_sec : ndarray
+        Time coordinate with shape (n_times,), in seconds.
+
+    pwv_mm : float
+        PWV used in the MARIA simulation, in mm.
+
+    tau_0 : float
+        Zenith optical depth derived directly from MARIA transmission.
+
+    outdir : Path
+        Directory in which plots and CSV files are saved.
+
+    run_prefix : str
+        Prefix used for output filenames.
+
+    band_label : str
+        Band label, such as "850".
+
+    Returns
+    -------
+    summary : dict
+        Summary statistics from the atmospheric-model comparison.
+    """
+
+    power_pW = np.asarray(
+        power_pW,
+        dtype=np.float64,
+    )
+
+    elevation_deg_matrix = np.asarray(
+        elevation_deg_matrix,
+        dtype=np.float64,
+    )
+
+    time_sec = np.asarray(
+        time_sec,
+        dtype=np.float64,
+    )
+
+    tau_0 = float(tau_0)
+    pwv_mm = float(pwv_mm)
+
+    # --------------------------------------------------------
+    # Basic input checks
+    # --------------------------------------------------------
+
+    if power_pW.ndim != 2:
+        raise ValueError(
+            "power_pW must have shape "
+            "(n_detectors, n_times)."
+        )
+
+    if elevation_deg_matrix.shape != power_pW.shape:
+        raise ValueError(
+            "elevation_deg_matrix and power_pW must have "
+            "the same detector-by-time shape. "
+            f"Received {elevation_deg_matrix.shape} and "
+            f"{power_pW.shape}."
+        )
+
+    if time_sec.ndim != 1:
+        raise ValueError(
+            "time_sec must be one-dimensional."
+        )
+
+    if power_pW.shape[1] != len(time_sec):
+        raise ValueError(
+            "The time axis of power_pW does not match time_sec."
+        )
+
+    if not np.isfinite(tau_0) or tau_0 <= 0:
+        raise ValueError(
+            f"tau_0 must be finite and positive. Received {tau_0}."
+        )
+
+    outdir = Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    # --------------------------------------------------------
+    # Construct array-common power quantities
+    # --------------------------------------------------------
+
+    # Raw common loading across the detector array.
+    raw_array_power_pW = np.nanmedian(
+        power_pW,
+        axis=0,
+    )
+
+    # Remove each detector's median over the observation.
+    detector_median_pW = np.nanmedian(
+        power_pW,
+        axis=1,
+        keepdims=True,
+    )
+
+    detector_median_subtracted_pW = (
+        power_pW - detector_median_pW
+    )
+
+    # Common time-varying signal remaining after detector
+    # baselines have been removed.
+    median_subtracted_common_pW = np.nanmedian(
+        detector_median_subtracted_pW,
+        axis=0,
+    )
+
+    # Remove the instantaneous common signal to obtain
+    # small-scale detector-to-detector residuals.
+    small_scale_residual_pW = (
+        detector_median_subtracted_pW
+        - median_subtracted_common_pW[np.newaxis, :]
+    )
+
+    # Standard and robust measures of small-scale scatter.
+    small_scale_std_pW = np.nanstd(
+        small_scale_residual_pW,
+        axis=0,
+    )
+
+    residual_median_pW = np.nanmedian(
+        small_scale_residual_pW,
+        axis=0,
+        keepdims=True,
+    )
+
+    small_scale_mad_pW = (
+        1.4826
+        * np.nanmedian(
+            np.abs(
+                small_scale_residual_pW
+                - residual_median_pW
+            ),
+            axis=0,
+        )
+    )
+
+    # --------------------------------------------------------
+    # Construct one representative elevation per time
+    # --------------------------------------------------------
+
+    array_elevation_deg = np.nanmedian(
+        elevation_deg_matrix,
+        axis=0,
+    )
+
+    with np.errstate(
+        divide="ignore",
+        invalid="ignore",
+    ):
+        airmass = (
+            1.0
+            / np.sin(
+                np.deg2rad(array_elevation_deg)
+            )
+        )
+
+    invalid_geometry = (
+        ~np.isfinite(airmass)
+        | (array_elevation_deg <= 0)
+        | (array_elevation_deg > 90)
+    )
+
+    airmass[invalid_geometry] = np.nan
+
+    # --------------------------------------------------------
+    # Optical-depth model
+    # --------------------------------------------------------
+
+    # Line-of-sight optical depth:
+    #
+    # tau_los = tau_0 * airmass
+    tau_line_of_sight = (
+        tau_0 * airmass
+    )
+
+    # Atmospheric emission term relative to the physical
+    # temperature of the atmosphere:
+    #
+    # T_atm / T_0 = 1 - exp(-tau_los)
+    atmospheric_emission_fraction = (
+        1.0
+        - np.exp(-tau_line_of_sight)
+    )
+
+    # --------------------------------------------------------
+    # Select finite samples
+    # --------------------------------------------------------
+
+    valid = (
+        np.isfinite(time_sec)
+        & np.isfinite(array_elevation_deg)
+        & np.isfinite(airmass)
+        & np.isfinite(tau_line_of_sight)
+        & np.isfinite(atmospheric_emission_fraction)
+        & np.isfinite(raw_array_power_pW)
+        & np.isfinite(median_subtracted_common_pW)
+        & np.isfinite(small_scale_std_pW)
+        & np.isfinite(small_scale_mad_pW)
+    )
+
+    if np.count_nonzero(valid) < 3:
+        raise ValueError(
+            "Fewer than three finite time samples remain "
+            "for the optical-depth analysis."
+        )
+
+    time_valid = time_sec[valid]
+
+    elevation_valid = (
+        array_elevation_deg[valid]
+    )
+
+    airmass_valid = airmass[valid]
+
+    tau_valid = (
+        tau_line_of_sight[valid]
+    )
+
+    emission_valid = (
+        atmospheric_emission_fraction[valid]
+    )
+
+    raw_power_valid = (
+        raw_array_power_pW[valid]
+    )
+
+    common_power_valid = (
+        median_subtracted_common_pW[valid]
+    )
+
+    small_scale_std_valid = (
+        small_scale_std_pW[valid]
+    )
+
+    small_scale_mad_valid = (
+        small_scale_mad_pW[valid]
+    )
+
+    # --------------------------------------------------------
+    # Fit the atmospheric model to measured power
+    # --------------------------------------------------------
+    #
+    # The emission fraction is dimensionless, while measured
+    # power is in pW and contains an arbitrary baseline.
+    #
+    # Therefore fit:
+    #
+    # P_model = scale * emission_fraction + offset
+    # --------------------------------------------------------
+
+    model_scale, model_offset = np.polyfit(
+        emission_valid,
+        raw_power_valid,
+        deg=1,
+    )
+
+    predicted_raw_power_pW = (
+        model_scale * emission_valid
+        + model_offset
+    )
+
+    raw_model_residual_pW = (
+        raw_power_valid
+        - predicted_raw_power_pW
+    )
+
+    # Centre the predicted track before comparing it with the
+    # detector-median-subtracted common power.
+    predicted_common_power_pW = (
+        predicted_raw_power_pW
+        - np.nanmedian(predicted_raw_power_pW)
+    )
+
+    common_model_residual_pW = (
+        common_power_valid
+        - predicted_common_power_pW
+    )
+
+    # --------------------------------------------------------
+    # Statistical comparisons
+    # --------------------------------------------------------
+
+    raw_model_r, raw_model_p = pearsonr(
+        raw_power_valid,
+        predicted_raw_power_pW,
+    )
+
+    common_model_r, common_model_p = pearsonr(
+        common_power_valid,
+        predicted_common_power_pW,
+    )
+
+    tau_raw_r, tau_raw_p = pearsonr(
+        tau_valid,
+        raw_power_valid,
+    )
+
+    tau_common_r, tau_common_p = pearsonr(
+        tau_valid,
+        common_power_valid,
+    )
+
+    tau_small_std_r, tau_small_std_p = pearsonr(
+        tau_valid,
+        small_scale_std_valid,
+    )
+
+    tau_small_mad_r, tau_small_mad_p = pearsonr(
+        tau_valid,
+        small_scale_mad_valid,
+    )
+
+    time_small_std_r, time_small_std_p = pearsonr(
+        time_valid,
+        small_scale_std_valid,
+    )
+
+    time_small_mad_r, time_small_mad_p = pearsonr(
+        time_valid,
+        small_scale_mad_valid,
+    )
+
+    residual_elevation_r, residual_elevation_p = pearsonr(
+        elevation_valid,
+        common_model_residual_pW,
+    )
+
+    residual_airmass_r, residual_airmass_p = pearsonr(
+        airmass_valid,
+        common_model_residual_pW,
+    )
+
+    # Coefficient of determination for raw-power model.
+    sum_squared_residuals = np.nansum(
+        raw_model_residual_pW**2
+    )
+
+    sum_squared_total = np.nansum(
+        (
+            raw_power_valid
+            - np.nanmean(raw_power_valid)
+        ) ** 2
+    )
+
+    if sum_squared_total > 0:
+        raw_model_r_squared = (
+            1.0
+            - sum_squared_residuals
+            / sum_squared_total
+        )
+    else:
+        raw_model_r_squared = np.nan
+
+    # Fraction of raw temporal variance left after subtracting
+    # the fitted elevation-dependent opacity model.
+    raw_variance = np.nanvar(
+        raw_power_valid
+    )
+
+    residual_variance = np.nanvar(
+        raw_model_residual_pW
+    )
+
+    if raw_variance > 0:
+        residual_variance_fraction = (
+            residual_variance
+            / raw_variance
+        )
+    else:
+        residual_variance_fraction = np.nan
+
+    # --------------------------------------------------------
+    # Print summary
+    # --------------------------------------------------------
+
+    print("\nAtmospheric optical-depth power analysis")
+    print("-" * 60)
+
+    print(f"Band: {band_label} GHz")
+    print(f"PWV: {pwv_mm:.3f} mm")
+    print(
+        "Transmission-derived zenith opacity: "
+        f"tau_0={tau_0:.6g}"
+    )
+
+    print(
+        "Elevation range: "
+        f"{np.nanmin(elevation_valid):.4f} to "
+        f"{np.nanmax(elevation_valid):.4f} deg"
+    )
+
+    print(
+        "Airmass range: "
+        f"{np.nanmin(airmass_valid):.6f} to "
+        f"{np.nanmax(airmass_valid):.6f}"
+    )
+
+    print(
+        "Line-of-sight optical-depth range: "
+        f"{np.nanmin(tau_valid):.6g} to "
+        f"{np.nanmax(tau_valid):.6g}"
+    )
+
+    print(
+        "Raw power versus fitted opacity model: "
+        f"r={raw_model_r:.4f}, "
+        f"R^2={raw_model_r_squared:.4f}"
+    )
+
+    print(
+        "Median-subtracted common power versus model: "
+        f"r={common_model_r:.4f}"
+    )
+
+    print(
+        "Small-scale standard deviation versus tau_los: "
+        f"r={tau_small_std_r:.4f}"
+    )
+
+    print(
+        "Small-scale MAD versus tau_los: "
+        f"r={tau_small_mad_r:.4f}"
+    )
+
+    print(
+        "Raw model-residual standard deviation: "
+        f"{np.nanstd(raw_model_residual_pW):.6g} pW"
+    )
+
+    print(
+        "Fraction of raw temporal variance remaining: "
+        f"{residual_variance_fraction:.4f}"
+    )
+
+    print(
+        "Residual common power versus elevation: "
+        f"r={residual_elevation_r:.4f}"
+    )
+    print(
+        "Small-scale standard deviation versus time: "
+        f"r={time_small_std_r:.4f}"
+    )
+
+    print(
+        "Small-scale MAD versus tau_los:"
+        f"r={tau_small_mad_r:.4f}"
+    )
+    print(
+    "Small-scale standard deviation versus time: "
+    f"r={time_small_std_r:.4f}"
+    )
+
+    print(
+        "Small-scale MAD versus time: "
+        f"r={time_small_mad_r:.4f}"
+    )
+
+    # ========================================================
+    # Figure 1: atmospheric model quantities versus time
+    # ========================================================
+
+    fig, axes = plt.subplots(
+        4,
+        1,
+        figsize=(13, 12),
+        sharex=True,
+    )
+
+    axes[0].plot(
+        time_valid,
+        elevation_valid,
+        linewidth=0.8,
+    )
+
+    axes[0].set_ylabel("Elevation (deg)")
+    axes[0].grid(alpha=0.3)
+
+    axes[1].plot(
+        time_valid,
+        tau_valid,
+        linewidth=0.8,
+    )
+
+    axes[1].set_ylabel(
+        r"Line-of-sight $\tau$"
+    )
+
+    axes[1].grid(alpha=0.3)
+
+    axes[2].plot(
+        time_valid,
+        raw_power_valid,
+        linewidth=0.8,
+        label="Observed array-median power",
+    )
+
+    axes[2].plot(
+        time_valid,
+        predicted_raw_power_pW,
+        linewidth=1.4,
+        label="Fitted opacity prediction",
+    )
+
+    axes[2].set_ylabel("Power (pW)")
+    axes[2].grid(alpha=0.3)
+    axes[2].legend(loc="best")
+
+    axes[3].plot(
+        time_valid,
+        raw_model_residual_pW,
+        linewidth=0.8,
+    )
+
+    axes[3].axhline(
+        0,
+        linestyle="--",
+        linewidth=1,
+    )
+
+    axes[3].set_xlabel("Time (s)")
+    axes[3].set_ylabel(
+        "Model residual (pW)"
+    )
+
+    axes[3].grid(alpha=0.3)
+
+    fig.suptitle(
+        "Detector Power and Transmission-Derived "
+        "Optical-Depth Model\n"
+        f"{band_label} GHz, PWV={pwv_mm:.2f} mm, "
+        fr"$\tau_0={tau_0:.4f}$"
+    )
+
+    fig.tight_layout()
+
+    model_time_path = outdir / (
+        f"{run_prefix}_{band_label}GHz_"
+        "transmission_opacity_model_vs_time.png"
+    )
+
+    fig.savefig(
+        model_time_path,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+
+    # ========================================================
+    # Figure 2: raw power versus line-of-sight optical depth
+    # ========================================================
+
+    fig, axis = plt.subplots(
+        figsize=(9, 7)
+    )
+
+    axis.scatter(
+        tau_valid,
+        raw_power_valid,
+        s=5,
+        alpha=0.25,
+        rasterized=True,
+        label="Time samples",
+    )
+
+    sort_indices = np.argsort(
+        tau_valid
+    )
+
+    axis.plot(
+        tau_valid[sort_indices],
+        predicted_raw_power_pW[sort_indices],
+        linewidth=2,
+        label="Fitted opacity model",
+    )
+
+    axis.set_xlabel(
+        r"Line-of-sight optical depth "
+        r"$\tau_{\mathrm{los}}$"
+    )
+
+    axis.set_ylabel(
+        "Array-median power (pW)"
+    )
+
+    axis.set_title(
+        "Raw Detector Power versus Optical Depth\n"
+        f"{band_label} GHz, PWV={pwv_mm:.2f} mm\n"
+        f"Pearson r={tau_raw_r:.3f}, "
+        f"$R^2$={raw_model_r_squared:.3f}"
+    )
+
+    axis.grid(alpha=0.3)
+    axis.legend(loc="best")
+
+    fig.tight_layout()
+
+    raw_tau_path = outdir / (
+        f"{run_prefix}_{band_label}GHz_"
+        "raw_array_power_vs_tau_los.png"
+    )
+
+    fig.savefig(
+        raw_tau_path,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+
+    # ========================================================
+    # Figure 3: common median-subtracted power versus tau
+    # ========================================================
+
+    fig, axis = plt.subplots(
+        figsize=(9, 7)
+    )
+
+    axis.scatter(
+        tau_valid,
+        common_power_valid,
+        s=5,
+        alpha=0.25,
+        rasterized=True,
+        label="Time samples",
+    )
+
+    axis.plot(
+        tau_valid[sort_indices],
+        predicted_common_power_pW[sort_indices],
+        linewidth=2,
+        label="Centred opacity prediction",
+    )
+
+    axis.axhline(
+        0,
+        linestyle="--",
+        linewidth=1,
+    )
+
+    axis.set_xlabel(
+        r"Line-of-sight optical depth "
+        r"$\tau_{\mathrm{los}}$"
+    )
+
+    axis.set_ylabel(
+        "Median-subtracted common power (pW)"
+    )
+
+    axis.set_title(
+        "Median-Subtracted Common Power versus Optical Depth\n"
+        f"{band_label} GHz, PWV={pwv_mm:.2f} mm\n"
+        f"Pearson r={tau_common_r:.3f}"
+    )
+
+    axis.grid(alpha=0.3)
+    axis.legend(loc="best")
+
+    fig.tight_layout()
+
+    common_tau_path = outdir / (
+        f"{run_prefix}_{band_label}GHz_"
+        "median_subtracted_common_power_vs_tau_los.png"
+    )
+
+    fig.savefig(
+        common_tau_path,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+
+    # ========================================================
+    # Figure 4: small-scale scatter versus tau
+    # ========================================================
+
+    fig, axis = plt.subplots(
+        figsize=(9, 7)
+    )
+
+    axis.scatter(
+        tau_valid,
+        small_scale_std_valid,
+        s=5,
+        alpha=0.25,
+        rasterized=True,
+        label="Standard deviation",
+    )
+
+    axis.scatter(
+        tau_valid,
+        small_scale_mad_valid,
+        s=5,
+        alpha=0.25,
+        rasterized=True,
+        label="MAD estimate",
+    )
+
+    axis.set_xlabel(
+        r"Line-of-sight optical depth "
+        r"$\tau_{\mathrm{los}}$"
+    )
+
+    axis.set_ylabel(
+        "Small-scale power scatter (pW)"
+    )
+
+    axis.set_title(
+        "Small-Scale Power Scatter versus Optical Depth\n"
+        f"{band_label} GHz, PWV={pwv_mm:.2f} mm\n"
+        f"STD r={tau_small_std_r:.3f}, "
+        f"MAD r={tau_small_mad_r:.3f}"
+    )
+
+    axis.grid(alpha=0.3)
+    axis.legend(loc="best")
+
+    fig.tight_layout()
+
+    small_scale_tau_path = outdir / (
+        f"{run_prefix}_{band_label}GHz_"
+        "small_scale_scatter_vs_tau_los.png"
+    )
+
+    fig.savefig(
+        small_scale_tau_path,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+    # ========================================================
+    # Figure 5: small-scale scatter versus time
+    # ========================================================
+    fig, axes = plt.subplots(
+        3,
+        1,
+        figsize = (13,10),
+        sharex=True,
+    )
+
+    axes[0].plot(
+        time_valid,
+        tau_valid,
+        linewidth=0.8,
+    )
+
+    axes[0].set_ylabel(
+        r"Line-of-sight $\tau$"
+    )
+
+    axes[0].set_title(
+        "Line-of-Sight Optical Depth versus Time\n"
+        f"{band_label} GHz, PWV={pwv_mm:.2f} mm"
+    )
+
+    axes[0].grid(alpha=0.3)
+
+    axes[1].plot(
+        time_valid,
+        small_scale_std_valid,
+        linewidth=0.7,
+        label="Standard deviation",
+    )
+
+    axes[1].plot(
+        time_valid,
+        small_scale_mad_valid,
+        linewidth=0.7,
+        alpha=0.8,
+        label="MAD estimate",
+    )
+
+    axes[1].set_ylabel(
+        "Small-scale\nscatter (pW)"
+    )
+
+    axes[1].set_title(
+        "Small-Scale Power Scatter versus Time\n"
+        f"{band_label} GHz, PWV={pwv_mm:.2f} mm"
+    )
+    axes[1].grid(alpha=0.3)
+    axes[1].legend(loc="best")
+
+
+    axes[2].plot(
+        time_valid,
+        common_model_residual_pW,
+        linewidth=0.8,
+    )
+
+    axes[2].set_xlabel("Time (s)")
+    axes[2].set_ylabel(
+        "Residual common\npower (pW)"
+    )
+
+    axes[2].set_title(
+        "Residual versus Time\n"
+        f"{band_label} GHz, PWV={pwv_mm:.2f} mm"
+    )
+
+    axes[2].grid(alpha=0.3)
+
+    fig.suptitle(
+        "Temporal Evolution of Atmospheric Power Structure\n"
+        f"{band_label} GHz, PWV={pwv_mm:.2f} mm\n"
+        f"STD–time r={time_small_std_r:.3f}, "
+        f"MAD–time r={time_small_mad_r:.3f}"
+    )
+
+    fig.tight_layout()
+
+    small_scale_time_path = outdir / (
+        f"{run_prefix}_{band_label}GHz_"
+        "small_scale_scatter_and_residuals_vs_time.png"
+    )
+
+    fig.savefig(small_scale_time_path, dpi=300, bbox_inches="tight")
+
+    plt.close(fig)
+    # ========================================================
+    # Figure 6: residual common power
+    # ========================================================
+
+    fig, axes = plt.subplots(
+        3,
+        1,
+        figsize=(11, 10),
+    )
+
+    axes[0].plot(
+        time_valid,
+        common_model_residual_pW,
+        linewidth=0.8,
+    )
+
+    axes[0].axhline(
+        0,
+        linestyle="--",
+        linewidth=1,
+    )
+
+    axes[0].set_xlabel("Time (s)")
+    axes[0].set_ylabel(
+        "Residual common\npower (pW)"
+    )
+
+    axes[0].grid(alpha=0.3)
+
+    axes[1].scatter(
+        elevation_valid,
+        common_model_residual_pW,
+        s=5,
+        alpha=0.25,
+        rasterized=True,
+    )
+
+    axes[1].set_xlabel(
+        "Array-median elevation (deg)"
+    )
+
+    axes[1].set_ylabel(
+        "Residual common\npower (pW)"
+    )
+
+    axes[1].set_title(
+        "Residual versus Elevation: "
+        f"r={residual_elevation_r:.3f}"
+    )
+
+    axes[1].grid(alpha=0.3)
+
+    axes[2].scatter(
+        airmass_valid,
+        common_model_residual_pW,
+        s=5,
+        alpha=0.25,
+        rasterized=True,
+    )
+
+    axes[2].set_xlabel(
+        "Approximate airmass"
+    )
+
+    axes[2].set_ylabel(
+        "Residual common\npower (pW)"
+    )
+
+    axes[2].set_title(
+        "Residual versus Airmass: "
+        f"r={residual_airmass_r:.3f}"
+    )
+
+    axes[2].grid(alpha=0.3)
+
+    fig.suptitle(
+        "Power Remaining after Removing "
+        "the Optical-Depth Prediction\n"
+        f"{band_label} GHz, PWV={pwv_mm:.2f} mm"
+    )
+
+    fig.tight_layout()
+
+    residual_path = outdir / (
+        f"{run_prefix}_{band_label}GHz_"
+        "transmission_opacity_model_residuals.png"
+    )
+
+    fig.savefig(
+        residual_path,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+
+    # ========================================================
+    # Save time-dependent quantities
+    # ========================================================
+
+    result_df = pd.DataFrame({
+        "time_s": time_valid,
+        "elevation_deg": elevation_valid,
+        "airmass": airmass_valid,
+        "pwv_mm": pwv_mm,
+        "tau_0": tau_0,
+        "tau_line_of_sight": tau_valid,
+        "atmospheric_emission_fraction": emission_valid,
+        "raw_array_median_power_pW": raw_power_valid,
+        "predicted_raw_power_pW": predicted_raw_power_pW,
+        "raw_model_residual_pW": raw_model_residual_pW,
+        "median_subtracted_common_power_pW": (
+            common_power_valid
+        ),
+        "predicted_common_power_pW": (
+            predicted_common_power_pW
+        ),
+        "common_model_residual_pW": (
+            common_model_residual_pW
+        ),
+        "small_scale_std_pW": small_scale_std_valid,
+        "small_scale_mad_pW": small_scale_mad_valid,
+    })
+
+    result_csv_path = outdir / (
+        f"{run_prefix}_{band_label}GHz_"
+        "transmission_opacity_power_samples.csv"
+    )
+
+    result_df.to_csv(
+        result_csv_path,
+        index=False,
+    )
+
+    # ========================================================
+    # Save one-row summary
+    # ========================================================
+
+    summary = {
+        "band_ghz": band_label,
+        "pwv_mm": pwv_mm,
+        "tau_0_transmission": tau_0,
+        "median_elevation_deg": np.nanmedian(
+            elevation_valid
+        ),
+        "median_airmass": np.nanmedian(
+            airmass_valid
+        ),
+        "tau_line_of_sight_min": np.nanmin(
+            tau_valid
+        ),
+        "tau_line_of_sight_median": np.nanmedian(
+            tau_valid
+        ),
+        "tau_line_of_sight_max": np.nanmax(
+            tau_valid
+        ),
+        "model_scale_pW": model_scale,
+        "model_offset_pW": model_offset,
+        "raw_power_model_pearson_r": raw_model_r,
+        "raw_power_model_p_value": raw_model_p,
+        "raw_power_model_r_squared": raw_model_r_squared,
+        "common_power_model_pearson_r": common_model_r,
+        "common_power_model_p_value": common_model_p,
+        "tau_raw_power_pearson_r": tau_raw_r,
+        "tau_raw_power_p_value": tau_raw_p,
+        "tau_common_power_pearson_r": tau_common_r,
+        "tau_common_power_p_value": tau_common_p,
+        "tau_small_scale_std_pearson_r": tau_small_std_r,
+        "tau_small_scale_std_p_value": tau_small_std_p,
+        "tau_small_scale_mad_pearson_r": tau_small_mad_r,
+        "tau_small_scale_mad_p_value": tau_small_mad_p,
+
+        "time_small_scale_std_pearson_r": (
+            time_small_std_r
+        ),
+        "time_small_scale_std_p_value": (
+            time_small_std_p
+        ),
+        "time_small_scale_mad_pearson_r": (
+            time_small_mad_r
+        ),
+        "time_small_scale_mad_p_value": (
+            time_small_mad_p
+        ),
+        "raw_model_residual_std_pW": np.nanstd(
+            raw_model_residual_pW
+        ),
+        "common_model_residual_std_pW": np.nanstd(
+            common_model_residual_pW
+        ),
+        "residual_variance_fraction": (
+            residual_variance_fraction
+        ),
+        "residual_elevation_pearson_r": (
+            residual_elevation_r
+        ),
+        "residual_elevation_p_value": (
+            residual_elevation_p
+        ),
+        "residual_airmass_pearson_r": (
+            residual_airmass_r
+        ),
+        "residual_airmass_p_value": (
+            residual_airmass_p
+        ),
+        "median_small_scale_std_pW": np.nanmedian(
+            small_scale_std_valid
+        ),
+        "median_small_scale_mad_pW": np.nanmedian(
+            small_scale_mad_valid
+        ),
+    }
+
+    summary_csv_path = outdir / (
+        f"{run_prefix}_{band_label}GHz_"
+        "transmission_opacity_power_summary.csv"
+    )
+
+    pd.DataFrame([summary]).to_csv(
+        summary_csv_path,
+        index=False,
+    )
+
+    print(f"\nSaved opacity-model time plot: {model_time_path}")
+    print(f"Saved raw power vs tau plot: {raw_tau_path}")
+    print(f"Saved common power vs tau plot: {common_tau_path}")
+    print(
+        "Saved small-scale scatter vs tau plot: "
+        f"{small_scale_tau_path}"
+    )
+    print(
+        "Saved small-scale scatter and residuals vs time plot: "
+        f"{small_scale_time_path}"
+    )
+    print(f"Saved opacity-model residual plot: {residual_path}")
+    print(f"Saved time-sample CSV: {result_csv_path}")
+    print(f"Saved summary CSV: {summary_csv_path}")
+
+    return summary
 
 # ============================================================
 # All-detector power statistics
@@ -3543,6 +4781,34 @@ atmospheric_metrics, atmospheric_summary = (
     )
 )
 
+# ============================================================
+# Transmission-derived optical-depth analysis
+# ============================================================
+
+
+array_elevation_deg = np.nanmedian(el_deg_matrix, axis=0)
+
+reference_elevation_deg = float(np.nanmedian(array_elevation_deg))
+
+maria_opacity = get_tau0_from_maria_transmission(
+    band=band,
+    pwv_mm=PWV_MM,
+    reference_elevation_deg=reference_elevation_deg,
+    site_altitude_m= 5600.0,
+)
+
+tau_0_maria = maria_opacity["tau_0"]
+
+optical_depth_summary = analyse_power_against_optical_depth(
+    power_pW=P_pW,
+    elevation_deg_matrix=el_deg_matrix,
+    time_sec=time_sec_full,
+    pwv_mm=PWV_MM,
+    tau_0=tau_0_maria,
+    outdir=OUTDIR,
+    run_prefix=run_prefix,
+    band_label=BAND_LABEL,
+)
 
 # ============================================================
 # Individual detector plots
@@ -3809,4 +5075,429 @@ animate_detector_azel_power(
         f"Prime-Cam Small-Scale Loading Residuals in Az–El\n"
         f"{BAND_LABEL} GHz, {SCAN_PATTERN}, Elev={ELEV_LABEL}"
     ),
+)
+
+
+# ============================================================
+# Full atmospheric parameter sweep
+# ============================================================
+
+BANDS_TO_TEST = ["280", "350", "850"]
+PWVS_TO_TEST = [0.36, 0.67, 1.28]
+
+ELEVATION_RANGES_TO_TEST = [
+    (45, 55),
+    (55, 65),
+    (65, 75),
+]
+
+SCAN_PATTERNS_TO_TEST = [
+    "daisy",
+]
+
+SWEEP_SPEED = 0.1
+SWEEP_DURATION_S = 900
+SWEEP_SAMPLE_RATE_HZ = 10
+
+SWEEP_ROOT = Path(
+    "outputs/atmospheric_parameter_sweep"
+)
+
+SWEEP_ROOT.mkdir(
+    parents=True,
+    exist_ok=True,
+)
+
+COMBINED_CSV_PATH = (
+    SWEEP_ROOT
+    / "all_band_pwv_elevation_summary.csv"
+)
+
+all_results = []
+
+site = maria.get_site(
+    "cerro_chajnantor",
+    altitude=5600,
+)
+
+for scan in SCAN_PATTERNS_TO_TEST:
+
+    for band_label in BANDS_TO_TEST:
+
+        maria_band = make_band_for_sweep(
+            band_label=band_label,
+            efficiency=eta,
+        )
+
+        for pwv_mm in PWVS_TO_TEST:
+
+            for elev_limits in ELEVATION_RANGES_TO_TEST:
+
+                elev_label = (
+                    f"{elev_limits[0]}-"
+                    f"{elev_limits[1]}"
+                )
+
+                pwv_tag = (
+                    f"{pwv_mm:.2f}"
+                    .replace(".", "p")
+                )
+
+                speed_tag = (
+                    f"{SWEEP_SPEED:.1f}"
+                    .replace(".", "p")
+                )
+
+                run_prefix = (
+                    f"OrionA_{scan}_"
+                    f"{elev_label}_"
+                    f"speed_{speed_tag}_"
+                    f"PWV_{pwv_tag}mm_"
+                    f"small_map"
+                )
+
+                print("\n" + "=" * 70)
+                print(
+                    "Running atmospheric sweep:"
+                )
+                print(
+                    f"Band={band_label} GHz, "
+                    f"PWV={pwv_mm:.2f} mm, "
+                    f"Elevation={elev_label}, "
+                    f"Scan={scan}"
+                )
+                print("=" * 70)
+
+                # --------------------------------------------
+                # Paths for this individual simulation
+                # --------------------------------------------
+
+                tod_outdir = Path(
+                    f"outputs/{run_prefix}_tods"
+                )
+
+                fits_path = (
+                    tod_outdir
+                    / (
+                        f"{run_prefix}_"
+                        "dim_reduced_tods.fits"
+                    )
+                )
+
+                run_outdir = (
+                    SWEEP_ROOT
+                    / f"{band_label}GHz"
+                    / scan
+                    / (
+                        f"PWV_{pwv_tag}mm_"
+                        f"elev_{elev_label}"
+                    )
+                )
+
+                run_outdir.mkdir(
+                    parents=True,
+                    exist_ok=True,
+                )
+
+                comparison_directory = (
+                    SWEEP_ROOT
+                    / f"{band_label}GHz"
+                    / scan
+                    / "combined_comparisons"
+                )
+
+                comparison_directory.mkdir(
+                    parents=True,
+                    exist_ok=True,
+                )
+
+                # --------------------------------------------
+                # Run MARIA simulation
+                # --------------------------------------------
+
+                simple_ccat.tod_analysis(
+                    PREFIX=run_prefix,
+                    tod_diagnostics=False,
+                    maps=False,
+                    save_all_plots=True,
+                    run_mode="fits",
+                    atm_plot=False,
+                    temp_mode="inst",
+                    ccat_band=band_label,
+                    map_type="BM",
+                    pwv_mm=pwv_mm,
+                    start_time=START_TIME,
+                    total_duration_s=(
+                        SWEEP_DURATION_S
+                    ),
+                    sim_duration_s=(
+                        SWEEP_DURATION_S
+                    ),
+                    sample_rate_hz=(
+                        SWEEP_SAMPLE_RATE_HZ
+                    ),
+                    scan_pattern=scan,
+                    el_limits=elev_limits,
+                    speed=SWEEP_SPEED,
+                )
+
+                if not fits_path.exists():
+                    raise FileNotFoundError(
+                        "The expected TOD file was "
+                        "not created:\n"
+                        f"{fits_path}"
+                    )
+
+                # --------------------------------------------
+                # Load the TOD produced by simple_ccat
+                # --------------------------------------------
+
+                tod = maria.tod.load(
+                    fits_path,
+                    site=site,
+                    bands=[maria_band],
+                )
+
+                power_pW = np.asarray(
+                    tod.to("pW").signal,
+                    dtype=np.float64,
+                )
+
+                elevation_raw = np.squeeze(
+                    np.asarray(
+                        tod.el,
+                        dtype=np.float64,
+                    )
+                )
+
+                # Match the detector-by-time power shape.
+                if elevation_raw.shape == power_pW.shape:
+                    elevation_matrix = elevation_raw
+
+                elif (
+                    elevation_raw.T.shape
+                    == power_pW.shape
+                ):
+                    elevation_matrix = elevation_raw.T
+
+                else:
+                    raise ValueError(
+                        "Could not match the elevation "
+                        "array to the power array. "
+                        f"Elevation shape: "
+                        f"{elevation_raw.shape}; "
+                        f"power shape: "
+                        f"{power_pW.shape}"
+                    )
+
+                elevation_deg_matrix = np.rad2deg(
+                    elevation_matrix
+                )
+
+                time_sec = (
+                    np.arange(
+                        power_pW.shape[1],
+                        dtype=np.float64,
+                    )
+                    / SWEEP_SAMPLE_RATE_HZ
+                )
+
+                # --------------------------------------------
+                # Elevation, airmass, and small-scale analysis
+                # --------------------------------------------
+
+                (
+                    atmospheric_metrics,
+                    atmospheric_summary_df,
+                ) = run_atmospheric_power_tests(
+                    power_pW=power_pW,
+                    elevation_deg_matrix=(
+                        elevation_deg_matrix
+                    ),
+                    time_sec=time_sec,
+                    pwv_mm=pwv_mm,
+                    outdir=run_outdir,
+                    comparison_directory=(
+                        comparison_directory
+                    ),
+                    run_prefix=run_prefix,
+                    band_label=band_label,
+                    scan_pattern=scan,
+                    elevation_label=elev_label,
+                    elevation_bin_width_deg=(
+                        ELEVATION_BIN_WIDTH_DEG
+                    ),
+                    airmass_bin_width=(
+                        AIRMass_BIN_WIDTH
+                    ),
+                )
+
+                # --------------------------------------------
+                # Transmission-derived tau_0
+                # --------------------------------------------
+
+                array_elevation_deg = np.nanmedian(
+                    elevation_deg_matrix,
+                    axis=0,
+                )
+
+                reference_elevation_deg = float(
+                    np.nanmedian(
+                        array_elevation_deg
+                    )
+                )
+
+                maria_opacity = (
+                    get_tau0_from_maria_transmission(
+                        band=maria_band,
+                        pwv_mm=pwv_mm,
+                        reference_elevation_deg=(
+                            reference_elevation_deg
+                        ),
+                        site_altitude_m=5600.0,
+                    )
+                )
+
+                # --------------------------------------------
+                # Optical-depth analysis
+                # --------------------------------------------
+
+                optical_summary = (
+                    analyse_power_against_optical_depth(
+                        power_pW=power_pW,
+                        elevation_deg_matrix=(
+                            elevation_deg_matrix
+                        ),
+                        time_sec=time_sec,
+                        pwv_mm=pwv_mm,
+                        tau_0=(
+                            maria_opacity["tau_0"]
+                        ),
+                        outdir=run_outdir,
+                        run_prefix=run_prefix,
+                        band_label=band_label,
+                    )
+                )
+
+                # --------------------------------------------
+                # Combine all information into one row
+                # --------------------------------------------
+
+                atmospheric_row = (
+                    atmospheric_summary_df
+                    .iloc[0]
+                    .to_dict()
+                )
+
+                combined_row = {
+                    "run_prefix": run_prefix,
+                    "band_ghz": band_label,
+                    "pwv_mm": pwv_mm,
+                    "scan_pattern": scan,
+                    "elevation_min_deg": (
+                        elev_limits[0]
+                    ),
+                    "elevation_max_deg": (
+                        elev_limits[1]
+                    ),
+                    "elevation_label": elev_label,
+                    "scan_speed_deg_s": (
+                        SWEEP_SPEED
+                    ),
+                    "duration_s": (
+                        SWEEP_DURATION_S
+                    ),
+                    "sample_rate_hz": (
+                        SWEEP_SAMPLE_RATE_HZ
+                    ),
+                    "tod_path": str(fits_path),
+                }
+
+                # Add every value returned by the
+                # atmospheric-power analysis.
+                for key, value in (
+                    atmospheric_row.items()
+                ):
+                    combined_row[
+                        f"atmospheric_{key}"
+                    ] = value
+
+                # Add every value returned by the
+                # optical-depth analysis.
+                for key, value in (
+                    optical_summary.items()
+                ):
+                    combined_row[
+                        f"optical_{key}"
+                    ] = value
+
+                # Add values returned directly by the
+                # MARIA transmission helper.
+                for key, value in (
+                    maria_opacity.items()
+                ):
+                    combined_row[
+                        f"transmission_{key}"
+                    ] = value
+
+                all_results.append(
+                    combined_row
+                )
+
+                # --------------------------------------------
+                # Save a checkpoint after every run
+                # --------------------------------------------
+
+                combined_summary_df = pd.DataFrame(
+                    all_results
+                )
+
+                combined_summary_df.to_csv(
+                    COMBINED_CSV_PATH,
+                    index=False,
+                )
+
+                print(
+                    "Updated combined CSV: "
+                    f"{COMBINED_CSV_PATH}"
+                )
+                print(
+                    "Completed rows: "
+                    f"{len(all_results)}"
+                )
+
+# ============================================================
+# Final combined parameter-sweep summary
+# ============================================================
+
+combined_summary_df = pd.DataFrame(
+    all_results
+)
+
+combined_summary_df = (
+    combined_summary_df
+    .sort_values(
+        by=[
+            "band_ghz",
+            "pwv_mm",
+            "elevation_min_deg",
+            "scan_pattern",
+        ]
+    )
+    .reset_index(drop=True)
+)
+
+combined_summary_df.to_csv(
+    COMBINED_CSV_PATH,
+    index=False,
+)
+
+print("\nAtmospheric parameter sweep complete.")
+print(
+    f"Number of completed simulations: "
+    f"{len(combined_summary_df)}"
+)
+print(
+    f"Combined summary saved to: "
+    f"{COMBINED_CSV_PATH}"
 )
