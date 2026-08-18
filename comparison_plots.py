@@ -11,7 +11,8 @@ import pandas as pd
 
 CSV_PATH = Path(
     "outputs/atmospheric_parameter_sweep/"
-    "all_band_pwv_elevation_summary.csv"
+    "comparison_plots/"
+    "atmospheric_results_reduced_summary.csv"
 )
 
 OUTPUT_DIR = Path(
@@ -198,14 +199,15 @@ def plot_quantity_vs_pwv_by_band(
     filename,
 ):
     """
-    Create one panel per observing band. Within each panel,
-    each elevation range is plotted as a separate line.
+    Create one horizontal panel per observing band.
+    Within each panel, each elevation range is plotted
+    as a separate line.
     """
 
     figure, axes = plt.subplots(
-        len(BANDS),
         1,
-        figsize=(10, 14),
+        len(BANDS),
+        figsize=(18, 5.5),
         sharex=True,
     )
 
@@ -237,8 +239,6 @@ def plot_quantity_vs_pwv_by_band(
                 ),
             )
 
-        axis.set_ylabel(y_label)
-
         axis.set_title(
             f"{band} GHz"
         )
@@ -247,17 +247,35 @@ def plot_quantity_vs_pwv_by_band(
             alpha=0.3
         )
 
-        axis.legend(
-            loc="best"
-        )
+    # Only one y-axis label
+    axes[0].set_ylabel(
+        y_label
+    )
 
-    axes[-1].set_xlabel(
+    # Shared x-axis label
+    figure.supxlabel(
         "PWV (mm)"
+    )
+
+    # One shared legend
+    handles, labels = (
+        axes[0]
+        .get_legend_handles_labels()
+    )
+
+    figure.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.91),
+        ncol=3,
+        frameon=True,
     )
 
     figure.suptitle(
         title,
         fontsize=16,
+        y=0.99,
     )
 
     output_path = (
@@ -265,9 +283,27 @@ def plot_quantity_vs_pwv_by_band(
         / filename
     )
 
-    finish_and_save_plot(
-        figure,
+    figure.tight_layout(
+        rect=[
+            0,
+            0.04,
+            1,
+            0.84,
+        ]
+    )
+
+    figure.savefig(
         output_path,
+        dpi=FIGURE_DPI,
+        bbox_inches="tight",
+    )
+
+    plt.close(
+        figure
+    )
+
+    print(
+        f"Saved: {output_path}"
     )
 
 
@@ -283,14 +319,15 @@ def plot_quantity_vs_elevation_by_band(
     filename,
 ):
     """
-    Create one panel per observing band. Within each panel,
-    each PWV value is plotted as a separate line.
+    Create one horizontal panel per observing band.
+    Within each panel, each PWV value is plotted as
+    a separate line.
     """
 
     figure, axes = plt.subplots(
-        len(BANDS),
         1,
-        figsize=(10, 14),
+        len(BANDS),
+        figsize=(18, 5.5),
         sharex=True,
     )
 
@@ -327,10 +364,6 @@ def plot_quantity_vs_elevation_by_band(
                 ),
             )
 
-        axis.set_ylabel(
-            y_label
-        )
-
         axis.set_title(
             f"{band} GHz"
         )
@@ -339,17 +372,35 @@ def plot_quantity_vs_elevation_by_band(
             alpha=0.3
         )
 
-        axis.legend(
-            loc="best"
-        )
+    # Only one y-axis label
+    axes[0].set_ylabel(
+        y_label
+    )
 
-    axes[-1].set_xlabel(
+    # Shared x-axis label
+    figure.supxlabel(
         "Median observing elevation (deg)"
+    )
+
+    # One shared legend
+    handles, labels = (
+        axes[0]
+        .get_legend_handles_labels()
+    )
+
+    figure.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.91),
+        ncol=3,
+        frameon=True,
     )
 
     figure.suptitle(
         title,
         fontsize=16,
+        y=0.99,
     )
 
     output_path = (
@@ -357,9 +408,27 @@ def plot_quantity_vs_elevation_by_band(
         / filename
     )
 
-    finish_and_save_plot(
-        figure,
+    figure.tight_layout(
+        rect=[
+            0,
+            0.04,
+            1,
+            0.84,
+        ]
+    )
+
+    figure.savefig(
         output_path,
+        dpi=FIGURE_DPI,
+        bbox_inches="tight",
+    )
+
+    plt.close(
+        figure
+    )
+
+    print(
+        f"Saved: {output_path}"
     )
 
 
@@ -713,3 +782,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+    

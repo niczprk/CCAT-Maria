@@ -2924,7 +2924,7 @@ def get_mkid_parameters(band_label):
 def calculate_linewidth_feasibility_metrics(
     power_pW,
     band_label,
-    linewidth_limit=0.10,
+    linewidth_limit=0.75,
 ):
     """
     Calculate fixed-tone MKID frequency excursions for a full
@@ -3508,7 +3508,200 @@ def make_band_for_sweep(
         knee=1.0,
         gain_error=5e-2,
     )
+def calculate_motion_metrics(
+    tod,
+    sample_rate_hz,
+    detector_index=604,
+):
+    """
+    Calculate telescope motor velocity and acceleration quantities
+    from one detector trajectory in the MARIA TOD.
 
+    This follows the same calculation used in the earlier
+    telescope-motion analysis:
+      - motor azimuth is the raw azimuth angular motion
+      - motor elevation is the elevation angular motion
+      - central finite differences are used for velocity
+      - second central differences are used for acceleration
+
+    Parameters
+    ----------
+    tod
+        Loaded MARIA TOD.
+
+    sample_rate_hz : float
+        TOD sampling frequency in Hz.
+
+    detector_index : int
+        Detector used to represent telescope motion.
+        Detector 604 is retained here for consistency with the
+        earlier motion analysis.
+
+    Returns
+    -------
+    metrics : dict
+        Maximum motor velocities and accelerations, plus
+        pass/fail relative to the FYST limits.
+    """
+
+    # --------------------------------------------------------
+    # Extract detector Az/El
+    # --------------------------------------------------------
+
+    az_deg = np.rad2deg(
+        np.asarray(
+            tod.az[detector_index, :],
+            dtype=np.float64,
+        )
+    )
+
+    el_deg = np.rad2deg(
+        np.asarray(
+            tod.el[detector_index, :],
+            dtype=np.float64,
+        )
+    )
+
+    valid = (
+        np.isfinite(az_deg)
+        & np.isfinite(el_deg)
+    )
+
+    az_deg = az_deg[valid]
+    el_deg = el_deg[valid]
+
+    if len(az_deg) < 3:
+        raise ValueError(
+            "At least three finite Az/El samples "
+            "are required for the motion analysis."
+        )
+
+    dt = 1.0 / sample_rate_hz
+
+    # --------------------------------------------------------
+    # Important: unwrap azimuth before differentiating
+    # --------------------------------------------------------
+
+    az_deg_unwrapped = np.rad2deg(
+        np.unwrap(
+            np.deg2rad(az_deg)
+        )
+    )
+
+    # --------------------------------------------------------
+    # Motor velocities
+    # --------------------------------------------------------
+
+    motor_velocity_az = (
+        az_deg_unwrapped[2:]
+        - az_deg_unwrapped[:-2]
+    ) / (2.0 * dt)
+
+    motor_velocity_el = (
+        el_deg[2:]
+        - el_deg[:-2]
+    ) / (2.0 * dt)
+
+    # --------------------------------------------------------
+    # Motor accelerations
+    # --------------------------------------------------------
+
+    motor_acceleration_az = (
+        az_deg_unwrapped[2:]
+        - 2.0 * az_deg_unwrapped[1:-1]
+        + az_deg_unwrapped[:-2]
+    ) / (dt ** 2)
+
+    motor_acceleration_el = (
+        el_deg[2:]
+        - 2.0 * el_deg[1:-1]
+        + el_deg[:-2]
+    ) / (dt ** 2)
+
+    # --------------------------------------------------------
+    # Maximum absolute quantities
+    # --------------------------------------------------------
+
+    max_motor_az_velocity = float(
+        np.nanmax(
+            np.abs(
+                motor_velocity_az
+            )
+        )
+    )
+
+    max_motor_el_velocity = float(
+        np.nanmax(
+            np.abs(
+                motor_velocity_el
+            )
+        )
+    )
+
+    max_motor_az_acceleration = float(
+        np.nanmax(
+            np.abs(
+                motor_acceleration_az
+            )
+        )
+    )
+
+    max_motor_el_acceleration = float(
+        np.nanmax(
+            np.abs(
+                motor_acceleration_el
+            )
+        )
+    )
+
+    # --------------------------------------------------------
+    # FYST motion limits
+    # --------------------------------------------------------
+
+    az_velocity_limit = 3.0
+    el_velocity_limit = 1.5
+
+    az_acceleration_limit = 6.0
+    el_acceleration_limit = 1.5
+
+    passes_limits = (
+        max_motor_az_velocity
+        < az_velocity_limit
+        and max_motor_el_velocity
+        < el_velocity_limit
+        and max_motor_az_acceleration
+        < az_acceleration_limit
+        and max_motor_el_acceleration
+        < el_acceleration_limit
+    )
+
+    metrics = {
+        "motion_detector_index": int(
+            detector_index
+        ),
+
+        "max_motor_az_velocity_deg_s": (
+            max_motor_az_velocity
+        ),
+
+        "max_motor_el_velocity_deg_s": (
+            max_motor_el_velocity
+        ),
+
+        "max_motor_az_acceleration_deg_s2": (
+            max_motor_az_acceleration
+        ),
+
+        "max_motor_el_acceleration_deg_s2": (
+            max_motor_el_acceleration
+        ),
+
+        "mechanical_pass": bool(
+            passes_limits
+        ),
+    }
+
+    return metrics
 
 def analyse_power_against_optical_depth(
     power_pW,
@@ -5595,7 +5788,7 @@ summary_df.to_csv(summary_csv_path, index=False)
 print(f"\nSaved summary statistics CSV to: {summary_csv_path}")
 print(f"Saved plots to: {OUTDIR}")
 
-if RUN_ANIMATION:
+if RUN_ANIMATIONS:
     animation_dir = OUTDIR / "detector_azel_animations"
 
     os.makedirs(animation_dir, exist_ok=True)
@@ -5668,36 +5861,34 @@ if RUN_ANIMATION:
 # Full atmospheric parameter sweep
 # ============================================================
 
-BANDS_TO_TEST = ["280", "350", "850"]
+BANDS_TO_TEST = ["350", "850"]
 PWVS_TO_TEST = [0.36, 0.67, 1.28]
 
-ELEVATION_RANGES_TO_TEST = [(65, 75)]
+ELEVATION_RANGES_TO_TEST =  [
+    (45, 55),
+    (55, 65),
+    (65, 75),
+]
 
-#  [
-#     (45, 55),
-#     (55, 65),
-#     (65, 75),
-# ]
 
-SCAN_PATTERNS_TO_TEST = ["daisy"]
 
-# [
-#     "lissajous",
-#     "raster",
-#     "back_and_forth",
-#     "daisy",
-#     "double_circle",
-#     "pong",
-# ]
+SCAN_PATTERNS_TO_TEST = [
+    "lissajous",
+    "raster",
+    "back_and_forth",
+    "daisy",
+    "double_circle",
+]
 
-# DURATIONS_TO_TEST = [300, 900, 1800]
-DURATIONS_TO_TEST = [600]
+
+
+
+DURATIONS_TO_TEST = [300, 600, 900]
 SWEEP_SPEED = 0.1
-SWEEP_DURATION_S = 900
 SWEEP_SAMPLE_RATE_HZ = 10
 
 
-LINEWIDTH_LIMIT = 0.10
+LINEWIDTH_LIMIT = 0.75
 
 # Physical width of the requested target map.
 # Change this when running the 0.5, 1.5, or 3.0 degree maps.
@@ -5722,10 +5913,37 @@ SWEEP_ROOT.mkdir(
 
 COMBINED_CSV_PATH = (
     SWEEP_ROOT
-    / "all_band_pwv_elevation_summary.csv"
+    / "all_band_pwv_elevation_summary_3.csv"
 )
 
-all_results = []
+
+if COMBINED_CSV_PATH.exists():
+
+    existing_df = pd.read_csv(COMBINED_CSV_PATH)
+
+    if "run_prefix" in existing_df.columns:
+
+        existing_df = (existing_df.drop_duplicates(subset="run_prefix", keep="last").reset_index(drop=True))
+
+    all_results = existing_df.to_dict(orient="records")
+    print("\nFound existing sweep checkpoint:")
+
+    print(f"{COMBINED_CSV_PATH}")
+
+    print(f" Completed rows:"
+          f" {len(all_results)}")
+
+else:
+    print("\nNo existing sweep checkpoint found.")
+    all_results = []
+
+    print("Stating new sweep from scratch.")
+
+completed_runs = {
+    str(row["run_prefix"])
+    for row in all_results
+    if "run_prefix" in row
+}
 
 site = maria.get_site(
     "cerro_chajnantor",
@@ -5771,13 +5989,20 @@ if RUN_PARAMETER_SWEEP:
                         )
 
                         run_prefix = (
-                            f"OrionA_{scan}_"
-                            f"{elev_label}_"
-                            f"speed_{speed_tag}_"
-                            f"PWV_{pwv_tag}mm_"
-                            f"duration_{duration_s}s_"
-                            f"map_{map_tag}deg"
-                        )
+                        f"OrionA_{band_label}GHz_"
+                        f"{scan}_"
+                        f"{elev_label}_"
+                        f"speed_{speed_tag}_"
+                        f"PWV_{pwv_tag}mm_"
+                        f"duration_{duration_s}s_"
+                        f"map_{map_tag}deg"
+                    )
+
+                        if run_prefix in completed_runs:
+                            print(
+                                f"\nSkipping completed run: {run_prefix}"
+                            )
+                            continue
 
                         print("\n" + "=" * 70)
                         print(
@@ -5853,10 +6078,10 @@ if RUN_PARAMETER_SWEEP:
                             pwv_mm=pwv_mm,
                             start_time=START_TIME,
                             total_duration_s=(
-                                SWEEP_DURATION_S
+                                duration_s
                             ),
                             sim_duration_s=(
-                                SWEEP_DURATION_S
+                                duration_s
                             ),
                             sample_rate_hz=(
                                 SWEEP_SAMPLE_RATE_HZ
@@ -5881,6 +6106,43 @@ if RUN_PARAMETER_SWEEP:
                             fits_path,
                             site=site,
                             bands=[maria_band],
+                        )
+                        # --------------------------------------------
+                        # Telescope motor motion metrics
+                        # --------------------------------------------
+
+                        motion_metrics = calculate_motion_metrics(
+                            tod=tod,
+                            sample_rate_hz=SWEEP_SAMPLE_RATE_HZ,
+                            detector_index=604,
+                        )
+
+                        print("\nTelescope motor suitability")
+                        print("-" * 50)
+
+                        print(
+                            "Max motor AZ velocity: "
+                            f"{motion_metrics['max_motor_az_velocity_deg_s']:.6g} deg/s"
+                        )
+
+                        print(
+                            "Max motor EL velocity: "
+                            f"{motion_metrics['max_motor_el_velocity_deg_s']:.6g} deg/s"
+                        )
+
+                        print(
+                            "Max motor AZ acceleration: "
+                            f"{motion_metrics['max_motor_az_acceleration_deg_s2']:.6g} deg/s^2"
+                        )
+
+                        print(
+                            "Max motor EL acceleration: "
+                            f"{motion_metrics['max_motor_el_acceleration_deg_s2']:.6g} deg/s^2"
+                        )
+
+                        print(
+                            "Passes FYST mechanical limits: "
+                            f"{motion_metrics['mechanical_pass']}"
                         )
 
                         power_pW = np.asarray(
@@ -5999,7 +6261,7 @@ if RUN_PARAMETER_SWEEP:
                                 "Prime-Cam Focal-Plane Coverage\n"
                                 f"{band_label} GHz, {scan}, "
                                 f"Elevation={elev_label}, "
-                                f"Duration={SWEEP_DURATION_S} s"
+                                f"Duration={duration_s} s"
                             ),
                         )
 
@@ -6121,7 +6383,7 @@ if RUN_PARAMETER_SWEEP:
 
                             "input_speed_deg_s": SWEEP_SPEED,
                             "map_size_deg": SWEEP_MAP_SIZE_DEG,
-                            "duration_s": SWEEP_DURATION_S,
+                            "duration_s": duration_s,
                             "sample_rate_hz": SWEEP_SAMPLE_RATE_HZ,
                             "tod_path": str(fits_path),
                         }
@@ -6129,6 +6391,8 @@ if RUN_PARAMETER_SWEEP:
                         combined_row.update(linewidth_metrics)
 
                         combined_row.update(coverage_metrics)
+                        
+                        combined_row.update(motion_metrics)
 
                         # Add every value returned by the
                         # atmospheric-power analysis.
@@ -6161,12 +6425,18 @@ if RUN_PARAMETER_SWEEP:
                             combined_row
                         )
 
+                        completed_runs.add(run_prefix)
+
                         # --------------------------------------------
                         # Save a checkpoint after every run
                         # --------------------------------------------
 
                         combined_summary_df = pd.DataFrame(
                             all_results
+                        )
+
+                        combined_summary_df = (
+                            combined_summary_df.drop_duplicates(subset="run_prefix", keep="last")
                         )
 
                         combined_summary_df.to_csv(
