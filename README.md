@@ -2,7 +2,7 @@
 
 # FYST Time-Domain Analysis
 
-This repository contains Python scripts used to investigate potential time-domain observing strategies for the CCAT Observatory's Fred Young Submillimeter Telescope (FYST) using the MARIA simulation framework.
+This repository contains Python scripts used to investigate potential time-domain observing strategies for CCAT Observatory's Fred Young Submillimeter Telescope (FYST) using the MARIA simulation framework.
 
 The analysis focuses on telescope motion, atmospheric loading, and the response of Prime-Cam detectors under different scan patterns and observing conditions.
 
