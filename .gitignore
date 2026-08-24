@@ -19,3 +19,4 @@ Gemfile.lock
 outputs/
 Serpens_ccat_outputs/
 Serpens_ccat_test_outputs/
+data/
