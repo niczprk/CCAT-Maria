@@ -22,6 +22,9 @@ Simulation and analysis outputs are stored locally in `outputs/` and `Serpens_cc
 
 Older and superseded analysis scripts are retained in `archive/`.
 
+
+## Reports
+
 For a more in depth description of the work done with using this analysis the following overleaf reports are available:
 
 1. Report 1: https://www.overleaf.com/project/698bada3c02216c4decf956c
