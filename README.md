@@ -27,7 +27,8 @@ Older and superseded analysis scripts are retained in `archive/`.
 
 For a more in depth description of the work done with using this analysis the following overleaf reports are available:
 
-1. Report 1: https://www.overleaf.com/project/698bada3c02216c4decf956c
+1. Report 1: [Forecasting Atmospheric Opacity and Detector Loading for CCAT
+Prime-Cam Using Mari](https://www.overleaf.com/read/gckbwfyhhdpd#cdc218)
 
 2. Report 2: [An Early Understanding of Scan Dynamics and Detector Response
 for Time-Domain Observations with the CCAT Observatory](https://www.overleaf.com/read/crntfsfrsdqx#cbe543)
