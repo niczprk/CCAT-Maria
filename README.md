@@ -32,4 +32,4 @@ For a more in depth description of the work done with using this analysis the fo
 2. Report 2: [An Early Understanding of Scan Dynamics and Detector Response
 for Time-Domain Observations with the CCAT Observatory](https://www.overleaf.com/read/crntfsfrsdqx#cbe543)
 
-3. [CCAT Appendix](https://www.overleaf.com/read/kqnvngmwbwym#e88a37) 
+3. Appendix: [CCAT Appendix](https://www.overleaf.com/read/kqnvngmwbwym#e88a37) 
