@@ -30,13 +30,20 @@ from maria.instrument import Band
 
 from matplotlib.lines import Line2D
 plot_all = False
+RUN_DAISY_PERCENTILE_ANALYSIS = False
+plot_multi_realization_p95 = True
+
 # ============================================================
 # USER SETTINGS
 # ============================================================
 
+# SUMMARY_CSV = Path(
+#     "outputs/atmospheric_parameter_sweep/"
+#     "all_band_pwv_elevation_summary_3.csv"
+# )
 SUMMARY_CSV = Path(
     "outputs/atmospheric_parameter_sweep/"
-    "all_band_pwv_elevation_summary_3.csv"
+    "daisy_900s_five_realization_summary.csv"
 )
 
 OUTPUT_DIR = Path(
@@ -101,8 +108,8 @@ required_columns = [
     "input_speed_deg_s",
     "map_size_deg",
     "duration_s",
-
-    # Detector stability
+    "realization",
+    "p50_abs_delta_f_over_fwhm",
     "p95_abs_delta_f_over_fwhm",
 
     # Coverage
@@ -139,6 +146,117 @@ df["scan_pattern"] = (
     .str.lower()
     .str.replace("-", "_", regex=False)
     .str.replace(" ", "_", regex=False)
+)
+
+
+# ============================================================
+# SUMMARIZE FIVE REALIZATIONS
+# ============================================================
+
+REALIZATION_GROUP_COLUMNS = [
+    "band_ghz",
+    "pwv_mm",
+    "scan_pattern",
+    "elevation_min_deg",
+    "elevation_max_deg",
+    "input_speed_deg_s",
+    "map_size_deg",
+    "duration_s",
+]
+
+
+def summarize_realization_group(group):
+
+    p50_values = (
+        group["p50_abs_delta_f_over_fwhm"]
+        .dropna()
+        .to_numpy()
+    )
+
+    p95_values = (
+        group["p95_abs_delta_f_over_fwhm"]
+        .dropna()
+        .to_numpy()
+    )
+
+    return pd.Series({
+        "n_realizations": len(group),
+
+        # Median response across the 5 simulations
+        "p50_realization_median": np.nanmedian(
+            p50_values
+        ),
+
+        "p95_realization_median": np.nanmedian(
+            p95_values
+        ),
+
+        # Full run-to-run range
+        "p50_realization_min": np.nanmin(
+            p50_values
+        ),
+
+        "p50_realization_max": np.nanmax(
+            p50_values
+        ),
+
+        "p95_realization_min": np.nanmin(
+            p95_values
+        ),
+
+        "p95_realization_max": np.nanmax(
+            p95_values
+        ),
+    })
+
+
+realization_summary_df = (
+    df
+    .groupby(
+        REALIZATION_GROUP_COLUMNS
+    )
+    .apply(
+        summarize_realization_group
+    )
+    .reset_index()
+)
+
+# ------------------------------------------------------------
+# Check that all configurations have five realizations
+# ------------------------------------------------------------
+
+incomplete = realization_summary_df[
+    realization_summary_df["n_realizations"]
+    != 5
+]
+
+if not incomplete.empty:
+
+    print(
+        "\nWARNING: Some configurations do not "
+        "contain five realizations:"
+    )
+
+    print(
+        incomplete[
+            REALIZATION_GROUP_COLUMNS
+            + ["n_realizations"]
+        ].to_string(index=False)
+    )
+
+REALIZATION_SUMMARY_CSV = (
+    OUTPUT_DIR
+    / "daisy_900s_five_realization_statistics.csv"
+)
+
+realization_summary_df.to_csv(
+    REALIZATION_SUMMARY_CSV,
+    index=False,
+)
+
+print(
+    "\nSaved five-realization statistical summary:\n"
+    f"{REALIZATION_SUMMARY_CSV}"
 )
 
 
@@ -1089,7 +1207,6 @@ def get_tod_path(
 # ============================================================
 
 
-RUN_DAISY_PERCENTILE_ANALYSIS = False
 
 DAISY_PERCENTILE_BANDS = [
     280,
@@ -1550,6 +1667,144 @@ if RUN_DAISY_PERCENTILE_ANALYSIS:
                     f"{power_pW.shape}"
                 )
 
+
+                # --------------------------------------------
+                # POWER / RESPONSIVITY DIAGNOSTICS
+                # --------------------------------------------
+
+                parameters = get_percentile_mkid_parameters(
+                    band_ghz
+                )
+
+                R_0 = parameters["R_0"]
+                P_0 = parameters["P_0"]
+
+                # Convert pW -> W
+                power_W = power_pW * 1e-12
+
+                # Per-detector operating/reference power.
+                # This is the same P_i used in the frequency
+                # response calculation.
+                P_i_W = np.nanmedian(
+                    power_W,
+                    axis=1,
+                )
+
+                P_i_pW = P_i_W * 1e12
+
+
+                # Power excursion about each detector's
+                # fixed operating point.
+                delta_P_W = (
+                    power_W
+                    - P_i_W[:, None]
+                )
+
+                delta_P_pW = delta_P_W * 1e12
+
+
+                # Responsivity at each detector's operating point.
+                responsivity = (
+                    R_0
+                    / np.sqrt(
+                        1.0
+                        + P_i_W / P_0
+                    )
+                )
+
+
+                # This isolates the PWV-dependent part of
+                # R(P_i) * Delta P, apart from R_0.
+                scaled_delta_P_W = (
+                    np.abs(delta_P_W)
+                    / np.sqrt(
+                        1.0
+                        + P_i_W[:, None] / P_0
+                    )
+                )
+
+                abs_delta_P_pW = np.abs(delta_P_pW)
+
+                delta_P_over_sqrt_P = (
+                    abs_delta_P_pW / np.sqrt(P_i_pW[:, None])
+                )
+
+                fractional_delta_P = (
+                    abs_delta_P_pW / P_i_pW[:, None]
+                )
+
+                # --------------------------------------------
+                # Summarize this observation
+                # --------------------------------------------
+
+                power_metrics = {
+
+                    # Typical detector operating power
+                    "median_P_i_pW": float(
+                        np.nanmedian(P_i_pW)
+                    ),
+
+                    # Detector-to-detector range
+                    "p16_P_i_pW": float(
+                        np.nanpercentile(P_i_pW, 16)
+                    ),
+
+                    "p84_P_i_pW": float(
+                        np.nanpercentile(P_i_pW, 84)
+                    ),
+
+                    # Typical absolute responsivity
+                    "median_abs_responsivity_Hz_W": float(
+                        np.nanmedian(
+                            np.abs(responsivity)
+                        )
+                    ),
+
+                    # Characteristic power excursions
+                    "p50_abs_delta_P_pW": float(
+                        np.nanpercentile(
+                            np.abs(delta_P_pW),
+                            50,
+                        )
+                    ),
+
+                    "p95_abs_delta_P_pW": float(
+                        np.nanpercentile(
+                            np.abs(delta_P_pW),
+                            95,
+                        )
+                    ),
+
+                    # Delta P after accounting for the
+                    # P_i-dependent responsivity suppression
+                    "p50_scaled_delta_P_W": float(
+                        np.nanpercentile(
+                            scaled_delta_P_W,
+                            50,
+                        )
+                    ),
+
+                    "p95_scaled_delta_P_W": float(
+                        np.nanpercentile(
+                            scaled_delta_P_W,
+                            95,
+                        )
+                    ),
+                    "p95_delta_P_over_sqrt_P": float(
+                        np.nanpercentile(
+                            delta_P_over_sqrt_P,
+                            95,
+                        )
+                    ),
+                    "p95_fractional_delta_P": float(
+                        np.nanpercentile(
+                            fractional_delta_P,
+                            95,
+                        )
+                    ),
+                }
+
+
                 # --------------------------------------------
                 # Frequency response
                 # --------------------------------------------
@@ -1609,6 +1864,10 @@ if RUN_DAISY_PERCENTILE_ANALYSIS:
 
                 row.update(
                     metrics
+                )
+
+                row.update(
+                    power_metrics
                 )
 
                 percentile_rows.append(
@@ -2084,3 +2343,691 @@ print(
     "\nSaved P50/P95 frequency-response figure:\n"
     f"{output_path}"
 )
+
+
+# ============================================================
+# DIAGNOSTIC PLOT:
+# POWER, RESPONSIVITY, AND DELTA-P SCALING
+# 280 AND 350 GHz
+# ============================================================
+
+diagnostic_columns = [
+    "band_ghz",
+    "pwv_mm",
+    "elevation_min_deg",
+    "elevation_max_deg",
+    "median_P_i_pW",
+    "median_abs_responsivity_Hz_W",
+    "p95_abs_delta_P_pW",
+    "p95_scaled_delta_P_W",
+]
+
+missing_diagnostic_columns = [
+    column
+    for column in diagnostic_columns
+    if column not in percentile_df.columns
+]
+
+if missing_diagnostic_columns:
+    raise KeyError(
+        "Diagnostic columns are missing from the percentile CSV:\n"
+        + "\n".join(missing_diagnostic_columns)
+    )
+
+
+# Only investigate the 280 and 350 GHz modules for now.
+diagnostic_df = percentile_df[
+    percentile_df["band_ghz"].isin(
+        [280, 350]
+    )
+].copy()
+
+
+# ============================================================
+# LOOP OVER BANDS
+# ============================================================
+
+for band in [280, 350]:
+
+    band_df = diagnostic_df[
+        diagnostic_df["band_ghz"] == band
+    ].copy()
+
+    if band_df.empty:
+        print(
+            f"No diagnostic data found for {band} GHz."
+        )
+        continue
+
+
+    # --------------------------------------------------------
+    # Make four-panel diagnostic figure
+    # --------------------------------------------------------
+
+    fig, axes = plt.subplots(
+        2,
+        2,
+        figsize=(14, 10),
+        sharex=True,
+    )
+
+    ax_power = axes[0, 0]
+    ax_resp = axes[0, 1]
+    ax_delta_p = axes[1, 0]
+    ax_scaled = axes[1, 1]
+
+
+    # --------------------------------------------------------
+    # Loop over elevation ranges
+    # --------------------------------------------------------
+
+    elevation_ranges = (
+        band_df[
+            [
+                "elevation_min_deg",
+                "elevation_max_deg",
+            ]
+        ]
+        .drop_duplicates()
+        .sort_values(
+            "elevation_min_deg"
+        )
+    )
+
+    for _, elevation_row in elevation_ranges.iterrows():
+
+        elev_min = elevation_row[
+            "elevation_min_deg"
+        ]
+
+        elev_max = elevation_row[
+            "elevation_max_deg"
+        ]
+
+        elevation_df = band_df[
+            (
+                band_df[
+                    "elevation_min_deg"
+                ] == elev_min
+            )
+            & (
+                band_df[
+                    "elevation_max_deg"
+                ] == elev_max
+            )
+        ].copy()
+
+        elevation_df = (
+            elevation_df
+            .sort_values(
+                "pwv_mm"
+            )
+        )
+
+        if elevation_df.empty:
+            continue
+
+        pwv = elevation_df[
+            "pwv_mm"
+        ].to_numpy()
+
+        label = (
+            f"{elev_min:g}-"
+            f"{elev_max:g}°"
+        )
+
+
+        # ----------------------------------------------------
+        # PANEL 1:
+        # Median operating power P_i
+        # ----------------------------------------------------
+
+        ax_power.plot(
+            pwv,
+            elevation_df[
+                "median_P_i_pW"
+            ],
+            marker="o",
+            linewidth=2.5,
+            label=label,
+        )
+
+
+        # ----------------------------------------------------
+        # PANEL 2:
+        # Median absolute responsivity
+        # ----------------------------------------------------
+
+        ax_resp.plot(
+            pwv,
+            elevation_df[
+                "median_abs_responsivity_Hz_W"
+            ],
+            marker="o",
+            linewidth=2.5,
+            label=label,
+        )
+
+
+        # ----------------------------------------------------
+        # PANEL 3:
+        # P95 absolute power excursion
+        # ----------------------------------------------------
+
+        ax_delta_p.plot(
+            pwv,
+            elevation_df[
+                "p95_abs_delta_P_pW"
+            ],
+            marker="o",
+            linewidth=2.5,
+            label=label,
+        )
+
+
+        # ----------------------------------------------------
+        # PANEL 4:
+        # P95 Delta-P after responsivity suppression term
+        # ----------------------------------------------------
+
+        ax_scaled.plot(
+            pwv,
+            elevation_df[
+                "p95_scaled_delta_P_W"
+            ],
+            marker="o",
+            linewidth=2.5,
+            label=label,
+        )
+
+
+    # ========================================================
+    # LABELS
+    # ========================================================
+
+    ax_power.set_ylabel(
+        r"Median $P_i$ (pW)",
+        fontsize=13,
+    )
+
+    ax_resp.set_ylabel(
+        r"Median $|R(P_i)|$ (Hz W$^{-1}$)",
+        fontsize=13,
+    )
+
+    ax_delta_p.set_ylabel(
+        r"$P_{95}(|\Delta P|)$ (pW)",
+        fontsize=13,
+    )
+
+    ax_scaled.set_ylabel(
+        r"$P_{95}\left("
+        r"|\Delta P|/"
+        r"\sqrt{1+P_i/P_0}"
+        r"\right)$ (W)",
+        fontsize=12,
+    )
+
+    ax_delta_p.set_xlabel(
+        "PWV (mm)",
+        fontsize=13,
+    )
+
+    ax_scaled.set_xlabel(
+        "PWV (mm)",
+        fontsize=13,
+    )
+
+
+    # ========================================================
+    # PANEL TITLES
+    # ========================================================
+
+    ax_power.set_title(
+        "Detector Operating Power",
+        fontsize=14,
+    )
+
+    ax_resp.set_title(
+        "MKID Responsivity",
+        fontsize=14,
+    )
+
+    ax_delta_p.set_title(
+        "Atmospheric Power Excursions",
+        fontsize=14,
+    )
+
+    ax_scaled.set_title(
+        "Power Excursions After Responsivity Suppression",
+        fontsize=14,
+    )
+
+
+    # ========================================================
+    # FORMATTING
+    # ========================================================
+
+    for axis in axes.flat:
+
+        axis.grid(
+            alpha=0.3
+        )
+
+        axis.tick_params(
+            labelsize=11
+        )
+
+
+    # Use one common legend.
+    handles, labels = (
+        ax_power.get_legend_handles_labels()
+    )
+
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.93),
+        ncol=3,
+        frameon=True,
+        fontsize=12,
+    )
+
+
+    # ========================================================
+    # OVERALL TITLE
+    # ========================================================
+
+    fig.suptitle(
+        "Power and Responsivity Diagnostics\n"
+        f"{band} GHz, 900 s Daisy scans",
+        fontsize=17,
+        y=0.99,
+    )
+
+
+    # ========================================================
+    # LAYOUT
+    # ========================================================
+
+    fig.tight_layout(
+        rect=[
+            0,
+            0,
+            1,
+            0.90,
+        ]
+    )
+
+
+    # ========================================================
+    # SAVE
+    # ========================================================
+
+    diagnostic_output = (
+        OUTPUT_DIR
+        / (
+            f"{band}GHz_"
+            "power_responsivity_diagnostics_"
+            "daisy_900s.png"
+        )
+    )
+
+    fig.savefig(
+        diagnostic_output,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+
+    print(
+        "\nSaved diagnostic figure:\n"
+        f"{diagnostic_output}"
+    )
+
+    # ============================================================
+# DELTA-P SCALING DIAGNOSTICS
+# ============================================================
+
+for band in [280, 350]:
+
+    band_df = percentile_df[
+        percentile_df["band_ghz"] == band
+    ].copy()
+
+    fig, axes = plt.subplots(
+        1,
+        2,
+        figsize=(13, 5),
+        sharex=True,
+    )
+
+    elevation_ranges = (
+        band_df[
+            [
+                "elevation_min_deg",
+                "elevation_max_deg",
+            ]
+        ]
+        .drop_duplicates()
+        .sort_values("elevation_min_deg")
+    )
+
+    for _, elevation_row in elevation_ranges.iterrows():
+
+        elev_min = elevation_row["elevation_min_deg"]
+        elev_max = elevation_row["elevation_max_deg"]
+
+        elevation_df = band_df[
+            (
+                band_df["elevation_min_deg"]
+                == elev_min
+            )
+            & (
+                band_df["elevation_max_deg"]
+                == elev_max
+            )
+        ].sort_values("pwv_mm")
+
+        label = (
+            f"{elev_min:g}-"
+            f"{elev_max:g}°"
+        )
+
+        axes[0].plot(
+            elevation_df["pwv_mm"],
+            elevation_df[
+                "p95_delta_P_over_sqrt_P"
+            ],
+            marker="o",
+            linewidth=2.5,
+            label=label,
+        )
+
+        axes[1].plot(
+            elevation_df["pwv_mm"],
+            elevation_df[
+                "p95_fractional_delta_P"
+            ],
+            marker="o",
+            linewidth=2.5,
+            label=label,
+        )
+
+    axes[0].set_title(
+        r"$P_{95}(|\Delta P|/\sqrt{P_i})$"
+    )
+
+    axes[1].set_title(
+        r"$P_{95}(|\Delta P|/P_i)$"
+    )
+
+    axes[0].set_ylabel(
+        r"$|\Delta P|/\sqrt{P_i}$"
+    )
+
+    axes[1].set_ylabel(
+        r"$|\Delta P|/P_i$"
+    )
+
+    for axis in axes:
+        axis.set_xlabel("PWV (mm)")
+        axis.grid(alpha=0.3)
+
+    handles, labels = (
+        axes[0].get_legend_handles_labels()
+    )
+
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        ncol=3,
+    )
+
+    fig.suptitle(
+        f"{band} GHz Power-Fluctuation Scaling\n"
+        "900 s Daisy scans",
+        fontsize=16,
+    )
+
+    fig.tight_layout(
+        rect=[0, 0, 1, 0.88]
+    )
+
+    output_path = (
+        OUTPUT_DIR
+        / (
+            f"{band}GHz_delta_P_scaling_"
+            "daisy_900s.png"
+        )
+    )
+
+    fig.savefig(
+        output_path,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+
+if plot_multi_realization_p95:
+    # ============================================================
+    # PLOT:
+    # CROSS-BAND P95 FREQUENCY RESPONSE
+    # FIVE INDEPENDENT REALIZATIONS
+    # ============================================================
+
+    SUMMARY_SCAN_PATTERN = "daisy"
+    SUMMARY_DURATION = 900
+
+    plot_df = realization_summary_df[
+        (
+            realization_summary_df["scan_pattern"]
+            == SUMMARY_SCAN_PATTERN
+        )
+        & (
+            realization_summary_df["duration_s"]
+            == SUMMARY_DURATION
+        )
+    ].copy()
+
+
+    bands = [
+        280,
+        350,
+        850,
+    ]
+
+
+    elevation_ranges = (
+        plot_df[
+            [
+                "elevation_min_deg",
+                "elevation_max_deg",
+            ]
+        ]
+        .drop_duplicates()
+        .sort_values(
+            "elevation_min_deg"
+        )
+    )
+
+
+    fig, axes = plt.subplots(
+        1,
+        3,
+        figsize=(24, 7.5),
+        sharex=True,
+        sharey=True,
+    )
+
+
+    for axis, band in zip(
+        axes,
+        bands,
+    ):
+
+        band_df = plot_df[
+            plot_df["band_ghz"] == band
+        ].copy()
+
+
+        for _, elevation_row in (
+            elevation_ranges.iterrows()
+        ):
+
+            elev_min = elevation_row[
+                "elevation_min_deg"
+            ]
+
+            elev_max = elevation_row[
+                "elevation_max_deg"
+            ]
+
+
+            elevation_df = band_df[
+                (
+                    band_df["elevation_min_deg"]
+                    == elev_min
+                )
+                & (
+                    band_df["elevation_max_deg"]
+                    == elev_max
+                )
+            ].sort_values(
+                "pwv_mm"
+            )
+
+
+            if elevation_df.empty:
+                continue
+
+
+            pwv = elevation_df[
+                "pwv_mm"
+            ].to_numpy()
+
+
+            p95 = elevation_df[
+                "p95_realization_median"
+            ].to_numpy()
+
+            p95_min = elevation_df[
+                "p95_realization_min"
+            ].to_numpy()
+
+            p95_max = elevation_df[
+                "p95_realization_max"
+            ].to_numpy()
+
+
+            # Median P95 across the five simulations
+            line = axis.plot(
+                pwv,
+                p95,
+                marker="o",
+                markersize=7,
+                linewidth=3,
+                label=(
+                    f"{elev_min:g}-"
+                    f"{elev_max:g}°"
+                ),
+            )[0]
+
+
+            # Full realization-to-realization range
+            axis.errorbar(
+                pwv,
+                p95,
+                yerr=[
+                    p95 - p95_min,
+                    p95_max - p95,
+                ],
+                fmt="none",
+                capsize=5,
+                linewidth=1.5,
+                color=line.get_color(),
+            )
+
+
+        axis.set_title(
+            f"{band} GHz",
+            fontsize=18,
+        )
+
+        axis.grid(
+            alpha=0.3
+        )
+
+        axis.tick_params(
+            labelsize=15
+        )
+
+
+    axes[0].set_ylabel(
+        r"$P_{95}\left(|\Delta f/\mathrm{FWHM}|\right)$",
+        fontsize=16,
+    )
+
+
+    fig.supxlabel(
+        "PWV (mm)",
+        fontsize=16,
+    )
+
+
+    handles, labels = (
+        axes[0].get_legend_handles_labels()
+    )
+
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.89),
+        ncol=3,
+        frameon=True,
+        fontsize=13,
+    )
+
+
+    fig.suptitle(
+        "Detector Frequency Response Across Prime-Cam Bands\n"
+        "900 s Daisy scans — median of 5 realizations",
+        fontsize=17,
+        y=0.99,
+    )
+
+
+    fig.tight_layout(
+        rect=[
+            0,
+            0.04,
+            1,
+            0.83,
+        ]
+    )
+
+
+    output_path = (
+        OUTPUT_DIR
+        / "cross_band_p95_frequency_response_daisy_900s_5realizations.png"
+    )
+
+
+    fig.savefig(
+        output_path,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+
+
+    print(
+        "\nSaved five-realization P95 figure:\n"
+        f"{output_path}"
+    )   

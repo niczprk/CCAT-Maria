@@ -5860,8 +5860,8 @@ if RUN_ANIMATIONS:
 # ============================================================
 # Full atmospheric parameter sweep
 # ============================================================
-
-BANDS_TO_TEST = ["350", "850"]
+N_REALIZATIONS = 5
+BANDS_TO_TEST = ["280", "350", "850"]
 PWVS_TO_TEST = [0.36, 0.67, 1.28]
 
 ELEVATION_RANGES_TO_TEST =  [
@@ -5873,17 +5873,13 @@ ELEVATION_RANGES_TO_TEST =  [
 
 
 SCAN_PATTERNS_TO_TEST = [
-    "lissajous",
-    "raster",
-    "back_and_forth",
     "daisy",
-    "double_circle",
 ]
 
 
 
 
-DURATIONS_TO_TEST = [300, 600, 900]
+DURATIONS_TO_TEST = [900]
 SWEEP_SPEED = 0.1
 SWEEP_SAMPLE_RATE_HZ = 10
 
@@ -5913,7 +5909,7 @@ SWEEP_ROOT.mkdir(
 
 COMBINED_CSV_PATH = (
     SWEEP_ROOT
-    / "all_band_pwv_elevation_summary_3.csv"
+    / "daisy_900s_five_realization_summary.csv"
 )
 
 
@@ -5968,490 +5964,494 @@ if RUN_PARAMETER_SWEEP:
 
                     for elev_limits in ELEVATION_RANGES_TO_TEST:
 
-                        elev_label = (
-                            f"{elev_limits[0]}-"
-                            f"{elev_limits[1]}"
+                        for realization in range(1, N_REALIZATIONS + 1):
+
+                            elev_label = (
+                                f"{elev_limits[0]}-"
+                                f"{elev_limits[1]}"
+                            )
+
+                            pwv_tag = (
+                                f"{pwv_mm:.2f}"
+                                .replace(".", "p")
+                            )
+
+                            speed_tag = (
+                                f"{SWEEP_SPEED:.1f}"
+                                .replace(".", "p")
+                            )
+
+                            map_tag = (
+                                f"{SWEEP_MAP_SIZE_DEG:.1f}"
+                                .replace(".", "p")
+                            )
+
+                            run_prefix = (
+                            f"OrionA_{band_label}GHz_"
+                            f"{scan}_"
+                            f"{elev_label}_"
+                            f"speed_{speed_tag}_"
+                            f"PWV_{pwv_tag}mm_"
+                            f"duration_{duration_s}s_"
+                            f"map_{map_tag}deg"
+                            f"realization_{realization:02d}"
                         )
 
-                        pwv_tag = (
-                            f"{pwv_mm:.2f}"
-                            .replace(".", "p")
-                        )
+                            if run_prefix in completed_runs:
+                                print(
+                                    f"\nSkipping completed run: {run_prefix}"
+                                )
+                                continue
 
-                        speed_tag = (
-                            f"{SWEEP_SPEED:.1f}"
-                            .replace(".", "p")
-                        )
-
-                        map_tag = (
-                            f"{SWEEP_MAP_SIZE_DEG:.1f}"
-                            .replace(".", "p")
-                        )
-
-                        run_prefix = (
-                        f"OrionA_{band_label}GHz_"
-                        f"{scan}_"
-                        f"{elev_label}_"
-                        f"speed_{speed_tag}_"
-                        f"PWV_{pwv_tag}mm_"
-                        f"duration_{duration_s}s_"
-                        f"map_{map_tag}deg"
-                    )
-
-                        if run_prefix in completed_runs:
+                            print("\n" + "=" * 70)
                             print(
-                                f"\nSkipping completed run: {run_prefix}"
+                                "Running atmospheric sweep:"
                             )
-                            continue
-
-                        print("\n" + "=" * 70)
-                        print(
-                            "Running atmospheric sweep:"
-                        )
-                        print(
-                            f"Band={band_label} GHz, "
-                            f"PWV={pwv_mm:.2f} mm, "
-                            f"Elevation={elev_label}, "
-                            f"Scan={scan}"
-                        )
-                        print("=" * 70)
-
-                        # --------------------------------------------
-                        # Paths for this individual simulation
-                        # --------------------------------------------
-
-                        tod_outdir = Path(
-                            f"outputs/{run_prefix}_tods"
-                        )
-
-                        fits_path = (
-                            tod_outdir
-                            / (
-                                f"{run_prefix}_"
-                                "dim_reduced_tods.fits"
-                            )
-                        )
-
-                        run_outdir = (
-                            SWEEP_ROOT
-                            / f"{band_label}GHz"
-                            / scan
-                            / f"{duration_s}s"
-                            / (
-                                f"PWV_{pwv_tag}mm_"
-                                f"elev_{elev_label}"
-                            )
-                        )
-
-                        run_outdir.mkdir(
-                            parents=True,
-                            exist_ok=True,
-                        )
-
-                        comparison_directory = (
-                            SWEEP_ROOT
-                            / f"{band_label}GHz"
-                            / scan
-                            / f"{duration_s}s"
-                            / "combined_comparisons"
-                        )
-
-                        comparison_directory.mkdir(
-                            parents=True,
-                            exist_ok=True,
-                        )
-
-                        # --------------------------------------------
-                        # Run MARIA simulation
-                        # --------------------------------------------
-
-                        simple_ccat.tod_analysis(
-                            PREFIX=run_prefix,
-                            tod_diagnostics=False,
-                            maps=False,
-                            save_all_plots=False,
-                            run_mode="fits",
-                            atm_plot=False,
-                            temp_mode="inst",
-                            ccat_band=band_label,
-                            map_type="BM",
-                            pwv_mm=pwv_mm,
-                            start_time=START_TIME,
-                            total_duration_s=(
-                                duration_s
-                            ),
-                            sim_duration_s=(
-                                duration_s
-                            ),
-                            sample_rate_hz=(
-                                SWEEP_SAMPLE_RATE_HZ
-                            ),
-                            scan_pattern=scan,
-                            el_limits=elev_limits,
-                            speed=SWEEP_SPEED,
-                        )
-
-                        if not fits_path.exists():
-                            raise FileNotFoundError(
-                                "The expected TOD file was "
-                                "not created:\n"
-                                f"{fits_path}"
-                            )
-
-                        # --------------------------------------------
-                        # Load the TOD produced by simple_ccat
-                        # --------------------------------------------
-
-                        tod = maria.tod.load(
-                            fits_path,
-                            site=site,
-                            bands=[maria_band],
-                        )
-                        # --------------------------------------------
-                        # Telescope motor motion metrics
-                        # --------------------------------------------
-
-                        motion_metrics = calculate_motion_metrics(
-                            tod=tod,
-                            sample_rate_hz=SWEEP_SAMPLE_RATE_HZ,
-                            detector_index=604,
-                        )
-
-                        print("\nTelescope motor suitability")
-                        print("-" * 50)
-
-                        print(
-                            "Max motor AZ velocity: "
-                            f"{motion_metrics['max_motor_az_velocity_deg_s']:.6g} deg/s"
-                        )
-
-                        print(
-                            "Max motor EL velocity: "
-                            f"{motion_metrics['max_motor_el_velocity_deg_s']:.6g} deg/s"
-                        )
-
-                        print(
-                            "Max motor AZ acceleration: "
-                            f"{motion_metrics['max_motor_az_acceleration_deg_s2']:.6g} deg/s^2"
-                        )
-
-                        print(
-                            "Max motor EL acceleration: "
-                            f"{motion_metrics['max_motor_el_acceleration_deg_s2']:.6g} deg/s^2"
-                        )
-
-                        print(
-                            "Passes FYST mechanical limits: "
-                            f"{motion_metrics['mechanical_pass']}"
-                        )
-
-                        power_pW = np.asarray(
-                            tod.to("pW").signal,
-                            dtype=np.float64,
-                        )
-
-                        elevation_raw = np.squeeze(
-                            np.asarray(
-                                tod.el,
-                                dtype=np.float64,
-                            )
-                        )
-
-                        # Match the detector-by-time power shape.
-                        if elevation_raw.shape == power_pW.shape:
-                            elevation_matrix = elevation_raw
-
-                        elif (
-                            elevation_raw.T.shape
-                            == power_pW.shape
-                        ):
-                            elevation_matrix = elevation_raw.T
-
-                        else:
-                            raise ValueError(
-                                "Could not match the elevation "
-                                "array to the power array. "
-                                f"Elevation shape: "
-                                f"{elevation_raw.shape}; "
-                                f"power shape: "
-                                f"{power_pW.shape}"
-                            )
-
-                        elevation_deg_matrix = np.rad2deg(
-                            elevation_matrix
-                        )
-
-                        time_sec = (
-                            np.arange(
-                                power_pW.shape[1],
-                                dtype=np.float64,
-                            )
-                            / SWEEP_SAMPLE_RATE_HZ
-                        )
-
-                        # --------------------------------------------
-                        # Fixed-tone detector-linewidth metrics
-                        # --------------------------------------------
-
-                        (
-                            linewidth_metrics,
-                            delta_f_fwhm_matrix,
-                        ) = calculate_linewidth_feasibility_metrics(
-                            power_pW=power_pW,
-                            band_label=band_label,
-                            linewidth_limit=LINEWIDTH_LIMIT,
-                        )
-
-                        print("\nDetector-linewidth suitability")
-                        print("-" * 50)
-                        print(
-                            "Fraction of all samples within limit: "
-                            f"{linewidth_metrics['fraction_within_linewidth_limit']:.4%}"
-                        )
-                        print(
-                            "95th percentile absolute excursion: "
-                            f"{linewidth_metrics['p95_abs_delta_f_over_fwhm']:.6g}"
-                        )
-                        print(
-                            "Maximum absolute excursion: "
-                            f"{linewidth_metrics['max_abs_delta_f_over_fwhm']:.6g}"
-                        )
-                        print(
-                            "Fraction of detectors fully within limit: "
-                            f"{linewidth_metrics['fraction_detectors_fully_within_limit']:.4%}"
-                        )
-
-
-                        # --------------------------------------------
-                        # Focal-plane coverage metrics
-                        # --------------------------------------------
-
-                        (
-                            coverage_metrics,
-                            coverage_hit_map,
-                            coverage_x_edges,
-                            coverage_y_edges,
-                        ) = calculate_sky_coverage_metrics(
-                            tod=tod,
-                            power_shape=power_pW.shape,
-                            map_size_deg=SWEEP_MAP_SIZE_DEG,
-                            pixel_size_deg=COVERAGE_PIXEL_SIZE_DEG,
-                            minimum_hits_for_coverage=(
-                                MIN_HITS_FOR_COVERAGE
-                            ),
-                            minimum_hits_for_revisit=(
-                                MIN_HITS_FOR_REVISIT
-                            ),
-                        )
-
-                        coverage_plot_path = (
-                            run_outdir
-                            / (
-                                f"{run_prefix}_{band_label}GHz_"
-                                "focal_plane_coverage_hit_map.png"
-                            )
-                        )
-
-                        save_coverage_hit_map(
-                            hit_map=coverage_hit_map,
-                            x_edges=coverage_x_edges,
-                            y_edges=coverage_y_edges,
-                            output_path=coverage_plot_path,
-                            title=(
-                                "Prime-Cam Focal-Plane Coverage\n"
-                                f"{band_label} GHz, {scan}, "
+                            print(
+                                f"Band={band_label} GHz, "
+                                f"PWV={pwv_mm:.2f} mm, "
                                 f"Elevation={elev_label}, "
-                                f"Duration={duration_s} s"
-                            ),
-                        )
-
-                        print("\nCoverage efficiency")
-                        print("-" * 50)
-                        print(
-                            "Coverage fraction: "
-                            f"{coverage_metrics['coverage_fraction']:.4%}"
-                        )
-                        print(
-                            "Revisit fraction: "
-                            f"{coverage_metrics['revisit_fraction']:.4%}"
-                        )
-                        print(
-                            "Hit-count coefficient of variation: "
-                            f"{coverage_metrics['hit_count_cv']:.6g}"
-                        )
-
-                        # --------------------------------------------
-                        # Elevation, airmass, and small-scale analysis
-                        # --------------------------------------------
-
-                        (
-                            atmospheric_metrics,
-                            atmospheric_summary_df,
-                        ) = run_atmospheric_power_tests(
-                            power_pW=power_pW,
-                            elevation_deg_matrix=(
-                                elevation_deg_matrix
-                            ),
-                            time_sec=time_sec,
-                            pwv_mm=pwv_mm,
-                            outdir=run_outdir,
-                            comparison_directory=(
-                                comparison_directory
-                            ),
-                            run_prefix=run_prefix,
-                            band_label=band_label,
-                            scan_pattern=scan,
-                            elevation_label=elev_label,
-                            elevation_bin_width_deg=(
-                                ELEVATION_BIN_WIDTH_DEG
-                            ),
-                            airmass_bin_width=(
-                                AIRMass_BIN_WIDTH
-                            ),
-                        )
-
-                        # --------------------------------------------
-                        # Transmission-derived tau_0
-                        # --------------------------------------------
-
-                        array_elevation_deg = np.nanmedian(
-                            elevation_deg_matrix,
-                            axis=0,
-                        )
-
-                        reference_elevation_deg = float(
-                            np.nanmedian(
-                                array_elevation_deg
+                                f"Scan={scan}"
                             )
-                        )
+                            print("=" * 70)
 
-                        maria_opacity = (
-                            get_tau0_from_maria_transmission(
-                                band=maria_band,
+                            # --------------------------------------------
+                            # Paths for this individual simulation
+                            # --------------------------------------------
+
+                            tod_outdir = Path(
+                                f"outputs/{run_prefix}_tods"
+                            )
+
+                            fits_path = (
+                                tod_outdir
+                                / (
+                                    f"{run_prefix}_"
+                                    "dim_reduced_tods.fits"
+                                )
+                            )
+
+                            run_outdir = (
+                                SWEEP_ROOT
+                                / f"{band_label}GHz"
+                                / scan
+                                / f"{duration_s}s"
+                                / (
+                                    f"PWV_{pwv_tag}mm_"
+                                    f"elev_{elev_label}"
+                                )
+                            )
+
+                            run_outdir.mkdir(
+                                parents=True,
+                                exist_ok=True,
+                            )
+
+                            comparison_directory = (
+                                SWEEP_ROOT
+                                / f"{band_label}GHz"
+                                / scan
+                                / f"{duration_s}s"
+                                / "combined_comparisons"
+                            )
+
+                            comparison_directory.mkdir(
+                                parents=True,
+                                exist_ok=True,
+                            )
+
+                            # --------------------------------------------
+                            # Run MARIA simulation
+                            # --------------------------------------------
+
+                            simple_ccat.tod_analysis(
+                                PREFIX=run_prefix,
+                                tod_diagnostics=False,
+                                maps=False,
+                                save_all_plots=False,
+                                run_mode="fits",
+                                atm_plot=False,
+                                temp_mode="inst",
+                                ccat_band=band_label,
+                                map_type="BM",
                                 pwv_mm=pwv_mm,
-                                reference_elevation_deg=(
-                                    reference_elevation_deg
+                                start_time=START_TIME,
+                                total_duration_s=(
+                                    duration_s
                                 ),
-                                site_altitude_m=5600.0,
+                                sim_duration_s=(
+                                    duration_s
+                                ),
+                                sample_rate_hz=(
+                                    SWEEP_SAMPLE_RATE_HZ
+                                ),
+                                scan_pattern=scan,
+                                el_limits=elev_limits,
+                                speed=SWEEP_SPEED,
                             )
-                        )
 
-                        # --------------------------------------------
-                        # Optical-depth analysis
-                        # --------------------------------------------
+                            if not fits_path.exists():
+                                raise FileNotFoundError(
+                                    "The expected TOD file was "
+                                    "not created:\n"
+                                    f"{fits_path}"
+                                )
 
-                        optical_summary = (
-                            analyse_power_against_optical_depth(
+                            # --------------------------------------------
+                            # Load the TOD produced by simple_ccat
+                            # --------------------------------------------
+
+                            tod = maria.tod.load(
+                                fits_path,
+                                site=site,
+                                bands=[maria_band],
+                            )
+                            # --------------------------------------------
+                            # Telescope motor motion metrics
+                            # --------------------------------------------
+
+                            motion_metrics = calculate_motion_metrics(
+                                tod=tod,
+                                sample_rate_hz=SWEEP_SAMPLE_RATE_HZ,
+                                detector_index=604,
+                            )
+
+                            print("\nTelescope motor suitability")
+                            print("-" * 50)
+
+                            print(
+                                "Max motor AZ velocity: "
+                                f"{motion_metrics['max_motor_az_velocity_deg_s']:.6g} deg/s"
+                            )
+
+                            print(
+                                "Max motor EL velocity: "
+                                f"{motion_metrics['max_motor_el_velocity_deg_s']:.6g} deg/s"
+                            )
+
+                            print(
+                                "Max motor AZ acceleration: "
+                                f"{motion_metrics['max_motor_az_acceleration_deg_s2']:.6g} deg/s^2"
+                            )
+
+                            print(
+                                "Max motor EL acceleration: "
+                                f"{motion_metrics['max_motor_el_acceleration_deg_s2']:.6g} deg/s^2"
+                            )
+
+                            print(
+                                "Passes FYST mechanical limits: "
+                                f"{motion_metrics['mechanical_pass']}"
+                            )
+
+                            power_pW = np.asarray(
+                                tod.to("pW").signal,
+                                dtype=np.float64,
+                            )
+
+                            elevation_raw = np.squeeze(
+                                np.asarray(
+                                    tod.el,
+                                    dtype=np.float64,
+                                )
+                            )
+
+                            # Match the detector-by-time power shape.
+                            if elevation_raw.shape == power_pW.shape:
+                                elevation_matrix = elevation_raw
+
+                            elif (
+                                elevation_raw.T.shape
+                                == power_pW.shape
+                            ):
+                                elevation_matrix = elevation_raw.T
+
+                            else:
+                                raise ValueError(
+                                    "Could not match the elevation "
+                                    "array to the power array. "
+                                    f"Elevation shape: "
+                                    f"{elevation_raw.shape}; "
+                                    f"power shape: "
+                                    f"{power_pW.shape}"
+                                )
+
+                            elevation_deg_matrix = np.rad2deg(
+                                elevation_matrix
+                            )
+
+                            time_sec = (
+                                np.arange(
+                                    power_pW.shape[1],
+                                    dtype=np.float64,
+                                )
+                                / SWEEP_SAMPLE_RATE_HZ
+                            )
+
+                            # --------------------------------------------
+                            # Fixed-tone detector-linewidth metrics
+                            # --------------------------------------------
+
+                            (
+                                linewidth_metrics,
+                                delta_f_fwhm_matrix,
+                            ) = calculate_linewidth_feasibility_metrics(
+                                power_pW=power_pW,
+                                band_label=band_label,
+                                linewidth_limit=LINEWIDTH_LIMIT,
+                            )
+
+                            print("\nDetector-linewidth suitability")
+                            print("-" * 50)
+                            print(
+                                "Fraction of all samples within limit: "
+                                f"{linewidth_metrics['fraction_within_linewidth_limit']:.4%}"
+                            )
+                            print(
+                                "95th percentile absolute excursion: "
+                                f"{linewidth_metrics['p95_abs_delta_f_over_fwhm']:.6g}"
+                            )
+                            print(
+                                "Maximum absolute excursion: "
+                                f"{linewidth_metrics['max_abs_delta_f_over_fwhm']:.6g}"
+                            )
+                            print(
+                                "Fraction of detectors fully within limit: "
+                                f"{linewidth_metrics['fraction_detectors_fully_within_limit']:.4%}"
+                            )
+
+
+                            # --------------------------------------------
+                            # Focal-plane coverage metrics
+                            # --------------------------------------------
+
+                            (
+                                coverage_metrics,
+                                coverage_hit_map,
+                                coverage_x_edges,
+                                coverage_y_edges,
+                            ) = calculate_sky_coverage_metrics(
+                                tod=tod,
+                                power_shape=power_pW.shape,
+                                map_size_deg=SWEEP_MAP_SIZE_DEG,
+                                pixel_size_deg=COVERAGE_PIXEL_SIZE_DEG,
+                                minimum_hits_for_coverage=(
+                                    MIN_HITS_FOR_COVERAGE
+                                ),
+                                minimum_hits_for_revisit=(
+                                    MIN_HITS_FOR_REVISIT
+                                ),
+                            )
+
+                            coverage_plot_path = (
+                                run_outdir
+                                / (
+                                    f"{run_prefix}_{band_label}GHz_"
+                                    "focal_plane_coverage_hit_map.png"
+                                )
+                            )
+
+                            save_coverage_hit_map(
+                                hit_map=coverage_hit_map,
+                                x_edges=coverage_x_edges,
+                                y_edges=coverage_y_edges,
+                                output_path=coverage_plot_path,
+                                title=(
+                                    "Prime-Cam Focal-Plane Coverage\n"
+                                    f"{band_label} GHz, {scan}, "
+                                    f"Elevation={elev_label}, "
+                                    f"Duration={duration_s} s"
+                                ),
+                            )
+
+                            print("\nCoverage efficiency")
+                            print("-" * 50)
+                            print(
+                                "Coverage fraction: "
+                                f"{coverage_metrics['coverage_fraction']:.4%}"
+                            )
+                            print(
+                                "Revisit fraction: "
+                                f"{coverage_metrics['revisit_fraction']:.4%}"
+                            )
+                            print(
+                                "Hit-count coefficient of variation: "
+                                f"{coverage_metrics['hit_count_cv']:.6g}"
+                            )
+
+                            # --------------------------------------------
+                            # Elevation, airmass, and small-scale analysis
+                            # --------------------------------------------
+
+                            (
+                                atmospheric_metrics,
+                                atmospheric_summary_df,
+                            ) = run_atmospheric_power_tests(
                                 power_pW=power_pW,
                                 elevation_deg_matrix=(
                                     elevation_deg_matrix
                                 ),
                                 time_sec=time_sec,
                                 pwv_mm=pwv_mm,
-                                tau_0=(
-                                    maria_opacity["tau_0"]
-                                ),
                                 outdir=run_outdir,
+                                comparison_directory=(
+                                    comparison_directory
+                                ),
                                 run_prefix=run_prefix,
                                 band_label=band_label,
+                                scan_pattern=scan,
+                                elevation_label=elev_label,
+                                elevation_bin_width_deg=(
+                                    ELEVATION_BIN_WIDTH_DEG
+                                ),
+                                airmass_bin_width=(
+                                    AIRMass_BIN_WIDTH
+                                ),
                             )
-                        )
 
-                        # --------------------------------------------
-                        # Combine all information into one row
-                        # --------------------------------------------
+                            # --------------------------------------------
+                            # Transmission-derived tau_0
+                            # --------------------------------------------
 
-                        atmospheric_row = (
-                            atmospheric_summary_df
-                            .iloc[0]
-                            .to_dict()
-                        )
+                            array_elevation_deg = np.nanmedian(
+                                elevation_deg_matrix,
+                                axis=0,
+                            )
 
-                        combined_row = {
-                            "run_prefix": run_prefix,
-                            "band_ghz": band_label,
-                            "pwv_mm": pwv_mm,
-                            "scan_pattern": scan,
-                            "elevation_min_deg": elev_limits[0],
-                            "elevation_max_deg": elev_limits[1],
-                            "mean_elevation_deg": float(
-                                np.nanmean(
+                            reference_elevation_deg = float(
+                                np.nanmedian(
                                     array_elevation_deg
                                 )
-                            ),
-                            "elevation_label": elev_label,
+                            )
 
-                            "input_speed_deg_s": SWEEP_SPEED,
-                            "map_size_deg": SWEEP_MAP_SIZE_DEG,
-                            "duration_s": duration_s,
-                            "sample_rate_hz": SWEEP_SAMPLE_RATE_HZ,
-                            "tod_path": str(fits_path),
-                        }
+                            maria_opacity = (
+                                get_tau0_from_maria_transmission(
+                                    band=maria_band,
+                                    pwv_mm=pwv_mm,
+                                    reference_elevation_deg=(
+                                        reference_elevation_deg
+                                    ),
+                                    site_altitude_m=5600.0,
+                                )
+                            )
 
-                        combined_row.update(linewidth_metrics)
+                            # --------------------------------------------
+                            # Optical-depth analysis
+                            # --------------------------------------------
 
-                        combined_row.update(coverage_metrics)
-                        
-                        combined_row.update(motion_metrics)
+                            optical_summary = (
+                                analyse_power_against_optical_depth(
+                                    power_pW=power_pW,
+                                    elevation_deg_matrix=(
+                                        elevation_deg_matrix
+                                    ),
+                                    time_sec=time_sec,
+                                    pwv_mm=pwv_mm,
+                                    tau_0=(
+                                        maria_opacity["tau_0"]
+                                    ),
+                                    outdir=run_outdir,
+                                    run_prefix=run_prefix,
+                                    band_label=band_label,
+                                )
+                            )
 
-                        # Add every value returned by the
-                        # atmospheric-power analysis.
-                        for key, value in (
-                            atmospheric_row.items()
-                        ):
-                            combined_row[
-                                f"atmospheric_{key}"
-                            ] = value
+                            # --------------------------------------------
+                            # Combine all information into one row
+                            # --------------------------------------------
 
-                        # Add every value returned by the
-                        # optical-depth analysis.
-                        for key, value in (
-                            optical_summary.items()
-                        ):
-                            combined_row[
-                                f"optical_{key}"
-                            ] = value
+                            atmospheric_row = (
+                                atmospheric_summary_df
+                                .iloc[0]
+                                .to_dict()
+                            )
 
-                        # Add values returned directly by the
-                        # MARIA transmission helper.
-                        for key, value in (
-                            maria_opacity.items()
-                        ):
-                            combined_row[
-                                f"transmission_{key}"
-                            ] = value
+                            combined_row = {
+                                "run_prefix": run_prefix,
+                                "realization": realization,
+                                "band_ghz": band_label,
+                                "pwv_mm": pwv_mm,
+                                "scan_pattern": scan,
+                                "elevation_min_deg": elev_limits[0],
+                                "elevation_max_deg": elev_limits[1],
+                                "mean_elevation_deg": float(
+                                    np.nanmean(
+                                        array_elevation_deg
+                                    )
+                                ),
+                                "elevation_label": elev_label,
 
-                        all_results.append(
-                            combined_row
-                        )
+                                "input_speed_deg_s": SWEEP_SPEED,
+                                "map_size_deg": SWEEP_MAP_SIZE_DEG,
+                                "duration_s": duration_s,
+                                "sample_rate_hz": SWEEP_SAMPLE_RATE_HZ,
+                                "tod_path": str(fits_path),
+                            }
 
-                        completed_runs.add(run_prefix)
+                            combined_row.update(linewidth_metrics)
 
-                        # --------------------------------------------
-                        # Save a checkpoint after every run
-                        # --------------------------------------------
+                            combined_row.update(coverage_metrics)
+                            
+                            combined_row.update(motion_metrics)
 
-                        combined_summary_df = pd.DataFrame(
-                            all_results
-                        )
+                            # Add every value returned by the
+                            # atmospheric-power analysis.
+                            for key, value in (
+                                atmospheric_row.items()
+                            ):
+                                combined_row[
+                                    f"atmospheric_{key}"
+                                ] = value
 
-                        combined_summary_df = (
-                            combined_summary_df.drop_duplicates(subset="run_prefix", keep="last")
-                        )
+                            # Add every value returned by the
+                            # optical-depth analysis.
+                            for key, value in (
+                                optical_summary.items()
+                            ):
+                                combined_row[
+                                    f"optical_{key}"
+                                ] = value
 
-                        combined_summary_df.to_csv(
-                            COMBINED_CSV_PATH,
-                            index=False,
-                        )
+                            # Add values returned directly by the
+                            # MARIA transmission helper.
+                            for key, value in (
+                                maria_opacity.items()
+                            ):
+                                combined_row[
+                                    f"transmission_{key}"
+                                ] = value
 
-                        print(
-                            "Updated combined CSV: "
-                            f"{COMBINED_CSV_PATH}"
-                        )
-                        print(
-                            "Completed rows: "
-                            f"{len(all_results)}"
-                        )
+                            all_results.append(
+                                combined_row
+                            )
+
+                            completed_runs.add(run_prefix)
+
+                            # --------------------------------------------
+                            # Save a checkpoint after every run
+                            # --------------------------------------------
+
+                            combined_summary_df = pd.DataFrame(
+                                all_results
+                            )
+
+                            combined_summary_df = (
+                                combined_summary_df.drop_duplicates(subset="run_prefix", keep="last")
+                            )
+
+                            combined_summary_df.to_csv(
+                                COMBINED_CSV_PATH,
+                                index=False,
+                            )
+
+                            print(
+                                "Updated combined CSV: "
+                                f"{COMBINED_CSV_PATH}"
+                            )
+                            print(
+                                "Completed rows: "
+                                f"{len(all_results)}"
+                            )
 
     # ============================================================
     # Final combined parameter-sweep summary
