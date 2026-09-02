@@ -145,216 +145,207 @@ OUTDIR.mkdir(parents=True, exist_ok=True)
 # ============================================================
 # Load TOD
 # ============================================================
+GENERATE_TOD = False
+
+# ============================================================
+# Load TOD for optional single-run analysis
+# ============================================================
+
+GENERATE_TOD = False
 
 if RUN_SINGLE_ANALYSIS:
-    simple_ccat.tod_analysis(
-        PREFIX=run_prefix,
-        tod_diagnostics=False,
-        maps=False,
-        save_all_plots=True,
-        run_mode="fits",
-        atm_plot=False,
-        temp_mode="inst",
-        ccat_band=selected_band,
-        map_type="BM",
-        pwv_mm=PWV_MM,
-        start_time=START_TIME,
-        total_duration_s=TOTAL_DURATION_S,
-        sim_duration_s=SIM_DURATION_S,
-        sample_rate_hz=SAMPLE_RATE_HZ,
-        scan_pattern=SCAN_PATTERN,
-        el_limits=EL_LIMITS,
-        speed=SPEED,
-    )
-else:
-    print(f"Skipping TOD generation; loading existing TOD from: {fits_path}")
 
-site = maria.get_site("cerro_chajnantor", altitude=5600)
+    if GENERATE_TOD:
+        simple_ccat.tod_analysis(
+            PREFIX=run_prefix,
+            tod_diagnostics=False,
+            maps=False,
+            save_all_plots=True,
+            run_mode="fits",
+            atm_plot=False,
+            temp_mode="inst",
+            ccat_band=selected_band,
+            map_type="BM",
+            pwv_mm=PWV_MM,
+            start_time=START_TIME,
+            total_duration_s=TOTAL_DURATION_S,
+            sim_duration_s=SIM_DURATION_S,
+            sample_rate_hz=SAMPLE_RATE_HZ,
+            scan_pattern=SCAN_PATTERN,
+            el_limits=EL_LIMITS,
+            speed=SPEED,
+        )
 
+    else:
+        print(
+            "Skipping TOD generation; "
+            f"loading existing TOD from: {fits_path}"
+        )
 
-if ccat_band == "850":
-    band = Band(
-        name="m2/f093",
-        center=NU_HZ,
-        width=bandwidth_hz,
-        efficiency=eta,
-        NET_CMB=13e-6,
-        knee=1.0,
-        gain_error=5e-2,
+    site = maria.get_site(
+        "cerro_chajnantor",
+        altitude=5600,
     )
 
-elif ccat_band == "350":
-    band = Band(
-        name="m2/f093",
-        center=NU_HZ,
-        width=bandwidth_hz,
-        efficiency=eta,
-        NET_CMB=48e-6,
-        knee=1.0,
-        gain_error=5e-2,
+    if ccat_band == "850":
+        band = Band(
+            name="m2/f093",
+            center=NU_HZ,
+            width=bandwidth_hz,
+            efficiency=eta,
+            NET_CMB=13e-6,
+            knee=1.0,
+            gain_error=5e-2,
+        )
+
+    elif ccat_band == "350":
+        band = Band(
+            name="m2/f093",
+            center=NU_HZ,
+            width=bandwidth_hz,
+            efficiency=eta,
+            NET_CMB=48e-6,
+            knee=1.0,
+            gain_error=5e-2,
+        )
+
+    elif ccat_band == "280":
+        band = Band(
+            name="m2/f093",
+            center=NU_HZ,
+            width=bandwidth_hz,
+            efficiency=eta,
+            NET_CMB=13e-6,
+            knee=1.0,
+            gain_error=5e-2,
+        )
+
+    if not fits_path.exists():
+        raise FileNotFoundError(
+            f"Missing TOD file: {fits_path}"
+        )
+
+    tod = maria.tod.load(
+        fits_path,
+        site=site,
+        bands=[band],
     )
 
-elif ccat_band == "280":
-    f280 = Band(
-        name="m2/f093",
-        center=NU_HZ,
-        width=bandwidth_hz,
-        efficiency= eta,
-        NET_CMB=13e-6,
-        knee=1.0,
-        gain_error=5e-2,
-    )
-    band = f280
+    print(f"\nLoaded TOD: {fits_path}")
+    print(f"TOD shape: {tod.shape}")
 
-if not fits_path.exists():
-    raise FileNotFoundError(f"Missing TOD file: {fits_path}")
-
-tod = maria.tod.load(fits_path, site=site, bands=[band])
-
-print(f"\nLoaded TOD: {fits_path}")
-print(f"TOD shape: {tod.shape}")
-
-
-# ============================================================
-# Load detector power
-# ============================================================
-
-P_pW = tod.to("pW").signal
-P_pW = np.asarray(P_pW, dtype=np.float64)
-
-# ============================================================
-# Prepare detector-resolved Az/El matrices for animations
-# ============================================================
-
-az_raw = np.asarray(tod.az, dtype=np.float64)
-el_raw = np.asarray(tod.el, dtype=np.float64)
-
-print("Raw tod.az shape:", az_raw.shape)
-print("Raw tod.el shape:", el_raw.shape)
-print("Power shape:", P_pW.shape)
-
-# Remove only singleton dimensions, if any.
-az_raw = np.squeeze(az_raw)
-el_raw = np.squeeze(el_raw)
-
-print("Squeezed tod.az shape:", az_raw.shape)
-print("Squeezed tod.el shape:", el_raw.shape)
-
-# ------------------------------------------------------------
-# Match the expected detector-by-time orientation
-# ------------------------------------------------------------
-
-if az_raw.shape == P_pW.shape:
-    az_matrix = az_raw
-
-elif az_raw.T.shape == P_pW.shape:
-    az_matrix = az_raw.T
-
-else:
-    raise ValueError(
-        "Could not match tod.az to detector power shape. "
-        f"tod.az shape after squeeze: {az_raw.shape}; "
-        f"P_pW shape: {P_pW.shape}"
-    )
-
-
-if el_raw.shape == P_pW.shape:
-    el_matrix = el_raw
-
-elif el_raw.T.shape == P_pW.shape:
-    el_matrix = el_raw.T
-
-else:
-    raise ValueError(
-        "Could not match tod.el to detector power shape. "
-        f"tod.el shape after squeeze: {el_raw.shape}; "
-        f"P_pW shape: {P_pW.shape}"
-    )
-
-# ------------------------------------------------------------
-# MARIA Az/El coordinates are normally stored in radians.
-# Convert to degrees.
-# ------------------------------------------------------------
-
-az_deg_matrix_raw = np.rad2deg(az_matrix)
-el_deg_matrix = np.rad2deg(el_matrix)
-
-az_deg_matrix = np.mod(az_deg_matrix_raw, 360.0)
-
-time_sec_full = (
-    np.arange(P_pW.shape[1], dtype=np.float64)
-    / SAMPLE_RATE_HZ
-)
-
-print("Animation Az shape:", az_deg_matrix.shape)
-print("Animation El shape:", el_deg_matrix.shape)
-print("Animation power shape:", P_pW.shape)
-print("Animation time shape:", time_sec_full.shape)
-print(
-    "Az range:",
-    np.nanmin(az_deg_matrix),
-    np.nanmax(az_deg_matrix),
-)
-print(
-    "El range:",
-    np.nanmin(el_deg_matrix),
-    np.nanmax(el_deg_matrix),
-)
-
-
-# ============================================================
-# Responsivity model
-# ============================================================
-if ccat_band == "850":
-    Q_r = 15000
-    R_0 = -1e7
-    P_0 = 120e-12
-elif ccat_band == "350":
-    Q_r = 40000 # Quality factor taken from Bayguchi thesis
-    P_0 = 957e-18 # idk but do not question the mighty jordan wheeler
-    R_0 = -2.448e9 #avg responsivity in W^-1 from Jordan Wheeler
-
-elif ccat_band == "280":
-    Q_r = 40000 # Quality factor taken from Bayguchi thesis
-    P_0 = 957e-18 # idk but do not question the mighty jordan wheeler
-    R_0 = -2.448e9 #avg responsivity in W^-1 from Jordan Wheeler
-
-def R(P_W):
-    return R_0 / np.sqrt(1 + P_W / P_0)
-
-print("Power shape:", P_pW.shape)
-print(f"Using {BAND_LABEL} GHz constants:")
-print(f"Q_r = {Q_r:.6g}")
-print(f"R_0 = {R_0:.6g} W^-1")
-print(f"P_0 = {P_0:.6g} W")
-
-def delta_f_over_fwhm(P_track_pW):
-    """
-    Calculate Delta f / FWHM relative to a fixed readout tone
-    selected at the median detector loading.
-    """
-    P_track_pW = np.asarray(
-        P_track_pW,
+    P_pW = np.asarray(
+        tod.to("pW").signal,
         dtype=np.float64,
     )
 
-    valid = np.isfinite(P_track_pW)
+    az_raw = np.squeeze(
+        np.asarray(
+            tod.az,
+            dtype=np.float64,
+        )
+    )
 
-    P_track_pW = P_track_pW[valid]
-    P_track_W = P_track_pW * 1e-12
+    el_raw = np.squeeze(
+        np.asarray(
+            tod.el,
+            dtype=np.float64,
+        )
+    )
 
-    if P_track_W.size == 0:
-        return np.array([], dtype=np.float64)
+    if az_raw.shape == P_pW.shape:
+        az_matrix = az_raw
 
-    # Fixed-tone operating point.
-    P_ref_W = np.nanmedian(P_track_W)
+    elif az_raw.T.shape == P_pW.shape:
+        az_matrix = az_raw.T
 
-    # Responsivity evaluated at the fixed operating point.
-    R_ref = R(P_ref_W)
+    else:
+        raise ValueError(
+            "Could not match tod.az to detector "
+            f"power shape. Az={az_raw.shape}, "
+            f"power={P_pW.shape}"
+        )
 
-    delta_P_W = P_track_W - P_ref_W
+    if el_raw.shape == P_pW.shape:
+        el_matrix = el_raw
 
-    return Q_r * R_ref * delta_P_W
+    elif el_raw.T.shape == P_pW.shape:
+        el_matrix = el_raw.T
+
+    else:
+        raise ValueError(
+            "Could not match tod.el to detector "
+            f"power shape. El={el_raw.shape}, "
+            f"power={P_pW.shape}"
+        )
+
+    az_deg_matrix = np.mod(
+        np.rad2deg(az_matrix),
+        360.0,
+    )
+
+    el_deg_matrix = np.rad2deg(
+        el_matrix
+    )
+
+    time_sec_full = (
+        np.arange(
+            P_pW.shape[1],
+            dtype=np.float64,
+        )
+        / SAMPLE_RATE_HZ
+    )
+    
+    if ccat_band == "850":
+        Q_r = 15000
+        R_0 = -1e7
+        P_0 = 120e-12
+    elif ccat_band == "350":
+        Q_r = 40000 # Quality factor taken from Bayguchi thesis
+        P_0 = 957e-18 # idk but do not question the mighty jordan wheeler
+        R_0 = -2.448e9 #avg responsivity in W^-1 from Jordan Wheeler
+
+    elif ccat_band == "280":
+        Q_r = 40000 # Quality factor taken from Bayguchi thesis
+        P_0 = 957e-18 # idk but do not question the mighty jordan wheeler
+        R_0 = -2.448e9 #avg responsivity in W^-1 from Jordan Wheeler
+
+    def R(P_W):
+        return R_0 / np.sqrt(1 + P_W / P_0)
+
+    print("Power shape:", P_pW.shape)
+    print(f"Using {BAND_LABEL} GHz constants:")
+    print(f"Q_r = {Q_r:.6g}")
+    print(f"R_0 = {R_0:.6g} W^-1")
+    print(f"P_0 = {P_0:.6g} W")
+
+    def delta_f_over_fwhm(P_track_pW):
+        """
+        Calculate Delta f / FWHM relative to a fixed readout tone
+        selected at the median detector loading.
+        """
+        P_track_pW = np.asarray(
+            P_track_pW,
+            dtype=np.float64,
+        )
+
+        valid = np.isfinite(P_track_pW)
+
+        P_track_pW = P_track_pW[valid]
+        P_track_W = P_track_pW * 1e-12
+
+        if P_track_W.size == 0:
+            return np.array([], dtype=np.float64)
+
+        # Fixed-tone operating point.
+        P_ref_W = np.nanmedian(P_track_W)
+
+        # Responsivity evaluated at the fixed operating point.
+        R_ref = R(P_ref_W)
+
+        delta_P_W = P_track_W - P_ref_W
+
+        return Q_r * R_ref * delta_P_W
 
 
 # ============================================================
@@ -4792,1069 +4783,1070 @@ def analyse_power_against_optical_depth(
 # All-detector power statistics
 # ============================================================
 
-all_power_samples = P_pW[np.isfinite(P_pW)]
+if RUN_SINGLE_ANALYSIS:
+    all_power_samples = P_pW[np.isfinite(P_pW)]
 
-stats_rows = []
+    stats_rows = []
 
-stats_rows.append(
-    summarize(
-        f"All-detector power, {BAND_LABEL} GHz",
+    stats_rows.append(
+        summarize(
+            f"All-detector power, {BAND_LABEL} GHz",
+            all_power_samples,
+            "pW",
+        )
+    )
+
+    make_hist(
         all_power_samples,
-        "pW",
+        "Detector power (pW)",
+        (
+            f"All-Detector Power Distribution\n"
+            f"{BAND_LABEL} GHz, PWV={PWV_MM:.2f} mm, Elev={ELEV_LABEL}"
+        ),
+        f"{run_prefix}_{BAND_LABEL}GHz_all_detector_power_histogram.png",
     )
-)
-
-make_hist(
-    all_power_samples,
-    "Detector power (pW)",
-    (
-        f"All-Detector Power Distribution\n"
-        f"{BAND_LABEL} GHz, PWV={PWV_MM:.2f} mm, Elev={ELEV_LABEL}"
-    ),
-    f"{run_prefix}_{BAND_LABEL}GHz_all_detector_power_histogram.png",
-)
 
 
-# ============================================================
-# Per-detector power and delta f / FWHM statistics
-# ============================================================
+    # ============================================================
+    # Per-detector power and delta f / FWHM statistics
+    # ============================================================
 
-detector_rows = []
+    detector_rows = []
 
-all_delta_tracks = []
-half_ptp_delta_by_detector = []
-ptp_delta_by_detector = []
-mean_power_by_detector = []
-sigma_power_by_detector = []
-frac_width_by_detector = []
-standardized_power_tracks = []
-standardized_delta_tracks = []
+    all_delta_tracks = []
+    half_ptp_delta_by_detector = []
+    ptp_delta_by_detector = []
+    mean_power_by_detector = []
+    sigma_power_by_detector = []
+    frac_width_by_detector = []
+    standardized_power_tracks = []
+    standardized_delta_tracks = []
 
-# Retain a detector-by-time matrix so that detector populations producing
-# narrow features can be identified after the loop.
-delta_matrix = np.full(P_pW.shape, np.nan, dtype=np.float64)
+    # Retain a detector-by-time matrix so that detector populations producing
+    # narrow features can be identified after the loop.
+    delta_matrix = np.full(P_pW.shape, np.nan, dtype=np.float64)
 
-time_sec_full = (
-    np.arange(P_pW.shape[1], dtype=np.float64) / SAMPLE_RATE_HZ
-)
+    time_sec_full = (
+        np.arange(P_pW.shape[1], dtype=np.float64) / SAMPLE_RATE_HZ
+    )
 
-n_detectors = P_pW.shape[0]
+    n_detectors = P_pW.shape[0]
 
-for det_idx in range(n_detectors):
+    for det_idx in range(n_detectors):
 
-    P_track = np.asarray(P_pW[det_idx, :], dtype=np.float64)
-    P_track = P_track[np.isfinite(P_track)]
+        P_track = np.asarray(P_pW[det_idx, :], dtype=np.float64)
+        P_track = P_track[np.isfinite(P_track)]
 
-    if len(P_track) == 0:
-        continue
+        if len(P_track) == 0:
+            continue
 
-    mu, sigma = norm.fit(P_track)
-    frac_width = sigma / mu if mu != 0 else np.nan
+        mu, sigma = norm.fit(P_track)
+        frac_width = sigma / mu if mu != 0 else np.nan
 
-    delta_track = delta_f_over_fwhm(P_track)
+        delta_track = delta_f_over_fwhm(P_track)
 
-    # The valid samples preserve their original order because boolean indexing
-    # only removes non-finite entries. Save them back into the full matrix.
-    valid_full = np.isfinite(P_pW[det_idx, :])
-    delta_matrix[det_idx, valid_full] = delta_track
+        # The valid samples preserve their original order because boolean indexing
+        # only removes non-finite entries. Save them back into the full matrix.
+        valid_full = np.isfinite(P_pW[det_idx, :])
+        delta_matrix[det_idx, valid_full] = delta_track
 
-    power_standardized = standardize(P_track)
-    delta_standardized = standardize(delta_track)
+        power_standardized = standardize(P_track)
+        delta_standardized = standardize(delta_track)
 
-    if len(power_standardized) > 0:
-        standardized_power_tracks.append(power_standardized)
-    if len(delta_standardized) > 0:
-        standardized_delta_tracks.append(delta_standardized)
+        if len(power_standardized) > 0:
+            standardized_power_tracks.append(power_standardized)
+        if len(delta_standardized) > 0:
+            standardized_delta_tracks.append(delta_standardized)
 
-    delta_ptp = np.nanmax(delta_track) - np.nanmin(delta_track)
-    delta_half_ptp = np.abs(delta_ptp / 2)
+        delta_ptp = np.nanmax(delta_track) - np.nanmin(delta_track)
+        delta_half_ptp = np.abs(delta_ptp / 2)
 
-    mean_power_by_detector.append(mu)
-    sigma_power_by_detector.append(sigma)
-    frac_width_by_detector.append(frac_width)
-    ptp_delta_by_detector.append(delta_ptp)
-    half_ptp_delta_by_detector.append(delta_half_ptp)
-    all_delta_tracks.append(delta_track)
+        mean_power_by_detector.append(mu)
+        sigma_power_by_detector.append(sigma)
+        frac_width_by_detector.append(frac_width)
+        ptp_delta_by_detector.append(delta_ptp)
+        half_ptp_delta_by_detector.append(delta_half_ptp)
+        all_delta_tracks.append(delta_track)
 
-    detector_rows.append({
-        "detector": det_idx,
-        "power_mean_pW": mu,
-        "power_sigma_pW": sigma,
-        "power_frac_width": frac_width,
-        "delta_f_over_fwhm_mean": np.nanmean(delta_track),
-        "delta_f_over_fwhm_std": np.nanstd(delta_track),
-        "delta_f_over_fwhm_min": np.nanmin(delta_track),
-        "delta_f_over_fwhm_max": np.nanmax(delta_track),
-        "delta_f_over_fwhm_ptp": delta_ptp,
-        "delta_f_over_fwhm_half_ptp": delta_half_ptp,
-    })
-
-
-detector_df = pd.DataFrame(detector_rows)
-detector_csv_path = OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_detector_power_deltaf_stats.csv"
-detector_df.to_csv(detector_csv_path, index=False)
-
-print(f"\nSaved detector statistics CSV to: {detector_csv_path}")
+        detector_rows.append({
+            "detector": det_idx,
+            "power_mean_pW": mu,
+            "power_sigma_pW": sigma,
+            "power_frac_width": frac_width,
+            "delta_f_over_fwhm_mean": np.nanmean(delta_track),
+            "delta_f_over_fwhm_std": np.nanstd(delta_track),
+            "delta_f_over_fwhm_min": np.nanmin(delta_track),
+            "delta_f_over_fwhm_max": np.nanmax(delta_track),
+            "delta_f_over_fwhm_ptp": delta_ptp,
+            "delta_f_over_fwhm_half_ptp": delta_half_ptp,
+        })
 
 
-# ============================================================
-#Array-common frequency-shift track
-# ============================================================
+    detector_df = pd.DataFrame(detector_rows)
+    detector_csv_path = OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_detector_power_deltaf_stats.csv"
+    detector_df.to_csv(detector_csv_path, index=False)
 
-# common_delta_track = np.nanmedian(delta_matrix, axis=0)
-# common_valid = np.isfinite(common_delta_track)
-
-# common_time = time_sec_full
-
-# common_delta = common_delta_track[common_valid]
-# common_time = common_time[common_valid]
-
-# common_result = analyse_frequency_plateaus(
-#     time_sec=common_time,
-#     frequency_track=common_delta_track[common_valid],
-#     sample_rate_hz=SAMPLE_RATE_HZ,
-#     smooth_window_s=2.0,
-#     min_plateau_duration_s=2.0,
-#     plateau_mad_factor=0.75,
-#     spike_mad_factor=6.0,
-# )
-
-# dfdt = common_result["df_dt"]
-
-# plateau_mask = common_result["plateau_mask"]
-
-# frequency = common_result["frequency_smoothed"]
+    print(f"\nSaved detector statistics CSV to: {detector_csv_path}")
 
 
-# ============================================================
-# Distribution histograms across detectors
-# ============================================================
+    # ============================================================
+    #Array-common frequency-shift track
+    # ============================================================
 
-make_hist(
-    mean_power_by_detector,
-    "Mean detector power (pW)",
-    f"Distribution of Mean Detector Power\n{BAND_LABEL} GHz",
-    f"{run_prefix}_{BAND_LABEL}GHz_detector_mean_power_histogram.png",
-)
+    # common_delta_track = np.nanmedian(delta_matrix, axis=0)
+    # common_valid = np.isfinite(common_delta_track)
 
-make_hist(
-    sigma_power_by_detector,
-    "Gaussian sigma of detector power (pW)",
-    f"Distribution of Detector Power Sigma\n{BAND_LABEL} GHz",
-    f"{run_prefix}_{BAND_LABEL}GHz_detector_power_sigma_histogram.png",
-)
+    # common_time = time_sec_full
 
-make_hist(
-    frac_width_by_detector,
-    r"Fractional width $\sigma / \mu$",
-    f"Distribution of Detector Power Fractional Width\n{BAND_LABEL} GHz",
-    f"{run_prefix}_{BAND_LABEL}GHz_detector_fractional_width_histogram.png",
-)
+    # common_delta = common_delta_track[common_valid]
+    # common_time = common_time[common_valid]
 
-make_hist(
-    ptp_delta_by_detector,
-    r"Peak-to-peak $\Delta f / \mathrm{FWHM}$",
-    f"Distribution of Peak-to-Peak Frequency Shifts\n{BAND_LABEL} GHz",
-    f"{run_prefix}_{BAND_LABEL}GHz_detector_deltaf_fwhm_ptp_histogram.png",
-)
+    # common_result = analyse_frequency_plateaus(
+    #     time_sec=common_time,
+    #     frequency_track=common_delta_track[common_valid],
+    #     sample_rate_hz=SAMPLE_RATE_HZ,
+    #     smooth_window_s=2.0,
+    #     min_plateau_duration_s=2.0,
+    #     plateau_mad_factor=0.75,
+    #     spike_mad_factor=6.0,
+    # )
 
-make_hist(
-    half_ptp_delta_by_detector,
-    r"Half peak-to-peak $\Delta f / \mathrm{FWHM}$",
-    f"Distribution of Half Peak-to-Peak Frequency Shifts\n{BAND_LABEL} GHz",
-    f"{run_prefix}_{BAND_LABEL}GHz_detector_deltaf_fwhm_half_ptp_histogram.png",
-)
+    # dfdt = common_result["df_dt"]
+
+    # plateau_mask = common_result["plateau_mask"]
+
+    # frequency = common_result["frequency_smoothed"]
 
 
-# ============================================================
-# All-sample delta f / FWHM histogram
-# ============================================================
+    # ============================================================
+    # Distribution histograms across detectors
+    # ============================================================
 
-all_delta = np.concatenate(all_delta_tracks)
+    make_hist(
+        mean_power_by_detector,
+        "Mean detector power (pW)",
+        f"Distribution of Mean Detector Power\n{BAND_LABEL} GHz",
+        f"{run_prefix}_{BAND_LABEL}GHz_detector_mean_power_histogram.png",
+    )
 
-# ============================================================
-# Array-wide frequency-feature diagnostic
-# ============================================================
+    make_hist(
+        sigma_power_by_detector,
+        "Gaussian sigma of detector power (pW)",
+        f"Distribution of Detector Power Sigma\n{BAND_LABEL} GHz",
+        f"{run_prefix}_{BAND_LABEL}GHz_detector_power_sigma_histogram.png",
+    )
 
-array_candidate_bins, array_counts, array_edges, array_excess = (
-    candidate_spike_bins(
+    make_hist(
+        frac_width_by_detector,
+        r"Fractional width $\sigma / \mu$",
+        f"Distribution of Detector Power Fractional Width\n{BAND_LABEL} GHz",
+        f"{run_prefix}_{BAND_LABEL}GHz_detector_fractional_width_histogram.png",
+    )
+
+    make_hist(
+        ptp_delta_by_detector,
+        r"Peak-to-peak $\Delta f / \mathrm{FWHM}$",
+        f"Distribution of Peak-to-Peak Frequency Shifts\n{BAND_LABEL} GHz",
+        f"{run_prefix}_{BAND_LABEL}GHz_detector_deltaf_fwhm_ptp_histogram.png",
+    )
+
+    make_hist(
+        half_ptp_delta_by_detector,
+        r"Half peak-to-peak $\Delta f / \mathrm{FWHM}$",
+        f"Distribution of Half Peak-to-Peak Frequency Shifts\n{BAND_LABEL} GHz",
+        f"{run_prefix}_{BAND_LABEL}GHz_detector_deltaf_fwhm_half_ptp_histogram.png",
+    )
+
+
+    # ============================================================
+    # All-sample delta f / FWHM histogram
+    # ============================================================
+
+    all_delta = np.concatenate(all_delta_tracks)
+
+    # ============================================================
+    # Array-wide frequency-feature diagnostic
+    # ============================================================
+
+    array_candidate_bins, array_counts, array_edges, array_excess = (
+        candidate_spike_bins(
+            all_delta,
+            bins=100,
+            max_candidates=3,
+        )
+    )
+
+    array_feature_rows = []
+    array_geometry_rows = []
+
+    for feature_rank, bin_idx in enumerate(
+        array_candidate_bins,
+        start=1,
+    ):
+        lower = array_edges[bin_idx]
+        upper = array_edges[bin_idx + 1]
+
+        result = make_array_feature_diagnostic(
+            delta_matrix=delta_matrix,
+            time_sec=time_sec_full,
+            lower=lower,
+            upper=upper,
+            feature_rank=feature_rank,
+            outdir=OUTDIR,
+            run_prefix=run_prefix,
+            band_label=BAND_LABEL,
+            scan_pattern=SCAN_PATTERN,
+            elev_label=ELEV_LABEL,
+            smooth_window_s=2.0,
+        )
+
+        if result is not None:
+            array_feature_rows.append(result)
+
+        geometry_result = make_feature_geometry_diagnostic(
+            tod=tod,
+            delta_matrix=delta_matrix,
+            time_sec=time_sec_full,
+            lower=lower,
+            upper=upper,
+            feature_rank=feature_rank,
+            outdir=OUTDIR,
+            run_prefix=run_prefix,
+            band_label=BAND_LABEL,
+            scan_pattern=SCAN_PATTERN,
+            elev_label=ELEV_LABEL,
+            occupancy_fraction_of_peak=0.5
+        )
+
+        if geometry_result is not None:
+            array_geometry_rows.append(geometry_result)
+
+
+    if len(array_feature_rows) > 0:
+        array_feature_df = pd.DataFrame(
+            array_feature_rows
+        )
+
+        array_feature_csv = OUTDIR / (
+            f"{run_prefix}_{BAND_LABEL}GHz_"
+            "array_feature_diagnostic_summary.csv"
+        )
+
+        array_feature_df.to_csv(
+            array_feature_csv,
+            index=False,
+        )
+
+        print(
+            f"\nSaved array-feature summary to: "
+            f"{array_feature_csv}"
+        )
+
+    if len(array_geometry_rows) > 0:
+        array_geometry_df = pd.DataFrame(
+            array_geometry_rows
+        )
+
+        array_geometry_csv = OUTDIR / (
+            f"{run_prefix}_{BAND_LABEL}GHz_"
+            "array_feature_geometry_summary.csv"
+        )
+
+        array_geometry_df.to_csv(
+            array_geometry_csv,
+            index=False,
+        )
+
+        print(
+            f"\nSaved array-feature geometry summary to: "
+            f"{array_geometry_csv}"
+        )
+
+    stats_rows.append(
+        summarize(
+            f"All-detector Delta f / FWHM, {BAND_LABEL} GHz",
+            all_delta,
+            "dimensionless",
+        )
+    )
+
+    make_hist(
         all_delta,
-        bins=100,
-        max_candidates=3,
-    )
-)
-
-array_feature_rows = []
-array_geometry_rows = []
-
-for feature_rank, bin_idx in enumerate(
-    array_candidate_bins,
-    start=1,
-):
-    lower = array_edges[bin_idx]
-    upper = array_edges[bin_idx + 1]
-
-    result = make_array_feature_diagnostic(
-        delta_matrix=delta_matrix,
-        time_sec=time_sec_full,
-        lower=lower,
-        upper=upper,
-        feature_rank=feature_rank,
-        outdir=OUTDIR,
-        run_prefix=run_prefix,
-        band_label=BAND_LABEL,
-        scan_pattern=SCAN_PATTERN,
-        elev_label=ELEV_LABEL,
-        smooth_window_s=2.0,
+        r"$\Delta f / \mathrm{FWHM}$",
+        (
+            f"All-Detector Estimated Fractional Frequency Shift\n"
+            f"{BAND_LABEL} GHz, PWV={PWV_MM:.2f} mm, Elev={ELEV_LABEL}"
+        ),
+        f"{run_prefix}_{BAND_LABEL}GHz_all_detector_deltaf_fwhm_histogram.png",
     )
 
-    if result is not None:
-        array_feature_rows.append(result)
 
-    geometry_result = make_feature_geometry_diagnostic(
-        tod=tod,
-        delta_matrix=delta_matrix,
-        time_sec=time_sec_full,
-        lower=lower,
-        upper=upper,
-        feature_rank=feature_rank,
-        outdir=OUTDIR,
-        run_prefix=run_prefix,
-        band_label=BAND_LABEL,
-        scan_pattern=SCAN_PATTERN,
-        elev_label=ELEV_LABEL,
-        occupancy_fraction_of_peak=0.5
+    # ============================================================
+    # Diagnostic 1: standardized pooled distributions
+    # ============================================================
+
+    all_power_standardized = np.concatenate(standardized_power_tracks)
+    all_delta_standardized = np.concatenate(standardized_delta_tracks)
+
+    common_standardized_bins = np.linspace(-6, 6, 121)
+
+    plt.figure(figsize=(8, 6))
+    plt.hist(
+        all_power_standardized,
+        bins=common_standardized_bins,
+        density=True,
+        histtype="step",
+        linewidth=1.8,
+        label="Per-detector standardized power",
     )
-
-    if geometry_result is not None:
-        array_geometry_rows.append(geometry_result)
-
-
-if len(array_feature_rows) > 0:
-    array_feature_df = pd.DataFrame(
-        array_feature_rows
+    plt.hist(
+        -all_delta_standardized,
+        bins=common_standardized_bins,
+        density=True,
+        histtype="step",
+        linewidth=1.2,
+        linestyle="--",
+        label=r"Reflected standardized $\Delta f/\mathrm{FWHM}$",
     )
-
-    array_feature_csv = OUTDIR / (
-        f"{run_prefix}_{BAND_LABEL}GHz_"
-        "array_feature_diagnostic_summary.csv"
-    )
-
-    array_feature_df.to_csv(
-        array_feature_csv,
-        index=False,
-    )
-
-    print(
-        f"\nSaved array-feature summary to: "
-        f"{array_feature_csv}"
-    )
-
-if len(array_geometry_rows) > 0:
-    array_geometry_df = pd.DataFrame(
-        array_geometry_rows
-    )
-
-    array_geometry_csv = OUTDIR / (
-        f"{run_prefix}_{BAND_LABEL}GHz_"
-        "array_feature_geometry_summary.csv"
-    )
-
-    array_geometry_df.to_csv(
-        array_geometry_csv,
-        index=False,
-    )
-
-    print(
-        f"\nSaved array-feature geometry summary to: "
-        f"{array_geometry_csv}"
-    )
-
-stats_rows.append(
-    summarize(
-        f"All-detector Delta f / FWHM, {BAND_LABEL} GHz",
-        all_delta,
-        "dimensionless",
-    )
-)
-
-make_hist(
-    all_delta,
-    r"$\Delta f / \mathrm{FWHM}$",
-    (
-        f"All-Detector Estimated Fractional Frequency Shift\n"
-        f"{BAND_LABEL} GHz, PWV={PWV_MM:.2f} mm, Elev={ELEV_LABEL}"
-    ),
-    f"{run_prefix}_{BAND_LABEL}GHz_all_detector_deltaf_fwhm_histogram.png",
-)
-
-
-# ============================================================
-# Diagnostic 1: standardized pooled distributions
-# ============================================================
-
-all_power_standardized = np.concatenate(standardized_power_tracks)
-all_delta_standardized = np.concatenate(standardized_delta_tracks)
-
-common_standardized_bins = np.linspace(-6, 6, 121)
-
-plt.figure(figsize=(8, 6))
-plt.hist(
-    all_power_standardized,
-    bins=common_standardized_bins,
-    density=True,
-    histtype="step",
-    linewidth=1.8,
-    label="Per-detector standardized power",
-)
-plt.hist(
-    -all_delta_standardized,
-    bins=common_standardized_bins,
-    density=True,
-    histtype="step",
-    linewidth=1.2,
-    linestyle="--",
-    label=r"Reflected standardized $\Delta f/\mathrm{FWHM}$",
-)
-plt.xlabel("Standardized detector-relative sample")
-plt.ylabel("Probability density")
-plt.title(
-    "Power–Frequency-Shift Shape Comparison\n"
-    f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
-)
-plt.legend()
-plt.grid(alpha=0.3)
-plt.tight_layout()
-plt.savefig(
-    OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_standardized_power_delta_comparison.png",
-    dpi=300,
-    bbox_inches="tight",
-)
-plt.close()
-
-
-# ============================================================
-# Diagnostic 2: detector index versus delta f / FWHM density
-# ============================================================
-
-finite_delta = delta_matrix[np.isfinite(delta_matrix)]
-if len(finite_delta) > 0:
-    delta_low, delta_high = np.nanpercentile(finite_delta, [0.5, 99.5])
-    delta_edges = np.linspace(delta_low, delta_high, 121)
-
-    detector_indices = np.repeat(
-        np.arange(n_detectors),
-        delta_matrix.shape[1],
-    )
-    delta_flat = delta_matrix.ravel()
-    finite_flat = np.isfinite(delta_flat)
-
-    plt.figure(figsize=(10, 7))
-    plt.hist2d(
-        detector_indices[finite_flat],
-        delta_flat[finite_flat],
-        bins=[min(120, n_detectors), delta_edges],
-    )
-    plt.xlabel("Detector index")
-    plt.ylabel(r"$\Delta f / \mathrm{FWHM}$")
+    plt.xlabel("Standardized detector-relative sample")
+    plt.ylabel("Probability density")
     plt.title(
-        "Detector Contributions to Frequency-Shift Distribution\n"
+        "Power–Frequency-Shift Shape Comparison\n"
         f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
     )
-    plt.colorbar(label="Number of samples")
+    plt.legend()
+    plt.grid(alpha=0.3)
     plt.tight_layout()
     plt.savefig(
-        OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_detector_deltaf_density.png",
+        OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_standardized_power_delta_comparison.png",
         dpi=300,
         bbox_inches="tight",
     )
     plt.close()
 
-# ============================================================
-# Diagnostic 3: Time vs detector index coloured with detector Power
-# ============================================================
 
-time_sec = np.arange(P_pW.shape[1]) / SAMPLE_RATE_HZ
+    # ============================================================
+    # Diagnostic 2: detector index versus delta f / FWHM density
+    # ============================================================
 
-plt.figure(figsize=(14, 7))
+    finite_delta = delta_matrix[np.isfinite(delta_matrix)]
+    if len(finite_delta) > 0:
+        delta_low, delta_high = np.nanpercentile(finite_delta, [0.5, 99.5])
+        delta_edges = np.linspace(delta_low, delta_high, 121)
 
-extent = [
-    time_sec[0],
-    time_sec[-1],
-    0,
-    n_detectors - 1,
-]
+        detector_indices = np.repeat(
+            np.arange(n_detectors),
+            delta_matrix.shape[1],
+        )
+        delta_flat = delta_matrix.ravel()
+        finite_flat = np.isfinite(delta_flat)
 
-plt.imshow(
-    P_pW,
-    origin="lower",
-    aspect="auto",
-    extent=extent,
-    interpolation="nearest",
-    cmap="coolwarm",
-)
+        plt.figure(figsize=(10, 7))
+        plt.hist2d(
+            detector_indices[finite_flat],
+            delta_flat[finite_flat],
+            bins=[min(120, n_detectors), delta_edges],
+        )
+        plt.xlabel("Detector index")
+        plt.ylabel(r"$\Delta f / \mathrm{FWHM}$")
+        plt.title(
+            "Detector Contributions to Frequency-Shift Distribution\n"
+            f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
+        )
+        plt.colorbar(label="Number of samples")
+        plt.tight_layout()
+        plt.savefig(
+            OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_detector_deltaf_density.png",
+            dpi=300,
+            bbox_inches="tight",
+        )
+        plt.close()
 
-plt.xlabel("Time (s)")
-plt.ylabel("Detector index")
-plt.title(
-    "Detector Power vs Time\n"
-    f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
-)
+    # ============================================================
+    # Diagnostic 3: Time vs detector index coloured with detector Power
+    # ============================================================
 
-cbar = plt.colorbar()
-cbar.set_label("Detector Power (pW)")
+    time_sec = np.arange(P_pW.shape[1]) / SAMPLE_RATE_HZ
 
-plt.tight_layout()
-plt.savefig(
-    OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_detector_power_vs_time.png",
-    dpi=300,
-    bbox_inches="tight",
-)
-plt.close()
+    plt.figure(figsize=(14, 7))
 
-# ============================================================
-# Diagnostic 4: Time vs detector index coloured with detector Power subtracting median
-# ============================================================
+    extent = [
+        time_sec[0],
+        time_sec[-1],
+        0,
+        n_detectors - 1,
+    ]
 
-time_sec = np.arange(P_pW.shape[1]) / SAMPLE_RATE_HZ
-
-P_relative = P_pW - np.nanmedian(P_pW, axis=1, keepdims=True)
-
-color_limit = np.nanstd(P_relative, axis=1, keepdims=True).max()
-
-plt.figure(figsize=(14, 7))
-
-extent = [
-    time_sec[0],
-    time_sec[-1],
-    0,
-    n_detectors - 1,
-]
-
-plt.imshow(
-    P_relative,
-    origin="lower",
-    aspect="auto",
-    extent=extent,
-    interpolation="nearest",
-    cmap="coolwarm",
-    vmin=-color_limit,
-    vmax=color_limit
-)
-
-plt.xlabel("Time (s)")
-plt.ylabel("Detector index")
-plt.title(
-    "Median Subtracted Detector Power vs Time\n"
-    f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
-)
-
-cbar = plt.colorbar()
-cbar.set_label("Detector Power (pW)")
-
-plt.tight_layout()
-plt.savefig(
-    OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_median_subtracted_detector_power_vs_time.png",
-    dpi=300,
-    bbox_inches="tight",
-)
-plt.close()
-
-# ============================================================
-# Diagnostic 4.5: Time vs detector index coloured with detector Power subtracting median
-# ============================================================
-
-time_sec = np.arange(P_pW.shape[1]) / SAMPLE_RATE_HZ
-
-P_detector_sub = P_pW - np.nanmedian(P_pW, axis=1, keepdims=True)
-
-P_small_scale = P_detector_sub - np.nanmedian(P_detector_sub, axis=0, keepdims=True)
-
-color_limit = float(
-    np.nanpercentile(np.abs(P_small_scale), 99.5)
-)
-
-plt.figure(figsize=(14, 7))
-
-extent = [
-    time_sec[0],
-    time_sec[-1],
-    0,
-    n_detectors - 1,
-]
-
-plt.imshow(
-    P_small_scale,
-    origin="lower",
-    aspect="auto",
-    extent=extent,
-    interpolation="nearest",
-    cmap="coolwarm",
-    vmin=-color_limit,
-    vmax=color_limit
-)
-
-plt.xlabel("Time (s)")
-plt.ylabel("Detector index")
-plt.title(
-    "Small Scale Median Subtracted Detector Power vs Time\n"
-    f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
-)
-
-cbar = plt.colorbar()
-cbar.set_label("Detector Power (pW)")
-
-plt.tight_layout()
-plt.savefig(
-    OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_small_scale_median_subtracted_detector_power_vs_time.png",
-    dpi=300,
-    bbox_inches="tight",
-)
-plt.close()
-
-
-# ============================================================
-# Detector index vs detector elevation coloured by
-# median-subtracted detector power
-# ============================================================
-
-n_detectors, n_times = P_pW.shape
-
-# Each detector's elevation at every time sample.
-elevation_deg_matrix = np.asarray(
-    el_deg_matrix,
-    dtype=np.float64,
-)
-
-if elevation_deg_matrix.shape != P_pW.shape:
-    raise ValueError(
-        "el_deg_matrix and P_pW must have the same shape. "
-        f"Received {elevation_deg_matrix.shape} and {P_pW.shape}."
+    plt.imshow(
+        P_pW,
+        origin="lower",
+        aspect="auto",
+        extent=extent,
+        interpolation="nearest",
+        cmap="coolwarm",
     )
 
-# Detector index for every detector-time sample.
-detector_grid = np.broadcast_to(
-    np.arange(n_detectors)[:, np.newaxis],
-    P_pW.shape,
-)
-
-# ------------------------------------------------------------
-# Plot 1: Detector-median-subtracted power
-# ------------------------------------------------------------
-
-P_colour = (
-    P_pW
-    - np.nanmedian(P_pW, axis=1, keepdims=True)
-)
-
-x = elevation_deg_matrix.ravel()
-y = detector_grid.ravel()
-colour = P_colour.ravel()
-
-valid = (
-    np.isfinite(x)
-    & np.isfinite(y)
-    & np.isfinite(colour)
-)
-
-x_valid = x[valid]
-y_valid = y[valid]
-colour_valid = colour[valid]
-
-color_limit = float(
-    np.nanpercentile(np.abs(colour_valid), 99.5)
-)
-
-if not np.isfinite(color_limit) or color_limit <= 0:
-    color_limit = 1.0
-
-plt.figure(figsize=(12, 7))
-
-scatter = plt.scatter(
-    x_valid,
-    y_valid,
-    c=colour_valid,
-    cmap="coolwarm",
-    s=1.0,
-    marker=".",
-    linewidths=0,
-    rasterized=True,
-    vmin=-color_limit,
-    vmax=color_limit,
-)
-
-plt.xlabel("Detector Elevation (deg)")
-plt.ylabel("Detector Index")
-plt.title(
-    "Median-Subtracted Detector Power vs Elevation\n"
-    f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
-)
-
-cbar = plt.colorbar(scatter)
-cbar.set_label("Median-Subtracted Detector Power (pW)")
-
-plt.tight_layout()
-
-plt.savefig(
-    OUTDIR
-    / (
-        f"{run_prefix}_{BAND_LABEL}GHz_"
-        "median_subtracted_detector_power_vs_elevation.png"
-    ),
-    dpi=300,
-    bbox_inches="tight",
-)
-
-plt.close()
-
-
-# ============================================================
-# Detector index vs detector elevation coloured by
-# small-scale detector power residual
-# ============================================================
-
-# Step 1: Remove each detector's median over time.
-P_detector_sub = (
-    P_pW
-    - np.nanmedian(P_pW, axis=1, keepdims=True)
-)
-
-# Step 2: Remove the instantaneous array median.
-P_small_scale = (
-    P_detector_sub
-    - np.nanmedian(
-        P_detector_sub,
-        axis=0,
-        keepdims=True,
+    plt.xlabel("Time (s)")
+    plt.ylabel("Detector index")
+    plt.title(
+        "Detector Power vs Time\n"
+        f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
     )
-)
 
-x = elevation_deg_matrix.ravel()
-y = detector_grid.ravel()
-colour = P_small_scale.ravel()
+    cbar = plt.colorbar()
+    cbar.set_label("Detector Power (pW)")
 
-valid = (
-    np.isfinite(x)
-    & np.isfinite(y)
-    & np.isfinite(colour)
-)
+    plt.tight_layout()
+    plt.savefig(
+        OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_detector_power_vs_time.png",
+        dpi=300,
+        bbox_inches="tight",
+    )
+    plt.close()
 
-x_valid = x[valid]
-y_valid = y[valid]
-colour_valid = colour[valid]
+    # ============================================================
+    # Diagnostic 4: Time vs detector index coloured with detector Power subtracting median
+    # ============================================================
 
-color_limit = float(
-    np.nanpercentile(np.abs(colour_valid), 99.5)
-)
+    time_sec = np.arange(P_pW.shape[1]) / SAMPLE_RATE_HZ
 
-if not np.isfinite(color_limit) or color_limit <= 0:
-    color_limit = 1.0
+    P_relative = P_pW - np.nanmedian(P_pW, axis=1, keepdims=True)
 
-plt.figure(figsize=(12, 7))
+    color_limit = np.nanstd(P_relative, axis=1, keepdims=True).max()
 
-scatter = plt.scatter(
-    x_valid,
-    y_valid,
-    c=colour_valid,
-    cmap="coolwarm",
-    s=1.0,
-    marker=".",
-    linewidths=0,
-    rasterized=True,
-    vmin=-color_limit,
-    vmax=color_limit,
-)
+    plt.figure(figsize=(14, 7))
 
-plt.xlabel("Detector Elevation (deg)")
-plt.ylabel("Detector Index")
-plt.title(
-    "Small-Scale Detector Power Residual vs Elevation\n"
-    f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
-)
+    extent = [
+        time_sec[0],
+        time_sec[-1],
+        0,
+        n_detectors - 1,
+    ]
 
-cbar = plt.colorbar(scatter)
-cbar.set_label(
-    "Detector- and Frame-Median-Subtracted Power (pW)"
-)
+    plt.imshow(
+        P_relative,
+        origin="lower",
+        aspect="auto",
+        extent=extent,
+        interpolation="nearest",
+        cmap="coolwarm",
+        vmin=-color_limit,
+        vmax=color_limit
+    )
 
-plt.tight_layout()
+    plt.xlabel("Time (s)")
+    plt.ylabel("Detector index")
+    plt.title(
+        "Median Subtracted Detector Power vs Time\n"
+        f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
+    )
 
-plt.savefig(
-    OUTDIR
-    / (
-        f"{run_prefix}_{BAND_LABEL}GHz_"
-        "small_scale_detector_power_vs_elevation.png"
-    ),
-    dpi=300,
-    bbox_inches="tight",
-)
+    cbar = plt.colorbar()
+    cbar.set_label("Detector Power (pW)")
 
-plt.close()
+    plt.tight_layout()
+    plt.savefig(
+        OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_median_subtracted_detector_power_vs_time.png",
+        dpi=300,
+        bbox_inches="tight",
+    )
+    plt.close()
 
-# ============================================================
-# Diagnostic 5: Time vs detector index coloured with detector Power instantaneous subtracting median
-# ============================================================
+    # ============================================================
+    # Diagnostic 4.5: Time vs detector index coloured with detector Power subtracting median
+    # ============================================================
 
-time_sec = np.arange(P_pW.shape[1]) / SAMPLE_RATE_HZ
+    time_sec = np.arange(P_pW.shape[1]) / SAMPLE_RATE_HZ
 
-P_relative = P_pW - np.nanmedian(P_pW, axis=0, keepdims=True)
+    P_detector_sub = P_pW - np.nanmedian(P_pW, axis=1, keepdims=True)
 
-color_limit = np.nanstd(P_relative, axis=1, keepdims=True).max()
+    P_small_scale = P_detector_sub - np.nanmedian(P_detector_sub, axis=0, keepdims=True)
 
-plt.figure(figsize=(14, 7))
+    color_limit = float(
+        np.nanpercentile(np.abs(P_small_scale), 99.5)
+    )
 
-extent = [
-    time_sec[0],
-    time_sec[-1],
-    0,
-    n_detectors - 1,
-]
+    plt.figure(figsize=(14, 7))
 
-plt.imshow(
-    P_relative,
-    origin="lower",
-    aspect="auto",
-    extent=extent,
-    interpolation="nearest",
-    cmap="coolwarm",
-    vmin=-color_limit,
-    vmax=color_limit
-)
+    extent = [
+        time_sec[0],
+        time_sec[-1],
+        0,
+        n_detectors - 1,
+    ]
 
-plt.xlabel("Time (s)")
-plt.ylabel("Detector index")
-plt.title(
-    "Instantaneous Median Subtracted Detector Power vs Time\n"
-    f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
-)
+    plt.imshow(
+        P_small_scale,
+        origin="lower",
+        aspect="auto",
+        extent=extent,
+        interpolation="nearest",
+        cmap="coolwarm",
+        vmin=-color_limit,
+        vmax=color_limit
+    )
 
-cbar = plt.colorbar()
-cbar.set_label("Detector Power (pW)")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Detector index")
+    plt.title(
+        "Small Scale Median Subtracted Detector Power vs Time\n"
+        f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
+    )
 
-plt.tight_layout()
-plt.savefig(
-    OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_inst_median_subtracted_detector_power_vs_time.png",
-    dpi=300,
-    bbox_inches="tight",
-)
-plt.close()
+    cbar = plt.colorbar()
+    cbar.set_label("Detector Power (pW)")
 
-# ============================================================
-# Atmospheric loading, elevation, airmass, and PWV tests
-# ============================================================
+    plt.tight_layout()
+    plt.savefig(
+        OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_small_scale_median_subtracted_detector_power_vs_time.png",
+        dpi=300,
+        bbox_inches="tight",
+    )
+    plt.close()
 
-atmospheric_metrics, atmospheric_summary = (
-    run_atmospheric_power_tests(
+
+    # ============================================================
+    # Detector index vs detector elevation coloured by
+    # median-subtracted detector power
+    # ============================================================
+
+    n_detectors, n_times = P_pW.shape
+
+    # Each detector's elevation at every time sample.
+    elevation_deg_matrix = np.asarray(
+        el_deg_matrix,
+        dtype=np.float64,
+    )
+
+    if elevation_deg_matrix.shape != P_pW.shape:
+        raise ValueError(
+            "el_deg_matrix and P_pW must have the same shape. "
+            f"Received {elevation_deg_matrix.shape} and {P_pW.shape}."
+        )
+
+    # Detector index for every detector-time sample.
+    detector_grid = np.broadcast_to(
+        np.arange(n_detectors)[:, np.newaxis],
+        P_pW.shape,
+    )
+
+    # ------------------------------------------------------------
+    # Plot 1: Detector-median-subtracted power
+    # ------------------------------------------------------------
+
+    P_colour = (
+        P_pW
+        - np.nanmedian(P_pW, axis=1, keepdims=True)
+    )
+
+    x = elevation_deg_matrix.ravel()
+    y = detector_grid.ravel()
+    colour = P_colour.ravel()
+
+    valid = (
+        np.isfinite(x)
+        & np.isfinite(y)
+        & np.isfinite(colour)
+    )
+
+    x_valid = x[valid]
+    y_valid = y[valid]
+    colour_valid = colour[valid]
+
+    color_limit = float(
+        np.nanpercentile(np.abs(colour_valid), 99.5)
+    )
+
+    if not np.isfinite(color_limit) or color_limit <= 0:
+        color_limit = 1.0
+
+    plt.figure(figsize=(12, 7))
+
+    scatter = plt.scatter(
+        x_valid,
+        y_valid,
+        c=colour_valid,
+        cmap="coolwarm",
+        s=1.0,
+        marker=".",
+        linewidths=0,
+        rasterized=True,
+        vmin=-color_limit,
+        vmax=color_limit,
+    )
+
+    plt.xlabel("Detector Elevation (deg)")
+    plt.ylabel("Detector Index")
+    plt.title(
+        "Median-Subtracted Detector Power vs Elevation\n"
+        f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
+    )
+
+    cbar = plt.colorbar(scatter)
+    cbar.set_label("Median-Subtracted Detector Power (pW)")
+
+    plt.tight_layout()
+
+    plt.savefig(
+        OUTDIR
+        / (
+            f"{run_prefix}_{BAND_LABEL}GHz_"
+            "median_subtracted_detector_power_vs_elevation.png"
+        ),
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close()
+
+
+    # ============================================================
+    # Detector index vs detector elevation coloured by
+    # small-scale detector power residual
+    # ============================================================
+
+    # Step 1: Remove each detector's median over time.
+    P_detector_sub = (
+        P_pW
+        - np.nanmedian(P_pW, axis=1, keepdims=True)
+    )
+
+    # Step 2: Remove the instantaneous array median.
+    P_small_scale = (
+        P_detector_sub
+        - np.nanmedian(
+            P_detector_sub,
+            axis=0,
+            keepdims=True,
+        )
+    )
+
+    x = elevation_deg_matrix.ravel()
+    y = detector_grid.ravel()
+    colour = P_small_scale.ravel()
+
+    valid = (
+        np.isfinite(x)
+        & np.isfinite(y)
+        & np.isfinite(colour)
+    )
+
+    x_valid = x[valid]
+    y_valid = y[valid]
+    colour_valid = colour[valid]
+
+    color_limit = float(
+        np.nanpercentile(np.abs(colour_valid), 99.5)
+    )
+
+    if not np.isfinite(color_limit) or color_limit <= 0:
+        color_limit = 1.0
+
+    plt.figure(figsize=(12, 7))
+
+    scatter = plt.scatter(
+        x_valid,
+        y_valid,
+        c=colour_valid,
+        cmap="coolwarm",
+        s=1.0,
+        marker=".",
+        linewidths=0,
+        rasterized=True,
+        vmin=-color_limit,
+        vmax=color_limit,
+    )
+
+    plt.xlabel("Detector Elevation (deg)")
+    plt.ylabel("Detector Index")
+    plt.title(
+        "Small-Scale Detector Power Residual vs Elevation\n"
+        f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
+    )
+
+    cbar = plt.colorbar(scatter)
+    cbar.set_label(
+        "Detector- and Frame-Median-Subtracted Power (pW)"
+    )
+
+    plt.tight_layout()
+
+    plt.savefig(
+        OUTDIR
+        / (
+            f"{run_prefix}_{BAND_LABEL}GHz_"
+            "small_scale_detector_power_vs_elevation.png"
+        ),
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close()
+
+    # ============================================================
+    # Diagnostic 5: Time vs detector index coloured with detector Power instantaneous subtracting median
+    # ============================================================
+
+    time_sec = np.arange(P_pW.shape[1]) / SAMPLE_RATE_HZ
+
+    P_relative = P_pW - np.nanmedian(P_pW, axis=0, keepdims=True)
+
+    color_limit = np.nanstd(P_relative, axis=1, keepdims=True).max()
+
+    plt.figure(figsize=(14, 7))
+
+    extent = [
+        time_sec[0],
+        time_sec[-1],
+        0,
+        n_detectors - 1,
+    ]
+
+    plt.imshow(
+        P_relative,
+        origin="lower",
+        aspect="auto",
+        extent=extent,
+        interpolation="nearest",
+        cmap="coolwarm",
+        vmin=-color_limit,
+        vmax=color_limit
+    )
+
+    plt.xlabel("Time (s)")
+    plt.ylabel("Detector index")
+    plt.title(
+        "Instantaneous Median Subtracted Detector Power vs Time\n"
+        f"{BAND_LABEL} GHz, {SCAN_PATTERN}, {ELEV_LABEL}"
+    )
+
+    cbar = plt.colorbar()
+    cbar.set_label("Detector Power (pW)")
+
+    plt.tight_layout()
+    plt.savefig(
+        OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_inst_median_subtracted_detector_power_vs_time.png",
+        dpi=300,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+    # ============================================================
+    # Atmospheric loading, elevation, airmass, and PWV tests
+    # ============================================================
+
+    atmospheric_metrics, atmospheric_summary = (
+        run_atmospheric_power_tests(
+            power_pW=P_pW,
+            elevation_deg_matrix=el_deg_matrix,
+            time_sec=time_sec_full,
+            pwv_mm=PWV_MM,
+            outdir=OUTDIR,
+            comparison_directory=ATMOSPHERE_TEST_ROOT,
+            run_prefix=run_prefix,
+            band_label=BAND_LABEL,
+            scan_pattern=SCAN_PATTERN,
+            elevation_label=ELEV_LABEL,
+            elevation_bin_width_deg=ELEVATION_BIN_WIDTH_DEG,
+            airmass_bin_width=AIRMass_BIN_WIDTH,
+        )
+    )
+
+    # ============================================================
+    # Transmission-derived optical-depth analysis
+    # ============================================================
+
+
+    array_elevation_deg = np.nanmedian(el_deg_matrix, axis=0)
+
+    reference_elevation_deg = float(np.nanmedian(array_elevation_deg))
+
+    maria_opacity = get_tau0_from_maria_transmission(
+        band=band,
+        pwv_mm=PWV_MM,
+        reference_elevation_deg=reference_elevation_deg,
+        site_altitude_m= 5600.0,
+    )
+
+    tau_0_maria = maria_opacity["tau_0"]
+
+    optical_depth_summary = analyse_power_against_optical_depth(
         power_pW=P_pW,
         elevation_deg_matrix=el_deg_matrix,
         time_sec=time_sec_full,
         pwv_mm=PWV_MM,
+        tau_0=tau_0_maria,
         outdir=OUTDIR,
-        comparison_directory=ATMOSPHERE_TEST_ROOT,
         run_prefix=run_prefix,
         band_label=BAND_LABEL,
-        scan_pattern=SCAN_PATTERN,
-        elevation_label=ELEV_LABEL,
-        elevation_bin_width_deg=ELEVATION_BIN_WIDTH_DEG,
-        airmass_bin_width=AIRMass_BIN_WIDTH,
-    )
-)
-
-# ============================================================
-# Transmission-derived optical-depth analysis
-# ============================================================
-
-
-array_elevation_deg = np.nanmedian(el_deg_matrix, axis=0)
-
-reference_elevation_deg = float(np.nanmedian(array_elevation_deg))
-
-maria_opacity = get_tau0_from_maria_transmission(
-    band=band,
-    pwv_mm=PWV_MM,
-    reference_elevation_deg=reference_elevation_deg,
-    site_altitude_m= 5600.0,
-)
-
-tau_0_maria = maria_opacity["tau_0"]
-
-optical_depth_summary = analyse_power_against_optical_depth(
-    power_pW=P_pW,
-    elevation_deg_matrix=el_deg_matrix,
-    time_sec=time_sec_full,
-    pwv_mm=PWV_MM,
-    tau_0=tau_0_maria,
-    outdir=OUTDIR,
-    run_prefix=run_prefix,
-    band_label=BAND_LABEL,
-)
-
-# ============================================================
-# Individual detector plots
-# ============================================================
-
-time_sec_full = np.arange(P_pW.shape[1]) / SAMPLE_RATE_HZ
-
-for det_idx in DETECTORS_TO_PLOT:
-
-    if det_idx >= P_pW.shape[0]:
-        print(f"Detector {det_idx} does not exist; skipping.")
-        continue
-
-    P_track = np.asarray(P_pW[det_idx, :], dtype=np.float64)
-    valid = np.isfinite(P_track)
-
-    P_track = P_track[valid]
-    time_sec = time_sec_full[valid]
-
-    delta_track = delta_f_over_fwhm(P_track)
-
-    # ========================================================
-    # Direct shape check for this detector
-    # ========================================================
-
-
-    power_standardized = standardize(P_track)
-    delta_standardized = standardize(delta_track)
-
-    if len(power_standardized) > 0 and len(delta_standardized) > 0:
-        comparison_bins = np.linspace(-6, 6, 121)
-
-        plt.figure(figsize=(8, 6))
-        plt.hist(
-            power_standardized,
-            bins=comparison_bins,
-            density=True,
-            histtype="step",
-            linewidth=1.8,
-            label="Standardized power",
-        )
-        plt.hist(
-            -delta_standardized,
-            bins=comparison_bins,
-            density=True,
-            histtype="step",
-            linewidth=1.2,
-            linestyle="--",
-            label=r"Reflected standardized $\Delta f/\mathrm{FWHM}$",
-        )
-        plt.xlabel("Standardized value")
-        plt.ylabel("Probability density")
-        plt.title(
-            f"Detector {det_idx}: Power–Frequency-Shift Shape Check\n"
-            f"{BAND_LABEL} GHz, {SCAN_PATTERN}"
-        )
-        plt.legend()
-        plt.grid(alpha=0.3)
-        plt.tight_layout()
-        plt.savefig(
-            OUTDIR / (
-                f"{run_prefix}_{BAND_LABEL}GHz_detector_{det_idx}_"
-                "power_delta_shape_comparison.png"
-            ),
-            dpi=300,
-            bbox_inches="tight",
-        )
-        plt.close()
-
-    make_hist(
-        P_track,
-        "Detector power (pW)",
-        (
-            f"Detector {det_idx} Power Distribution\n"
-            f"{BAND_LABEL} GHz, PWV={PWV_MM:.2f} mm"
-        ),
-        f"{run_prefix}_{BAND_LABEL}GHz_detector_{det_idx}_power_histogram.png",
     )
 
-    make_hist(
-        delta_track,
-        r"$\Delta f / \mathrm{FWHM}$",
-        (
-            f"Detector {det_idx} Estimated Fractional Frequency Shift\n"
-            f"{BAND_LABEL} GHz, PWV={PWV_MM:.2f} mm"
-        ),
-        f"{run_prefix}_{BAND_LABEL}GHz_detector_{det_idx}_deltaf_fwhm_histogram.png",
-    )
+    # ============================================================
+    # Individual detector plots
+    # ============================================================
 
-    plt.figure(figsize=(10, 6))
+    time_sec_full = np.arange(P_pW.shape[1]) / SAMPLE_RATE_HZ
 
-    plt.plot(
-        time_sec,
-        delta_track,
-        lw=0.5,
-    )
+    for det_idx in DETECTORS_TO_PLOT:
 
-    plt.axhline(0, linestyle="--", linewidth=1)
+        if det_idx >= P_pW.shape[0]:
+            print(f"Detector {det_idx} does not exist; skipping.")
+            continue
 
-    plt.xlabel("Time (s)")
-    plt.ylabel(r"$\Delta f / \mathrm{FWHM}$")
-    plt.title(
-        f"Detector {det_idx} Delta f / FWHM vs Time\n"
-        f"{BAND_LABEL} GHz, PWV={PWV_MM:.2f} mm"
-    )
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
+        P_track = np.asarray(P_pW[det_idx, :], dtype=np.float64)
+        valid = np.isfinite(P_track)
 
-    plt.savefig(
-        OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_detector_{det_idx}_deltaf_fwhm_vs_time.png",
-        dpi=300,
-        bbox_inches="tight",
-    )
+        P_track = P_track[valid]
+        time_sec = time_sec_full[valid]
 
-    plt.close()
+        delta_track = delta_f_over_fwhm(P_track)
 
-    # ========================================================
-    # Candidate spike locations and recurrence diagnostics
-    # ========================================================
-    candidate_bins, counts, edges, excess = candidate_spike_bins(
-        delta_track,
-        bins=100,
-        max_candidates=3,
-    )
+        # ========================================================
+        # Direct shape check for this detector
+        # ========================================================
 
-    for rank, bin_idx in enumerate(candidate_bins, start=1):
-        lower = edges[bin_idx]
-        upper = edges[bin_idx + 1]
-        spike_mask = (delta_track >= lower) & (delta_track < upper)
 
-        event_start_indices = contiguous_event_starts(spike_mask)
-        event_times = time_sec[event_start_indices]
-        event_separations = np.diff(event_times)
+        power_standardized = standardize(P_track)
+        delta_standardized = standardize(delta_track)
 
-        print(
-            f"Detector {det_idx}, candidate spike {rank}: "
-            f"[{lower:.6g}, {upper:.6g}), "
-            f"{spike_mask.sum()} samples in {len(event_times)} events"
-        )
+        if len(power_standardized) > 0 and len(delta_standardized) > 0:
+            comparison_bins = np.linspace(-6, 6, 121)
 
-        plt.figure(figsize=(11, 5))
-        plt.plot(time_sec, delta_track, linewidth=0.5, label="All samples")
-        plt.scatter(
-            time_sec[spike_mask],
-            delta_track[spike_mask],
-            s=8,
-            label=f"Candidate spike {rank}",
-        )
-        plt.xlabel("Time (s)")
-        plt.ylabel(r"$\Delta f / \mathrm{FWHM}$")
-        plt.title(
-            f"Detector {det_idx}: Candidate Histogram Feature {rank}\n"
-            f"{lower:.4g} to {upper:.4g}"
-        )
-        plt.legend()
-        plt.grid(alpha=0.3)
-        plt.tight_layout()
-        plt.savefig(
-            OUTDIR / (
-                f"{run_prefix}_{BAND_LABEL}GHz_detector_{det_idx}_"
-                f"candidate_spike_{rank}_vs_time.png"
-            ),
-            dpi=300,
-            bbox_inches="tight",
-        )
-        plt.close()
-
-        if len(event_separations) > 0:
             plt.figure(figsize=(8, 6))
-            plt.hist(event_separations, bins=50, edgecolor="black")
-            plt.xlabel("Time between feature events (s)")
-            plt.ylabel("Number of event pairs")
-            plt.title(
-                f"Detector {det_idx}: Recurrence of Candidate Feature {rank}\n"
-                f"Median interval = {np.nanmedian(event_separations):.3f} s"
+            plt.hist(
+                power_standardized,
+                bins=comparison_bins,
+                density=True,
+                histtype="step",
+                linewidth=1.8,
+                label="Standardized power",
             )
+            plt.hist(
+                -delta_standardized,
+                bins=comparison_bins,
+                density=True,
+                histtype="step",
+                linewidth=1.2,
+                linestyle="--",
+                label=r"Reflected standardized $\Delta f/\mathrm{FWHM}$",
+            )
+            plt.xlabel("Standardized value")
+            plt.ylabel("Probability density")
+            plt.title(
+                f"Detector {det_idx}: Power–Frequency-Shift Shape Check\n"
+                f"{BAND_LABEL} GHz, {SCAN_PATTERN}"
+            )
+            plt.legend()
             plt.grid(alpha=0.3)
             plt.tight_layout()
             plt.savefig(
                 OUTDIR / (
                     f"{run_prefix}_{BAND_LABEL}GHz_detector_{det_idx}_"
-                    f"candidate_spike_{rank}_event_separations.png"
+                    "power_delta_shape_comparison.png"
                 ),
                 dpi=300,
                 bbox_inches="tight",
             )
             plt.close()
 
+        make_hist(
+            P_track,
+            "Detector power (pW)",
+            (
+                f"Detector {det_idx} Power Distribution\n"
+                f"{BAND_LABEL} GHz, PWV={PWV_MM:.2f} mm"
+            ),
+            f"{run_prefix}_{BAND_LABEL}GHz_detector_{det_idx}_power_histogram.png",
+        )
 
-# ============================================================
-# Save summary statistics
-# ============================================================
+        make_hist(
+            delta_track,
+            r"$\Delta f / \mathrm{FWHM}$",
+            (
+                f"Detector {det_idx} Estimated Fractional Frequency Shift\n"
+                f"{BAND_LABEL} GHz, PWV={PWV_MM:.2f} mm"
+            ),
+            f"{run_prefix}_{BAND_LABEL}GHz_detector_{det_idx}_deltaf_fwhm_histogram.png",
+        )
 
-summary_df = pd.DataFrame(stats_rows)
-summary_csv_path = OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_summary_stats.csv"
-summary_df.to_csv(summary_csv_path, index=False)
+        plt.figure(figsize=(10, 6))
 
-print(f"\nSaved summary statistics CSV to: {summary_csv_path}")
-print(f"Saved plots to: {OUTDIR}")
+        plt.plot(
+            time_sec,
+            delta_track,
+            lw=0.5,
+        )
 
-if RUN_ANIMATIONS:
-    animation_dir = OUTDIR / "detector_azel_animations"
+        plt.axhline(0, linestyle="--", linewidth=1)
 
-    os.makedirs(animation_dir, exist_ok=True)
+        plt.xlabel("Time (s)")
+        plt.ylabel(r"$\Delta f / \mathrm{FWHM}$")
+        plt.title(
+            f"Detector {det_idx} Delta f / FWHM vs Time\n"
+            f"{BAND_LABEL} GHz, PWV={PWV_MM:.2f} mm"
+        )
+        plt.grid(alpha=0.3)
+        plt.tight_layout()
 
-    power_matrix = tod.to("pW").signal          # (Ndet, Ntime)
+        plt.savefig(
+            OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_detector_{det_idx}_deltaf_fwhm_vs_time.png",
+            dpi=300,
+            bbox_inches="tight",
+        )
 
-    # el_deg_matrix = np.rad2deg(tod.el)          # (Ndet, Ntime)
-    # az_deg_matrix = np.cos(el_deg_matrix) * np.rad2deg(tod.az)          # (Ndet, Ntime)
+        plt.close()
 
-    # raise SystemExit("Animation Generation Disabled")
-    animate_detector_azel_power(
-        az_deg=az_deg_matrix,
-        el_deg=el_deg_matrix,
-        power_pW=P_pW,
-        time_s=time_sec_full,
-        output_path=(
-            animation_dir
-            / f"{BAND_LABEL}GHz_detector_azel_power_animation.mp4"
-        ),
-        colour_mode="absolute",
-        frame_step=10,
-        fps=20,
-        marker_size=10.0,
-        title=(
-            f"Prime-Cam Detector Loading in Az-El\n"
-            f"{BAND_LABEL} GHz, {SCAN_PATTERN}, Elev={ELEV_LABEL}"
-        ),
-    )
+        # ========================================================
+        # Candidate spike locations and recurrence diagnostics
+        # ========================================================
+        candidate_bins, counts, edges, excess = candidate_spike_bins(
+            delta_track,
+            bins=100,
+            max_candidates=3,
+        )
 
-    animate_detector_azel_power(
-        az_deg=az_deg_matrix,
-        el_deg=el_deg_matrix,
-        power_pW=P_pW,
-        time_s=time_sec_full,
-        output_path=(
-            animation_dir
-            / f"{run_prefix}_{BAND_LABEL}GHz_azel_detector_median_subtracted_power.mp4"
-        ),
-        colour_mode="detector_median_subtracted",
-        frame_step=10,
-        fps=20,
-        marker_size=18,
-        title=(
-            f"Prime-Cam Large-Scale Loading Changes in Az–El\n"
-            f"{BAND_LABEL} GHz, {SCAN_PATTERN}, Elev={ELEV_LABEL}"
-        ),
-    )
+        for rank, bin_idx in enumerate(candidate_bins, start=1):
+            lower = edges[bin_idx]
+            upper = edges[bin_idx + 1]
+            spike_mask = (delta_track >= lower) & (delta_track < upper)
 
-    animate_detector_azel_power(
-        az_deg=az_deg_matrix,
-        el_deg=el_deg_matrix,
-        power_pW=P_pW,
-        time_s=time_sec_full,
-        output_path=(
-            animation_dir
-            / f"{run_prefix}_{BAND_LABEL}GHz_azel_small_scale_residuals.mp4"
-        ),
-        colour_mode="frame_median_subtracted",
-        frame_step=10,
-        fps=20,
-        marker_size=18,
-        title=(
-            f"Prime-Cam Small-Scale Loading Residuals in Az–El\n"
-            f"{BAND_LABEL} GHz, {SCAN_PATTERN}, Elev={ELEV_LABEL}"
-        ),
-    )
+            event_start_indices = contiguous_event_starts(spike_mask)
+            event_times = time_sec[event_start_indices]
+            event_separations = np.diff(event_times)
+
+            print(
+                f"Detector {det_idx}, candidate spike {rank}: "
+                f"[{lower:.6g}, {upper:.6g}), "
+                f"{spike_mask.sum()} samples in {len(event_times)} events"
+            )
+
+            plt.figure(figsize=(11, 5))
+            plt.plot(time_sec, delta_track, linewidth=0.5, label="All samples")
+            plt.scatter(
+                time_sec[spike_mask],
+                delta_track[spike_mask],
+                s=8,
+                label=f"Candidate spike {rank}",
+            )
+            plt.xlabel("Time (s)")
+            plt.ylabel(r"$\Delta f / \mathrm{FWHM}$")
+            plt.title(
+                f"Detector {det_idx}: Candidate Histogram Feature {rank}\n"
+                f"{lower:.4g} to {upper:.4g}"
+            )
+            plt.legend()
+            plt.grid(alpha=0.3)
+            plt.tight_layout()
+            plt.savefig(
+                OUTDIR / (
+                    f"{run_prefix}_{BAND_LABEL}GHz_detector_{det_idx}_"
+                    f"candidate_spike_{rank}_vs_time.png"
+                ),
+                dpi=300,
+                bbox_inches="tight",
+            )
+            plt.close()
+
+            if len(event_separations) > 0:
+                plt.figure(figsize=(8, 6))
+                plt.hist(event_separations, bins=50, edgecolor="black")
+                plt.xlabel("Time between feature events (s)")
+                plt.ylabel("Number of event pairs")
+                plt.title(
+                    f"Detector {det_idx}: Recurrence of Candidate Feature {rank}\n"
+                    f"Median interval = {np.nanmedian(event_separations):.3f} s"
+                )
+                plt.grid(alpha=0.3)
+                plt.tight_layout()
+                plt.savefig(
+                    OUTDIR / (
+                        f"{run_prefix}_{BAND_LABEL}GHz_detector_{det_idx}_"
+                        f"candidate_spike_{rank}_event_separations.png"
+                    ),
+                    dpi=300,
+                    bbox_inches="tight",
+                )
+                plt.close()
+
+
+    # ============================================================
+    # Save summary statistics
+    # ============================================================
+
+    summary_df = pd.DataFrame(stats_rows)
+    summary_csv_path = OUTDIR / f"{run_prefix}_{BAND_LABEL}GHz_summary_stats.csv"
+    summary_df.to_csv(summary_csv_path, index=False)
+
+    print(f"\nSaved summary statistics CSV to: {summary_csv_path}")
+    print(f"Saved plots to: {OUTDIR}")
+
+    if RUN_ANIMATIONS:
+        animation_dir = OUTDIR / "detector_azel_animations"
+
+        os.makedirs(animation_dir, exist_ok=True)
+
+        power_matrix = tod.to("pW").signal          # (Ndet, Ntime)
+
+        # el_deg_matrix = np.rad2deg(tod.el)          # (Ndet, Ntime)
+        # az_deg_matrix = np.cos(el_deg_matrix) * np.rad2deg(tod.az)          # (Ndet, Ntime)
+
+        # raise SystemExit("Animation Generation Disabled")
+        animate_detector_azel_power(
+            az_deg=az_deg_matrix,
+            el_deg=el_deg_matrix,
+            power_pW=P_pW,
+            time_s=time_sec_full,
+            output_path=(
+                animation_dir
+                / f"{BAND_LABEL}GHz_detector_azel_power_animation.mp4"
+            ),
+            colour_mode="absolute",
+            frame_step=10,
+            fps=20,
+            marker_size=10.0,
+            title=(
+                f"Prime-Cam Detector Loading in Az-El\n"
+                f"{BAND_LABEL} GHz, {SCAN_PATTERN}, Elev={ELEV_LABEL}"
+            ),
+        )
+
+        animate_detector_azel_power(
+            az_deg=az_deg_matrix,
+            el_deg=el_deg_matrix,
+            power_pW=P_pW,
+            time_s=time_sec_full,
+            output_path=(
+                animation_dir
+                / f"{run_prefix}_{BAND_LABEL}GHz_azel_detector_median_subtracted_power.mp4"
+            ),
+            colour_mode="detector_median_subtracted",
+            frame_step=10,
+            fps=20,
+            marker_size=18,
+            title=(
+                f"Prime-Cam Large-Scale Loading Changes in Az–El\n"
+                f"{BAND_LABEL} GHz, {SCAN_PATTERN}, Elev={ELEV_LABEL}"
+            ),
+        )
+
+        animate_detector_azel_power(
+            az_deg=az_deg_matrix,
+            el_deg=el_deg_matrix,
+            power_pW=P_pW,
+            time_s=time_sec_full,
+            output_path=(
+                animation_dir
+                / f"{run_prefix}_{BAND_LABEL}GHz_azel_small_scale_residuals.mp4"
+            ),
+            colour_mode="frame_median_subtracted",
+            frame_step=10,
+            fps=20,
+            marker_size=18,
+            title=(
+                f"Prime-Cam Small-Scale Loading Residuals in Az–El\n"
+                f"{BAND_LABEL} GHz, {SCAN_PATTERN}, Elev={ELEV_LABEL}"
+            ),
+        )
 
 
 # ============================================================
@@ -5993,7 +5985,7 @@ if RUN_PARAMETER_SWEEP:
                             f"speed_{speed_tag}_"
                             f"PWV_{pwv_tag}mm_"
                             f"duration_{duration_s}s_"
-                            f"map_{map_tag}deg"
+                            f"map_{map_tag}deg_"
                             f"realization_{realization:02d}"
                         )
 

@@ -2814,6 +2814,7 @@ for band in [280, 350]:
     plt.close(fig)
 
 if plot_multi_realization_p95:
+
     # ============================================================
     # PLOT:
     # CROSS-BAND P95 FREQUENCY RESPONSE
@@ -2856,13 +2857,25 @@ if plot_multi_realization_p95:
     )
 
 
+    # ============================================================
+    # FIGURE SETUP
+    # ============================================================
+
     fig, axes = plt.subplots(
         1,
         3,
-        figsize=(24, 7.5),
+        figsize=(14, 4.8),
         sharex=True,
         sharey=True,
     )
+
+
+    # Exact PWV values used in the simulations.
+    pwv_ticks = [
+        0.36,
+        0.67,
+        1.28,
+    ]
 
 
     for axis, band in zip(
@@ -2906,39 +2919,60 @@ if plot_multi_realization_p95:
                 continue
 
 
-            pwv = elevation_df[
-                "pwv_mm"
-            ].to_numpy()
+            pwv = (
+                elevation_df[
+                    "pwv_mm"
+                ]
+                .to_numpy()
+            )
 
 
-            p95 = elevation_df[
-                "p95_realization_median"
-            ].to_numpy()
-
-            p95_min = elevation_df[
-                "p95_realization_min"
-            ].to_numpy()
-
-            p95_max = elevation_df[
-                "p95_realization_max"
-            ].to_numpy()
+            p95 = (
+                elevation_df[
+                    "p95_realization_median"
+                ]
+                .to_numpy()
+            )
 
 
-            # Median P95 across the five simulations
+            p95_min = (
+                elevation_df[
+                    "p95_realization_min"
+                ]
+                .to_numpy()
+            )
+
+
+            p95_max = (
+                elevation_df[
+                    "p95_realization_max"
+                ]
+                .to_numpy()
+            )
+
+
+            # ----------------------------------------------------
+            # Median P95 across the five atmospheric realizations
+            # ----------------------------------------------------
+
             line = axis.plot(
                 pwv,
                 p95,
                 marker="o",
-                markersize=7,
-                linewidth=3,
+                markersize=6,
+                linewidth=2.2,
                 label=(
                     f"{elev_min:g}-"
                     f"{elev_max:g}°"
                 ),
+                zorder=3,
             )[0]
 
 
+            # ----------------------------------------------------
             # Full realization-to-realization range
+            # ----------------------------------------------------
+
             axis.errorbar(
                 pwv,
                 p95,
@@ -2947,74 +2981,142 @@ if plot_multi_realization_p95:
                     p95_max - p95,
                 ],
                 fmt="none",
-                capsize=5,
-                linewidth=1.5,
+                capsize=4,
+                capthick=1.2,
+                elinewidth=1.2,
                 color=line.get_color(),
+                zorder=2,
             )
 
 
+        # ========================================================
+        # PANEL FORMATTING
+        # ========================================================
+
         axis.set_title(
             f"{band} GHz",
-            fontsize=18,
+            fontsize=15,
+            pad=8,
         )
+
+
+        # Actual atmospheric conditions simulated.
+        axis.set_xticks(
+            pwv_ticks
+        )
+
+        axis.set_xticklabels(
+            [
+                "0.36",
+                "0.67",
+                "1.28",
+            ]
+        )
+
+
+        # One linewidth reference.
+        axis.axhline(
+            1.0,
+            linestyle=":",
+            linewidth=1.3,
+            alpha=0.7,
+            color="black",
+            zorder=1,
+        )
+
+
+        # Shared y-axis scale.
+        # axis.set_ylim(
+        #     0,
+        #     1.05,
+        # )
+
 
         axis.grid(
-            alpha=0.3
+            alpha=0.20,
         )
+
 
         axis.tick_params(
-            labelsize=15
+            labelsize=11,
         )
 
+
+    # ============================================================
+    # SHARED AXIS LABELS
+    # ============================================================
 
     axes[0].set_ylabel(
         r"$P_{95}\left(|\Delta f/\mathrm{FWHM}|\right)$",
-        fontsize=16,
+        fontsize=14,
     )
 
 
     fig.supxlabel(
         "PWV (mm)",
-        fontsize=16,
+        fontsize=14,
+        y=0.04,
     )
 
+
+    # ============================================================
+    # COMMON LEGEND
+    # ============================================================
 
     handles, labels = (
         axes[0].get_legend_handles_labels()
     )
 
+
     fig.legend(
         handles,
         labels,
         loc="upper center",
-        bbox_to_anchor=(0.5, 0.89),
+        bbox_to_anchor=(
+            0.5,
+            0.88,
+        ),
         ncol=3,
-        frameon=True,
-        fontsize=13,
+        frameon=False,
+        fontsize=11,
     )
 
+
+    # ============================================================
+    # OVERALL TITLE
+    # ============================================================
 
     fig.suptitle(
-        "Detector Frequency Response Across Prime-Cam Bands\n"
-        "900 s Daisy scans — median of 5 realizations",
-        fontsize=17,
-        y=0.99,
+        "Detector Frequency Response Across Prime-Cam Bands",
+        fontsize=16,
+        y=0.98,
     )
 
+
+    # ============================================================
+    # LAYOUT
+    # ============================================================
 
     fig.tight_layout(
         rect=[
-            0,
-            0.04,
-            1,
-            0.83,
+            0.02,
+            0.06,
+            0.99,
+            0.82,
         ]
     )
 
 
+    # ============================================================
+    # SAVE
+    # ============================================================
+
     output_path = (
         OUTPUT_DIR
-        / "cross_band_p95_frequency_response_daisy_900s_5realizations.png"
+        / (
+            "cross_band_p95_frequency_response_"
+            "daisy_900s_5realizations_noylim.png"
+        )
     )
 
 
@@ -3024,10 +3126,401 @@ if plot_multi_realization_p95:
         bbox_inches="tight",
     )
 
+
     plt.close(fig)
 
 
     print(
         "\nSaved five-realization P95 figure:\n"
         f"{output_path}"
-    )   
+    )
+
+
+# ============================================================
+# PLOT:
+# P50 AND P95 FREQUENCY RESPONSE
+# FIVE INDEPENDENT REALIZATIONS
+# ============================================================
+
+if plot_multi_realization_p95:
+
+    SUMMARY_SCAN_PATTERN = "daisy"
+    SUMMARY_DURATION = 900
+
+    plot_df = realization_summary_df[
+        (
+            realization_summary_df["scan_pattern"]
+            == SUMMARY_SCAN_PATTERN
+        )
+        & (
+            realization_summary_df["duration_s"]
+            == SUMMARY_DURATION
+        )
+    ].copy()
+
+
+    bands = [
+        280,
+        350,
+        850,
+    ]
+
+
+    pwv_ticks = [
+        0.36,
+        0.67,
+        1.28,
+    ]
+
+
+    elevation_ranges = (
+        plot_df[
+            [
+                "elevation_min_deg",
+                "elevation_max_deg",
+            ]
+        ]
+        .drop_duplicates()
+        .sort_values(
+            "elevation_min_deg"
+        )
+    )
+
+
+    # ========================================================
+    # FIGURE SETUP
+    #
+    # Row 0 = P50
+    # Row 1 = P95
+    # ========================================================
+
+    fig, axes = plt.subplots(
+        2,
+        3,
+        figsize=(14, 8),
+        sharex=True,
+        sharey="row",
+    )
+
+
+    # ========================================================
+    # LOOP OVER BANDS
+    # ========================================================
+
+    for column, band in enumerate(bands):
+
+        band_df = plot_df[
+            plot_df["band_ghz"] == band
+        ].copy()
+
+
+        ax_p50 = axes[0, column]
+        ax_p95 = axes[1, column]
+
+
+        for _, elevation_row in (
+            elevation_ranges.iterrows()
+        ):
+
+            elev_min = elevation_row[
+                "elevation_min_deg"
+            ]
+
+            elev_max = elevation_row[
+                "elevation_max_deg"
+            ]
+
+
+            elevation_df = band_df[
+                (
+                    band_df["elevation_min_deg"]
+                    == elev_min
+                )
+                & (
+                    band_df["elevation_max_deg"]
+                    == elev_max
+                )
+            ].sort_values(
+                "pwv_mm"
+            )
+
+
+            if elevation_df.empty:
+                continue
+
+
+            pwv = (
+                elevation_df[
+                    "pwv_mm"
+                ]
+                .to_numpy()
+            )
+
+
+            # ====================================================
+            # P50
+            # ====================================================
+
+            p50 = (
+                elevation_df[
+                    "p50_realization_median"
+                ]
+                .to_numpy()
+            )
+
+            p50_min = (
+                elevation_df[
+                    "p50_realization_min"
+                ]
+                .to_numpy()
+            )
+
+            p50_max = (
+                elevation_df[
+                    "p50_realization_max"
+                ]
+                .to_numpy()
+            )
+
+
+            ax_p50.errorbar(
+                pwv,
+                p50,
+                yerr=[
+                    p50 - p50_min,
+                    p50_max - p50,
+                ],
+                marker="o",
+                markersize=5,
+                linewidth=2,
+                elinewidth=1,
+                capsize=3,
+                label=(
+                    f"{elev_min:g}-"
+                    f"{elev_max:g}°"
+                ),
+            )
+
+
+            # ====================================================
+            # P95
+            # ====================================================
+
+            p95 = (
+                elevation_df[
+                    "p95_realization_median"
+                ]
+                .to_numpy()
+            )
+
+            p95_min = (
+                elevation_df[
+                    "p95_realization_min"
+                ]
+                .to_numpy()
+            )
+
+            p95_max = (
+                elevation_df[
+                    "p95_realization_max"
+                ]
+                .to_numpy()
+            )
+
+
+            ax_p95.errorbar(
+                pwv,
+                p95,
+                yerr=[
+                    p95 - p95_min,
+                    p95_max - p95,
+                ],
+                marker="o",
+                markersize=5,
+                linewidth=2,
+                elinewidth=1,
+                capsize=3,
+            )
+
+
+        # ========================================================
+        # COLUMN FORMATTING
+        # ========================================================
+
+        ax_p50.set_title(
+            f"{band} GHz",
+            fontsize=15,
+            pad=8,
+        )
+
+
+        for axis in (
+            ax_p50,
+            ax_p95,
+        ):
+
+            axis.set_xticks(
+                pwv_ticks
+            )
+
+            axis.set_xticklabels(
+                [
+                    "0.36",
+                    "0.67",
+                    "1.28",
+                ]
+            )
+
+            axis.grid(
+                alpha=0.2,
+            )
+
+            axis.tick_params(
+                labelsize=10,
+            )
+
+
+        # One-linewidth reference belongs primarily
+        # with the upper-tail response.
+        ax_p95.axhline(
+            1.0,
+            linestyle=":",
+            linewidth=1.3,
+            color="black",
+            alpha=0.65,
+        )
+
+
+    # ========================================================
+    # ROW LABELS
+    # ========================================================
+
+    axes[0, 0].set_ylabel(
+        r"$P_{50}\left(|\Delta f/\mathrm{FWHM}|\right)$",
+        fontsize=13,
+    )
+
+    axes[1, 0].set_ylabel(
+        r"$P_{95}\left(|\Delta f/\mathrm{FWHM}|\right)$",
+        fontsize=13,
+    )
+
+
+    fig.supxlabel(
+        "PWV (mm)",
+        fontsize=14,
+        y=0.04,
+    )
+
+
+    # ========================================================
+    # Y LIMITS
+    # ========================================================
+
+    maximum_p50 = (
+        plot_df[
+            "p50_realization_max"
+        ]
+        .max()
+    )
+
+    maximum_p95 = (
+        plot_df[
+            "p95_realization_max"
+        ]
+        .max()
+    )
+
+
+    axes[0, 0].set_ylim(
+        0,
+        1.10 ,
+    )
+
+    axes[1, 0].set_ylim(
+        0,
+        1.10,
+    )
+
+
+    # ========================================================
+    # SINGLE LEGEND:
+    # only elevation needs to be encoded now
+    # ========================================================
+
+    handles, labels = (
+        axes[0, 0]
+        .get_legend_handles_labels()
+    )
+
+
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(
+            0.5,
+            0.92,
+        ),
+        ncol=3,
+        frameon=False,
+        fontsize=11,
+    )
+
+
+    # ========================================================
+    # TITLE
+    # ========================================================
+
+    fig.suptitle(
+        "Detector Frequency Response Across Prime-Cam Bands",
+        fontsize=16,
+        y=0.98,
+    )
+
+
+    # ========================================================
+    # LAYOUT
+    # ========================================================
+
+    fig.tight_layout(
+        rect=[
+            0.02,
+            0.06,
+            0.99,
+            0.88,
+        ],
+        h_pad=2.0,
+        w_pad=1.2,
+    )
+
+
+    # ========================================================
+    # SAVE
+    # ========================================================
+
+    output_path = (
+        OUTPUT_DIR
+        / (
+            "cross_band_frequency_response_"
+            "p50_p95_separate_"
+            "daisy_900s_5realizations.png"
+        )
+    )
+
+
+    fig.savefig(
+        output_path,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+
+    plt.close(fig)
+
+
+    print(
+        "\nSaved separated five-realization "
+        "P50/P95 figure:\n"
+        f"{output_path}"
+    )
